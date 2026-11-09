@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN_OPERATIONS
+  FINANCE_MANAGER
+  MEMBER
+  FREE_USER
+}
+
+enum MembershipPackage {
+  FREE
+  BASIC
+  FULL
+}
+
+enum QualificationMethod {
+  DIRECT_FULL
+  UPGRADE_PAYMENT
+  UPGRADE_SHOPPING
+}
+
+enum BinaryLeg {
+  LEFT
+  RIGHT
+}
+
+model User {
+  id                  String             @id @default(uuid())
+  memberId            String             @unique
+  email               String             @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  role                UserRole           @default(FREE_USER)
+  currentPackage      MembershipPackage  @default(FREE)
+  isFullQualified     Boolean            @default(false)
+  qualificationMethod QualificationMethod?
+  qualificationDate   DateTime?
+
+  sponsorId           String?
+  sponsor             User?              @relation("SponsorReferrals", fields: [sponsorId], references: [id])
+  directReferrals     User[]             @relation("SponsorReferrals")
+
+  refreshTokenHash    String?
+
+  wallet              WalletAccount?
+  binaryPlacement     BinaryPlacement?
+  vouchers            ShoppingVoucher[]
+  bookings            EvBooking[]
+  withdrawals         WithdrawalRequest[]
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([memberId])
+  @@index([sponsorId])
+  @@index([role])
+}
+
+model BinaryPlacement {
+  id               String     @id @default(uuid())
+  userId           String     @unique
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId         String?
+  leg              BinaryLeg?
+  leftCount        Int        @default(0)
+  rightCount       Int        @default(0)
+  leftVolumePaise  BigInt     @default(0)
+  rightVolumePaise BigInt     @default(0)
+  carryLeftPaise   BigInt     @default(0)
+  carryRightPaise  BigInt     @default(0)
+
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+}
+
+model WalletAccount {
+  id                         String   @id @default(uuid())
+  userId                     String   @unique
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availableEarningsPaise     BigInt   @default(0)
+  heldCommissionsPaise       BigInt   @default(0)
+  pendingRecoveryPaise       BigInt   @default(0)
+  shoppingVoucherBalancePaise BigInt  @default(0)
+  totalEarnedPaise           BigInt   @default(0)
+  totalWithdrawnPaise        BigInt   @default(0)
+
+  updatedAt                  DateTime @updatedAt
+}
+
+model JournalEntry {
+  id          String        @id @default(uuid())
+  referenceId String        @unique
+  eventType   String
+  narration   String
+  createdAt   DateTime      @default(now())
+  lines       JournalLine[]
+
+  @@index([referenceId])
+  @@index([eventType])
+}
+
+model JournalLine {
+  id             String       @id @default(uuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account        String
+  userId         String?
+  debitPaise     BigInt       @default(0)
+  creditPaise    BigInt       @default(0)
+  description    String
+
+  createdAt      DateTime     @default(now())
+
+  @@index([journalEntryId])
+  @@index([account])
+  @@index([userId])
+}
+
+model CommissionHold {
+  id                   String    @id @default(uuid())
+  sponsorId            String
+  referredMemberId     String
+  heldAmountPaise      BigInt
+  status               String    @default("HELD") // HELD, RELEASED, FORFEITED
+  releasedAt           DateTime?
+  releaseTransactionId String?
+  createdAt            DateTime  @default(now())
+
+  @@index([sponsorId])
+  @@index([referredMemberId])
+}
+
+model PendingRecovery {
+  id                  String   @id @default(uuid())
+  sponsorId           String
+  referredMemberId    String
+  recoveryAmountPaise BigInt
+  recoveredPaise      BigInt   @default(0)
+  status              String   @default("PENDING") // PENDING, PARTIALLY_RECOVERED, FULLY_RECOVERED
+  createdAt           DateTime @default(now())
+
+  @@index([sponsorId])
+  @@index([referredMemberId])
+}
+
+model ShoppingVoucher {
+  id                    String    @id @default(uuid())
+  voucherCode           String    @unique
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  initialValuePaise     BigInt
+  remainingBalancePaise BigInt
+  issuedReason          String
+  status                String    @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED, FULLY_REDEEMED
+  expiresAt             DateTime
+  createdAt             DateTime  @default(now())
+
+  @@index([voucherCode])
+  @@index([userId])
+}
+
+model EvBike {
+  id                     String      @id @default(uuid())
+  modelCode              String      @unique
+  name                   String
+  tagline                String
+  batteryCapacityKwh     Float
+  rangeKm                Int
+  topSpeedKmh            Int
+  chargingTimeHours      Float
+  exShowroomPricePaise   BigInt
+  bookingAmountPaise     BigInt
+  voucherRedeemLimitPaise BigInt
+  imageUrl               String
+  isAvailable            Boolean     @default(true)
+  bookings               EvBooking[]
+
+  createdAt              DateTime    @default(now())
+}
+
+model EvBooking {
+  id                  String   @id @default(uuid())
+  bookingNumber       String   @unique
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bikeId              String
+  bike                EvBike   @relation(fields: [bikeId], references: [id])
+  bookingAmountPaise  BigInt
+  voucherAppliedPaise BigInt   @default(0)
+  netCashPaidPaise    BigInt
+  bookingStatus       String   @default("SUBMITTED") // SUBMITTED, PAYMENT_VERIFIED, CONFIRMED, DELIVERED, CANCELLED
+  paymentReference    String?
+  createdAt           DateTime @default(now())
+
+  @@index([userId])
+  @@index([bookingNumber])
+}
+
+model WithdrawalRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountPaise BigInt
+  bankDetails Json
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED, PROCESSED
+  adminNotes  String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+}

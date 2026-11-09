@@ -1,0 +1,24 @@
+{
+  "name": "askrev-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ASKR EV - Clean Monorepo for EV Booking, Membership, Voucher & FinTech Ledger Platform",
+  "scripts": {
+    "dev:api": "pnpm --filter @askrev/api dev",
+    "dev:web": "pnpm --filter @askrev/web dev",
+    "build": "pnpm --filter @askrev/shared build && pnpm --filter @askrev/database build && pnpm --filter @askrev/api build && pnpm --filter @askrev/web build",
+    "test": "pnpm --filter @askrev/api test",
+    "lint": "pnpm -r --if-present run lint",
+    "db:generate": "pnpm --filter @askrev/database db:generate",
+    "db:push": "pnpm --filter @askrev/database db:push",
+    "db:seed": "pnpm --filter @askrev/database db:seed"
+  },
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
