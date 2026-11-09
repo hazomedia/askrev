@@ -153,19 +153,54 @@ model PendingRecovery {
 }
 
 model ShoppingVoucher {
-  id                    String    @id @default(uuid())
-  voucherCode           String    @unique
+  id                    String               @id @default(uuid())
+  voucherCode           String               @unique
   userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   initialValuePaise     BigInt
   remainingBalancePaise BigInt
   issuedReason          String
-  status                String    @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED, FULLY_REDEEMED
+  status                String               @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED, FULLY_REDEEMED
   expiresAt             DateTime
-  createdAt             DateTime  @default(now())
+  transactions          VoucherTransaction[]
+  createdAt             DateTime             @default(now())
 
   @@index([voucherCode])
   @@index([userId])
+}
+
+model VoucherTransaction {
+  id                String          @id @default(uuid())
+  voucherId         String
+  voucher           ShoppingVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  amountPaise       BigInt
+  transactionType   String          // ISSUANCE, REDEMPTION, REVERSAL, EXPIRY
+  referenceId       String?
+  balanceAfterPaise BigInt
+  narration         String
+  createdAt         DateTime        @default(now())
+
+  @@index([voucherId])
+  @@index([transactionType])
+}
+
+model QualificationEvent {
+  id                          String              @id @default(uuid())
+  memberId                    String
+  sponsorId                   String?
+  qualificationMethod         QualificationMethod
+  qualificationOrderForSponsor Int?
+  feePaidPaise                BigInt              @default(0)
+  voucherIssuedPaise          BigInt              @default(0)
+  walletCreditedPaise         BigInt              @default(0)
+  holdReleasedPaise           BigInt              @default(0)
+  commissionRecoveredPaise    BigInt              @default(0)
+  unfundedRecoveryPaise       BigInt              @default(0)
+  journalEntryId              String?
+  createdAt                   DateTime            @default(now())
+
+  @@index([memberId])
+  @@index([sponsorId])
 }
 
 model EvBike {
