@@ -2,6 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 
+// Ensure BigInts serialize automatically to JSON string
+if (typeof BigInt !== 'undefined' && !(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    return this.toString();
+  };
+}
+
 async function bootstrap() {
   const logger = new Logger('AskrEV_API');
   const app = await NestFactory.create(AppModule);

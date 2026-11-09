@@ -3,6 +3,13 @@
  * Never use floating point numbers for currency calculations.
  */
 
+// Support JSON.stringify for BigInt across all apps
+if (typeof BigInt !== 'undefined' && !(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    return this.toString();
+  };
+}
+
 export function rupeesToPaise(rupees: number | string): bigint {
   const numeric = typeof rupees === 'string' ? parseFloat(rupees) : rupees;
   if (isNaN(numeric)) {
