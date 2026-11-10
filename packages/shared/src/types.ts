@@ -137,6 +137,24 @@ export interface BinaryMatchResult {
   rejectionReason?: string;
 }
 
+export interface BinaryMatchEventItem {
+  id: string;
+  userId: string;
+  matchDate: string;
+  matchesEvaluated: number;
+  matchesSettled: number;
+  cappedOutMatches: number;
+  leftUnitsUsed: number;
+  rightUnitsUsed: number;
+  previousCarryLeft: number;
+  previousCarryRight: number;
+  newCarryLeft: number;
+  newCarryRight: number;
+  rewardINR: number;
+  isSimulated: boolean;
+  createdAt: string;
+}
+
 export interface EvBikeModel {
   id: string;
   name: string;

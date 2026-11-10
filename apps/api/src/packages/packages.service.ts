@@ -6,6 +6,7 @@ import {
   WalletAccount,
   MembershipRequestType,
   MembershipRequestStatus,
+  BinaryLeg,
 } from '@prisma/client';
 import {
   FINANCIAL_RULES,
@@ -516,6 +517,16 @@ export class PackagesService {
           requestId: req.id,
           feePaise: req.feePaise,
         });
+      }
+
+      // 3b. PHASE 3C: BINARY VOLUME PROPAGATION ON FULL QUALIFICATION
+      // If the member is already placed in the binary tree, their full qualification confers
+      // +1 unit of qualified volume to ancestors up their placement branch.
+      if (
+        req.requestType === MembershipRequestType.FULL_ACTIVATION ||
+        req.requestType === MembershipRequestType.BASIC_TO_FULL_UPGRADE
+      ) {
+        await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
       }
 
       // 4. Record Administrative Audit Log
@@ -1076,4 +1087,51 @@ export class PackagesService {
 
     return null;
   }
+
+  /**
+   * Propagates qualified volume (+1 unit) up the binary tree ancestor chain
+   * when a member transitions to Full Qualification.
+   */
+  private async propagateBinaryVolumeOnFullQualification(
+    tx: Prisma.TransactionClient,
+    userId: string
+  ) {
+    const placement = await tx.binaryPlacement.findUnique({
+      where: { userId },
+      select: { parentId: true, leg: true },
+    });
+
+    if (!placement || !placement.parentId || !placement.leg) {
+      return; // Not yet placed in binary tree
+    }
+
+    let currParentId: string | null = placement.parentId;
+    let currLeg: BinaryLeg | null = placement.leg;
+
+    while (currParentId && currLeg) {
+      const updateData: any = {};
+      if (currLeg === BinaryLeg.LEFT) {
+        updateData.leftVolumePaise = { increment: 1n };
+        updateData.carryLeftPaise = { increment: 1n };
+      } else {
+        updateData.rightVolumePaise = { increment: 1n };
+        updateData.carryRightPaise = { increment: 1n };
+      }
+
+      await tx.binaryPlacement.update({
+        where: { userId: currParentId },
+        data: updateData,
+      });
+
+      const parentNode: { parentId: string | null; leg: BinaryLeg | null } | null = await tx.binaryPlacement.findUnique({
+        where: { userId: currParentId },
+        select: { parentId: true, leg: true },
+      });
+
+      if (!parentNode || !parentNode.parentId || !parentNode.leg) break;
+      currLeg = parentNode.leg;
+      currParentId = parentNode.parentId;
+    }
+  }
 }
+

@@ -70,6 +70,7 @@ model User {
   bookings            EvBooking[]
   withdrawals         WithdrawalRequest[]
   membershipRequests  MembershipRequest[]
+  binaryMatches       BinaryMatchEvent[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -80,20 +81,29 @@ model User {
 }
 
 model BinaryPlacement {
-  id               String     @id @default(uuid())
-  userId           String     @unique
-  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parentId         String?
-  leg              BinaryLeg?
-  leftCount        Int        @default(0)
-  rightCount       Int        @default(0)
-  leftVolumePaise  BigInt     @default(0)
-  rightVolumePaise BigInt     @default(0)
-  carryLeftPaise   BigInt     @default(0)
-  carryRightPaise  BigInt     @default(0)
+  id                     String     @id @default(uuid())
+  userId                 String     @unique
+  user                   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId               String?
+  leg                    BinaryLeg?
+  leftCount              Int        @default(0)
+  rightCount             Int        @default(0)
+  leftVolumePaise        BigInt     @default(0)
+  rightVolumePaise       BigInt     @default(0)
+  carryLeftPaise         BigInt     @default(0)
+  carryRightPaise        BigInt     @default(0)
+  matchedVolumeLeftPaise BigInt     @default(0)
+  matchedVolumeRightPaise BigInt    @default(0)
+  totalMatchesConsumed   Int        @default(0)
+  totalRewardEarnedPaise BigInt     @default(0)
+  lastMatchDate          String?
+  dailyMatchesCount      Int        @default(0)
 
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  @@index([parentId])
+  @@index([leg])
 }
 
 model WalletAccount {
@@ -302,4 +312,28 @@ model MembershipRequest {
   @@index([userId])
   @@index([status])
   @@index([requestType])
+}
+
+model BinaryMatchEvent {
+  id                    String   @id @default(uuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchDate             String   // YYYY-MM-DD
+  matchesEvaluated      Int
+  matchesSettled        Int
+  cappedOutMatches      Int
+  leftUnitsUsed         Int
+  rightUnitsUsed        Int
+  previousCarryLeft     Int
+  previousCarryRight    Int
+  newCarryLeft          Int
+  newCarryRight         Int
+  rewardPaise           BigInt
+  isSimulated           Boolean  @default(true)
+  journalEntryId        String?
+  idempotencyKey        String?  @unique
+  createdAt             DateTime @default(now())
+
+  @@index([userId])
+  @@index([matchDate])
 }

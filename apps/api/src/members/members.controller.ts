@@ -1,10 +1,15 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@askrev/shared';
+import {
+  PlaceBinaryNodeDto,
+  QueryBinaryHistoryDto,
+  RunBinaryMatchDto,
+} from './dto/binary-placement.dto';
 
 @Controller('members')
 @UseGuards(JwtAuthGuard)
@@ -21,6 +26,58 @@ export class MembersController {
     return this.membersService.getBinaryTree(user.id);
   }
 
+  // =========================================================================
+  // PHASE 3C: BINARY PLACEMENT & MATCHING ENDPOINTS
+  // =========================================================================
+
+  @Post('binary/place')
+  async placeBinaryNode(
+    @CurrentUser() user: any,
+    @Body() dto: PlaceBinaryNodeDto
+  ) {
+    return this.membersService.placeBinaryNode(user.id, dto);
+  }
+
+  @Post('binary/run-matching')
+  async runBinaryMatching(
+    @CurrentUser() user: any,
+    @Body() dto: RunBinaryMatchDto
+  ) {
+    // If user is admin and specifies another userId, allow admin run; otherwise use caller's user.id
+    const isAdmin =
+      user.role === UserRole.SUPER_ADMIN ||
+      user.role === UserRole.ADMIN_OPERATIONS ||
+      user.role === UserRole.FINANCE_MANAGER;
+
+    const targetUserId = isAdmin && dto.userId ? dto.userId : user.id;
+    return this.membersService.settleBinaryMatching(targetUserId, dto.idempotencyKey);
+  }
+
+  @Get('binary/history')
+  async getBinaryHistory(
+    @CurrentUser() user: any,
+    @Query() query: QueryBinaryHistoryDto
+  ) {
+    const isAdmin =
+      user.role === UserRole.SUPER_ADMIN ||
+      user.role === UserRole.ADMIN_OPERATIONS ||
+      user.role === UserRole.FINANCE_MANAGER;
+
+    const targetUserId = isAdmin && query.userId ? query.userId : user.id;
+    return this.membersService.getBinaryMatchHistory(targetUserId);
+  }
+
+  @Get('admin/binary-report')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getAdminBinaryReport() {
+    return this.membersService.getAdminBinaryReport();
+  }
+
+  // =========================================================================
+  // ADMIN MEMBERS LIST
+  // =========================================================================
+
   @Get('admin/list')
   @UseGuards(RolesGuard)
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
@@ -28,3 +85,4 @@ export class MembersController {
     return this.membersService.getAllMembers(query);
   }
 }
+
