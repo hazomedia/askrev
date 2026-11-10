@@ -2,27 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import {
-  Bike,
-  Zap,
-  BatteryCharging,
-  Gauge,
-  Timer,
-  ShieldCheck,
-  ChevronLeft,
-  Tag,
-  CheckCircle2,
-  Cpu,
-  Layers,
-  ArrowRight,
-} from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { ChevronLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import Navbar from '../../../components/Navbar';
+import Footer from '../../../components/Footer';
 import BookingModal from '../../../components/BookingModal';
 import { fetchApi, getStoredUser } from '../../../lib/api';
 
 export default function BikeDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const [bike, setBike] = useState<any | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,35 +50,41 @@ export default function BikeDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 max-w-7xl mx-auto px-4 py-20 w-full animate-pulse">
-        <div className="h-8 bg-navy-800 rounded-xl w-48 mb-8" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          <div className="h-96 bg-navy-800 rounded-3xl" />
-          <div className="space-y-4">
-            <div className="h-10 bg-navy-800 rounded-xl w-3/4" />
-            <div className="h-6 bg-navy-800 rounded-lg w-1/2" />
-            <div className="h-32 bg-navy-800 rounded-2xl" />
+      <div className="flex-1 flex flex-col bg-white">
+        <Navbar />
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-16 w-full animate-pulse">
+          <div className="h-6 bg-slate-100 rounded w-32 mb-6" />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+            <div className="lg:col-span-7 h-96 bg-slate-100 rounded-xl" />
+            <div className="lg:col-span-5 space-y-4">
+              <div className="h-8 bg-slate-100 rounded w-2/3" />
+              <div className="h-4 bg-slate-100 rounded w-1/2" />
+              <div className="h-24 bg-slate-100 rounded" />
+            </div>
           </div>
-        </div>
+        </main>
+        <Footer />
       </div>
     );
   }
 
   if (error || !bike) {
     return (
-      <div className="flex-1 max-w-3xl mx-auto px-4 py-20 text-center">
-        <div className="p-8 rounded-3xl bg-navy-900 border border-navy-800 space-y-4">
-          <Bike className="w-12 h-12 text-slate-500 mx-auto" />
-          <h2 className="text-2xl font-bold text-white">Model Not Found</h2>
-          <p className="text-xs text-slate-400">{error || 'Requested bike model does not exist.'}</p>
-          <Link
-            href="/bikes"
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-electric-500 text-white font-bold text-xs"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            <span>Back to EV Fleet</span>
-          </Link>
-        </div>
+      <div className="flex-1 flex flex-col bg-white">
+        <Navbar />
+        <main className="flex-1 max-w-2xl mx-auto px-4 py-20 text-center">
+          <h2 className="text-2xl font-bold text-[#253247]">Model Not Found</h2>
+          <p className="text-xs text-slate-500 mt-2">{error || 'Requested motorcycle does not exist.'}</p>
+          <div className="mt-6">
+            <Link
+              href="/bikes"
+              className="px-5 py-2.5 rounded-lg bg-[#165DAD] text-white text-xs font-medium hover:bg-[#124B8D]"
+            >
+              Back to Fleet Catalog
+            </Link>
+          </div>
+        </main>
+        <Footer />
       </div>
     );
   }
@@ -99,190 +93,150 @@ export default function BikeDetailPage() {
     ? bike.imageUrl.replace('.webp', '.svg')
     : '/images/bikes/thunder-pro.svg';
 
-  const userVoucherINR = userProfile?.wallet?.shoppingVoucherINR || 0;
-  const maxVoucherEligible = Math.min(
-    userVoucherINR,
-    bike.voucherRedeemLimitINR,
-    bike.bookingAmountINR
-  );
-
   return (
-    <div className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-16 w-full">
-      {/* Back Link */}
-      <Link
-        href="/bikes"
-        className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white transition-colors mb-8"
-      >
-        <ChevronLeft className="w-4 h-4" />
-        <span>Back to EV Fleet</span>
-      </Link>
+    <div className="flex-1 flex flex-col bg-white">
+      <Navbar />
 
-      {/* Main Two-Column Product Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-        {/* Left Column: Visual Showcase */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="card-gradient rounded-3xl p-6 sm:p-8 border border-navy-700/80 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1 rounded-full bg-navy-950/90 border border-electric-500/40 text-electric-300 text-xs font-bold backdrop-blur-md">
-              <Tag className="w-3.5 h-3.5 text-electric-400" />
-              <span>Voucher Up to ₹{bike.voucherRedeemLimitINR.toLocaleString('en-IN')}</span>
-            </div>
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-16 w-full">
+        {/* Back navigation link */}
+        <Link
+          href="/bikes"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-[#165DAD] transition-colors mb-8"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span>Back to EV Bikes</span>
+        </Link>
 
+        {/* 2-Column Overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+          {/* Left: Product Image */}
+          <div className="lg:col-span-7 bg-[#F7F9FC] rounded-xl border border-slate-200 p-8 flex items-center justify-center">
             <img
               src={imgSource}
               alt={bike.name}
-              className="w-full aspect-[16/10] object-contain drop-shadow-2xl"
+              className="w-full max-h-96 object-contain"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = '/images/bikes/thunder-pro.svg';
               }}
             />
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 text-center">
-              <BatteryCharging className="w-5 h-5 text-emerald-400 mx-auto mb-1.5" />
-              <div className="text-xl font-black text-white">{bike.rangeKm} km</div>
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">Max Range</div>
-            </div>
-            <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 text-center">
-              <Gauge className="w-5 h-5 text-electric-400 mx-auto mb-1.5" />
-              <div className="text-xl font-black text-white">{bike.topSpeedKmh} km/h</div>
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">Top Speed</div>
-            </div>
-            <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 text-center">
-              <Timer className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
-              <div className="text-xl font-black text-white">{bike.chargingTimeHours} hrs</div>
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">0-100% Charge</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Pricing & Booking Action */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="card-gradient rounded-3xl p-6 sm:p-8 border border-navy-700/80 shadow-2xl space-y-6">
+          {/* Right: Pricing, Summary & Single Primary Action */}
+          <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-8 space-y-6 shadow-sm">
             <div>
-              <span className="text-xs font-mono font-bold text-electric-400 uppercase tracking-widest bg-navy-800 px-2.5 py-1 rounded-md border border-navy-700">
+              <span className="text-xs font-semibold text-[#165DAD] uppercase tracking-wider">
                 {bike.modelCode}
               </span>
-              <h1 className="text-3xl sm:text-4xl font-black text-white mt-3">
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#253247] mt-1.5">
                 {bike.name}
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-2 leading-relaxed">
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                 {bike.tagline}
               </p>
             </div>
 
             {/* Price Box */}
-            <div className="p-5 rounded-2xl bg-navy-900/90 border border-navy-800 space-y-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs text-slate-400 uppercase font-bold">Ex-Showroom Price</span>
-                <span className="text-2xl font-black text-white">
+            <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-2 text-xs">
+              <div className="flex justify-between items-baseline">
+                <span className="text-slate-500">Ex-Showroom Price:</span>
+                <span className="text-xl font-bold text-[#253247]">
                   ₹{bike.exShowroomPriceINR.toLocaleString('en-IN')}
                 </span>
               </div>
-              <div className="pt-2 border-t border-navy-800/80 flex items-baseline justify-between text-xs">
-                <span className="text-slate-400 font-semibold">Booking Token Deposit:</span>
-                <span className="text-base font-bold text-electric-400">
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
+                <span className="text-slate-500">Booking Token Deposit:</span>
+                <span className="text-base font-bold text-[#165DAD]">
                   ₹{bike.bookingAmountINR.toLocaleString('en-IN')}
                 </span>
               </div>
-              <div className="flex items-baseline justify-between text-xs">
-                <span className="text-slate-400 font-semibold">Max Voucher Eligible:</span>
-                <span className="text-emerald-400 font-bold">
+              <div className="flex justify-between items-baseline text-slate-500">
+                <span>Voucher Redemption Limit:</span>
+                <span className="text-green-700 font-semibold">
                   Up to ₹{bike.voucherRedeemLimitINR.toLocaleString('en-IN')}
                 </span>
               </div>
             </div>
 
-            {/* User voucher status badge */}
-            {userProfile?.wallet?.shoppingVoucherINR > 0 ? (
-              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Voucher Balance Detected</span>
-                </div>
-                <div>
-                  You can apply up to <strong className="text-white">₹{maxVoucherEligible.toLocaleString('en-IN')}</strong> from your shopping vouchers on this reservation.
-                </div>
-              </div>
-            ) : null}
-
-            {/* Book Now Action */}
+            {/* One Clear Book Now Action */}
             <button
               onClick={() => setModalOpen(true)}
-              className="w-full py-4 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-electric-600 via-electric-500 to-emerald-500 hover:from-electric-500 hover:to-emerald-400 shadow-xl shadow-electric-500/25 transition-all flex items-center justify-center gap-2 group"
+              className="w-full py-3 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-sm font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
             >
-              <Zap className="w-4 h-4 fill-white" />
-              <span>Reserve with Token Deposit</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              <span>Book Now</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-2 text-[11px] text-slate-400 justify-center">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <div className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-slate-400" />
               <span>Full compliance with verified booking receipts</span>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Engineering Specifications Sheet */}
-      <div className="mt-16 card-gradient rounded-3xl p-6 sm:p-10 border border-navy-700/80">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-electric-500/20 border border-electric-500/40 flex items-center justify-center text-electric-400">
-            <Cpu className="w-5 h-5" />
+        {/* Clean Engineering Specifications Table */}
+        <div className="mt-16 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <div className="px-6 py-4 bg-[#F7F9FC] border-b border-slate-200">
+            <h2 className="text-base font-bold text-[#253247]">Technical Specifications</h2>
+            <p className="text-xs text-slate-500">Official commercial parameters for {bike.name}</p>
           </div>
-          <div>
-            <h2 className="text-2xl font-black text-white">Engineering Specifications</h2>
-            <p className="text-xs text-slate-400">Technical telemetry and powertrain data for {bike.name}</p>
+
+          <div className="divide-y divide-slate-100 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Battery Capacity</span>
+              <span className="text-[#253247] font-semibold">{bike.batteryCapacityKwh} kWh Lithium Pack</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Max Riding Range</span>
+              <span className="text-[#253247] font-semibold">{bike.rangeKm} km per charge</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Top Velocity</span>
+              <span className="text-[#253247] font-semibold">{bike.topSpeedKmh} km/h</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Charging Time (0-100%)</span>
+              <span className="text-[#253247] font-semibold">{bike.chargingTimeHours} hours</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Powertrain Motor</span>
+              <span className="text-[#253247] font-semibold">{bike.specs?.motorType || 'PMSM Electric Drive'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Peak Power Output</span>
+              <span className="text-[#253247] font-semibold">{bike.specs?.peakPowerKw || 8.5} kW</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Peak Torque</span>
+              <span className="text-[#253247] font-semibold">{bike.specs?.peakTorqueNm || 52} Nm</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Braking Architecture</span>
+              <span className="text-[#253247] font-semibold">{bike.specs?.brakes || 'Dual Disc with CBS & Regenerative'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Instrument Cluster</span>
+              <span className="text-[#253247] font-semibold">{bike.specs?.display || '7-inch Touch TFT Cluster'}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
+              <span className="text-slate-500 font-medium">Manufacturer Warranty</span>
+              <span className="text-[#15803D] font-semibold">{bike.specs?.warranty || '3 Years Comprehensive'}</span>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Battery Architecture:</span>
-            <span className="text-white font-bold">{bike.batteryCapacityKwh} kWh High-Density Pack</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Motor Type:</span>
-            <span className="text-white font-bold">{bike.specs?.motorType || 'PMSM Electric Drive'}</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Peak Motor Power:</span>
-            <span className="text-white font-bold">{bike.specs?.peakPowerKw || 8.5} kW</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Peak Torque:</span>
-            <span className="text-white font-bold">{bike.specs?.peakTorqueNm || 52} Nm</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Acceleration (0-40 km/h):</span>
-            <span className="text-electric-400 font-bold">{bike.specs?.acceleration0to40 || '3.2 sec'}</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Braking System:</span>
-            <span className="text-white font-bold">{bike.specs?.brakes || 'Dual Disc with CBS & Regenerative'}</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Instrument Display:</span>
-            <span className="text-white font-bold">{bike.specs?.display || '7-inch High-Brightness Touch TFT'}</span>
-          </div>
-          <div className="p-4 rounded-2xl bg-navy-900 border border-navy-800 flex justify-between items-center">
-            <span className="text-slate-400">Warranty Coverage:</span>
-            <span className="text-emerald-400 font-bold">{bike.specs?.warranty || '3 Years Comprehensive'}</span>
-          </div>
-        </div>
-      </div>
+        {/* Booking Dialog Modal */}
+        <BookingModal
+          bike={bike}
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          user={userProfile}
+          onSuccess={() => {
+            loadProfile();
+          }}
+        />
+      </main>
 
-      {/* Booking Modal */}
-      <BookingModal
-        bike={bike}
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        user={userProfile}
-        onSuccess={() => {
-          loadProfile();
-        }}
-      />
+      <Footer />
     </div>
   );
 }

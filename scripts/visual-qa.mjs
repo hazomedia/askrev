@@ -59,7 +59,7 @@ class CdpClient {
 }
 
 async function runVisualQA() {
-  console.log('--- Starting ASKR EV Phase 2 Visual QA Suite ---');
+  console.log('--- Starting ASKR EV Classic Corporate Light-Theme Visual QA Suite ---');
   const tempProfile = path.join(process.env.TEMP, 'chrome_qa_profile_' + Date.now());
 
   // Obtain test authentication credentials
@@ -148,9 +148,9 @@ async function runVisualQA() {
 
     const results = [];
 
-    // Viewports: Desktop (1280x900) and Mobile (375x812)
+    // Viewports: Desktop (1440x900) and Mobile (375x812)
     const viewports = [
-      { mode: 'desktop', width: 1280, height: 900, deviceScaleFactor: 1, isMobile: false },
+      { mode: 'desktop', width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false },
       { mode: 'mobile', width: 375, height: 812, deviceScaleFactor: 2, isMobile: true },
     ];
 
@@ -193,27 +193,30 @@ async function runVisualQA() {
         await cdp.send('Page.navigate', { url: fullUrl });
 
         // Wait for components and data to render
-        await sleep(2000);
+        await sleep(2200);
 
         // Inspect computed styles
         const evalResult = await cdp.send('Runtime.evaluate', {
           expression: `(() => {
             const body = document.body;
             const bodyStyle = window.getComputedStyle(body);
-            const card = document.querySelector('.card-gradient');
-            const cardStyle = card ? window.getComputedStyle(card) : null;
-            const nav = document.querySelector('nav');
+            const nav = document.querySelector('nav') || document.querySelector('header');
             const navStyle = nav ? window.getComputedStyle(nav) : null;
+
+            const isLightBg = bodyStyle.backgroundColor === 'rgb(255, 255, 255)' || 
+                              bodyStyle.backgroundColor === 'rgb(247, 249, 252)' ||
+                              bodyStyle.backgroundColor === 'rgba(255, 255, 255, 1)';
+            const isDarkNavy = bodyStyle.backgroundColor === 'rgb(6, 11, 24)';
 
             return {
               title: document.title,
               bodyBg: bodyStyle.backgroundColor,
               bodyColor: bodyStyle.color,
-              fontFamily: bodyStyle.fontFamily.split(',')[0],
-              hasCardGradient: !!card,
-              cardBorder: cardStyle ? cardStyle.borderColor : 'none',
+              fontFamily: bodyStyle.fontFamily.split(',')[0].replace(/['"]/g, ''),
               navBg: navStyle ? navStyle.backgroundColor : 'none',
-              hasCssLoaded: bodyStyle.backgroundColor === 'rgb(6, 11, 24)' || bodyStyle.backgroundColor === 'rgba(6, 11, 24, 1)',
+              isLightBg,
+              isDarkNavy,
+              hasCssLoaded: true,
             };
           })()`,
           returnByValue: true,
@@ -231,9 +234,11 @@ async function runVisualQA() {
           route: route.path,
           name: route.name,
           mode: vp.mode,
-          cssApplied: styles.hasCssLoaded,
+          isLightCorporateTheme: styles.isLightBg,
+          isDarkThemeEliminated: !styles.isDarkNavy,
           bodyBg: styles.bodyBg,
-          cardBorder: styles.cardBorder,
+          bodyColor: styles.bodyColor,
+          fontFamily: styles.fontFamily,
           screenshotPath,
           screenshotFile: screenshotFileName,
           networkErrors: [...networkErrors],
@@ -241,14 +246,14 @@ async function runVisualQA() {
         });
 
         console.log(
-          `  ✓ [${vp.mode}] ${route.path.padEnd(26)} | CSS: ${styles.hasCssLoaded ? 'YES' : 'NO'} | Body BG: ${styles.bodyBg} | Card Border: ${styles.cardBorder} | Shot: ${screenshotFileName}`
+          `  ✓ [${vp.mode}] ${route.path.padEnd(26)} | Light: ${styles.isLightBg ? 'YES' : 'NO'} | Body BG: ${styles.bodyBg} | Color: ${styles.bodyColor} | Shot: ${screenshotFileName}`
         );
       }
     }
 
     cdp.close();
 
-    console.log('\n--- Visual QA Complete ---');
+    console.log('\n--- Classic Corporate Light-Theme Visual QA Complete ---');
     console.log(`All ${results.length} screenshots saved to: ${ARTIFACT_DIR}`);
 
     // Output JSON report

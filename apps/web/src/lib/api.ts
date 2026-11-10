@@ -17,6 +17,8 @@ export function clearAuthSession() {
   localStorage.removeItem('askrev_user');
 }
 
+export const clearAuth = clearAuthSession;
+
 export function getStoredUser(): any | null {
   if (typeof window === 'undefined') return null;
   const user = localStorage.getItem('askrev_user');

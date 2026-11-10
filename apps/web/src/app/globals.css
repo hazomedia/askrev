@@ -3,41 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --background: #060B18;
-  --foreground: #F8FAFC;
+  --background: #FFFFFF;
+  --secondary-bg: #F7F9FC;
+  --foreground: #253247;
+  --muted: #64748B;
+  --border: #E2E8F0;
+  --brand-blue: #165DAD;
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   overflow-x: hidden;
 }
 
-/* Custom scrollbars */
+/* Clean subtle scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B132B;
+  background: #F1F5F9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #273456;
-  border-radius: 4px;
+  background: #CBD5E1;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3A506B;
+  background: #94A3B8;
 }
 
-.gradient-glow {
-  background: radial-gradient(circle at 50% 0%, rgba(0, 180, 216, 0.15) 0%, transparent 70%);
-}
-
-.card-gradient {
-  background: linear-gradient(135deg, rgba(28, 37, 65, 0.8) 0%, rgba(11, 19, 43, 0.9) 100%);
-  border: 1px solid rgba(58, 80, 107, 0.5);
+/* Corporate Card Surface */
+.corporate-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
 }

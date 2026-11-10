@@ -1,12 +1,10 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
 
 export const metadata: Metadata = {
-  title: 'ASKR EV — High-Torque Electric Mobility & Verified Member Platform',
+  title: 'ASKR EV — Electric Mobility Platform',
   description:
-    'Experience high-performance zero-emission EV motorbikes, transparent direct community rewards, and verified shopping voucher commerce with ASKR EV Mobility.',
+    'Official corporate portal of ASKR EV Mobility Private Limited. Electric motorcycles, community membership, and verified booking management.',
 };
 
 export default function RootLayout({
@@ -15,11 +13,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-navy-950 text-slate-100 flex flex-col antialiased selection:bg-electric-500 selection:text-white">
-        <Navbar />
-        <main className="flex-1 flex flex-col">{children}</main>
-        <Footer />
+    <html lang="en">
+      <body className="min-h-screen bg-white text-[#253247] flex flex-col antialiased selection:bg-[#165DAD] selection:text-white">
+        {children}
       </body>
     </html>
   );

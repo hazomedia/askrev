@@ -14,15 +14,15 @@ export default function Icon() {
       <div
         style={{
           fontSize: 20,
-          background: '#060B18',
+          background: '#165DAD',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#00B4D8',
+          color: '#FFFFFF',
           fontWeight: 800,
-          borderRadius: '4px',
+          borderRadius: '6px',
         }}
       >
         A
@@ -33,4 +33,3 @@ export default function Icon() {
     }
   );
 }
-
