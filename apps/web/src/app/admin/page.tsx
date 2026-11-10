@@ -146,7 +146,7 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([
+      await Promise.allSettled([
         fetchOverview(),
         fetchMembers(1),
         fetchMembershipRequests(),
@@ -159,7 +159,7 @@ export default function AdminPage() {
         fetchAuditLogs(),
       ]);
     } catch (err: any) {
-      setError(err.message || 'Failed to load administration modules.');
+      console.warn('Initial data load notice:', err.message);
     } finally {
       setLoading(false);
     }
@@ -173,7 +173,7 @@ export default function AdminPage() {
       else if (activeTab === 'approvals') await fetchMembershipRequests();
       else if (activeTab === 'binary') await fetchBinaryData(binaryTreeMemberId);
       else if (activeTab === 'finance') {
-        await Promise.all([fetchWallets(), fetchLedger()]);
+        await Promise.allSettled([fetchWallets(), fetchLedger()]);
       } else if (activeTab === 'vouchers') await fetchVouchers();
       else if (activeTab === 'bookings') await fetchBookings();
       else if (activeTab === 'reconciliation') await fetchReconciliation();
@@ -189,34 +189,46 @@ export default function AdminPage() {
 
   // API Fetchers
   const fetchOverview = async () => {
-    const data = await fetchApi<any>('/admin/overview');
-    setOverview(data);
+    try {
+      const data = await fetchApi<any>('/admin/overview');
+      setOverview(data);
+    } catch (err: any) {
+      console.error('Failed to fetch overview metrics:', err);
+    }
   };
 
   const fetchMembers = async (page = 1) => {
-    let url = `/members/admin/list?page=${page}&limit=25`;
-    if (memberSearch) url += `&search=${encodeURIComponent(memberSearch)}`;
-    if (memberPackageFilter) url += `&package=${encodeURIComponent(memberPackageFilter)}`;
-    if (memberQualFilter) url += `&isFullQualified=${encodeURIComponent(memberQualFilter)}`;
-    const data = await fetchApi<any>(url);
-    if (data.members) {
-      setMembers(data.members);
-      setMembersTotal(data.total);
-      setMembersPage(data.page);
-    } else if (Array.isArray(data)) {
-      setMembers(data);
-      setMembersTotal(data.length);
+    try {
+      let url = `/members/admin/list?page=${page}&limit=25`;
+      if (memberSearch) url += `&search=${encodeURIComponent(memberSearch)}`;
+      if (memberPackageFilter) url += `&package=${encodeURIComponent(memberPackageFilter)}`;
+      if (memberQualFilter) url += `&isFullQualified=${encodeURIComponent(memberQualFilter)}`;
+      const data = await fetchApi<any>(url);
+      if (data?.members) {
+        setMembers(data.members);
+        setMembersTotal(data.total);
+        setMembersPage(data.page);
+      } else if (Array.isArray(data)) {
+        setMembers(data);
+        setMembersTotal(data.length);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch members list:', err);
     }
   };
 
   const fetchMembershipRequests = async () => {
-    let url = '/packages/admin/requests';
-    const params: string[] = [];
-    if (requestStatusFilter !== 'ALL') params.push(`status=${requestStatusFilter}`);
-    if (requestTypeFilter !== 'ALL') params.push(`requestType=${requestTypeFilter}`);
-    if (params.length > 0) url += `?${params.join('&')}`;
-    const data = await fetchApi<any[]>(url);
-    setMembershipRequests(Array.isArray(data) ? data : []);
+    try {
+      let url = '/packages/admin/requests';
+      const params: string[] = [];
+      if (requestStatusFilter !== 'ALL') params.push(`status=${requestStatusFilter}`);
+      if (requestTypeFilter !== 'ALL') params.push(`requestType=${requestTypeFilter}`);
+      if (params.length > 0) url += `?${params.join('&')}`;
+      const data = await fetchApi<any[]>(url);
+      setMembershipRequests(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Failed to fetch membership requests:', err);
+    }
   };
 
   const fetchBinaryData = async (targetMemberId: string) => {
@@ -236,38 +248,54 @@ export default function AdminPage() {
   };
 
   const fetchWallets = async () => {
-    let url = '/admin/wallets?limit=50';
-    if (walletSearch) url += `&search=${encodeURIComponent(walletSearch)}`;
-    const data = await fetchApi<any>(url);
-    if (data.wallets) {
-      setWallets(data.wallets);
-      setWalletsTotal(data.total);
+    try {
+      let url = '/admin/wallets?limit=50';
+      if (walletSearch) url += `&search=${encodeURIComponent(walletSearch)}`;
+      const data = await fetchApi<any>(url);
+      if (data?.wallets) {
+        setWallets(data.wallets);
+        setWalletsTotal(data.total);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch wallets:', err);
     }
   };
 
   const fetchLedger = async () => {
-    let url = '/admin/ledger?limit=50';
-    if (ledgerSearch) url += `&search=${encodeURIComponent(ledgerSearch)}`;
-    if (ledgerFilterType) url += `&eventType=${encodeURIComponent(ledgerFilterType)}`;
-    const data = await fetchApi<any>(url);
-    if (data.entries) {
-      setLedgerEntries(data.entries);
-      setLedgerTotal(data.total);
+    try {
+      let url = '/admin/ledger?limit=50';
+      if (ledgerSearch) url += `&search=${encodeURIComponent(ledgerSearch)}`;
+      if (ledgerFilterType) url += `&eventType=${encodeURIComponent(ledgerFilterType)}`;
+      const data = await fetchApi<any>(url);
+      if (data?.entries) {
+        setLedgerEntries(data.entries);
+        setLedgerTotal(data.total);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch ledger:', err);
     }
   };
 
   const fetchVouchers = async () => {
-    const [vouchers, txs] = await Promise.all([
-      fetchApi<any>('/vouchers/admin/all').catch(() => null),
-      fetchApi<any[]>('/admin/voucher-transactions').catch(() => []),
-    ]);
-    setVouchersData(vouchers);
-    setVoucherTransactions(Array.isArray(txs) ? txs : []);
+    try {
+      const [vouchers, txs] = await Promise.all([
+        fetchApi<any>('/vouchers/admin/all').catch(() => null),
+        fetchApi<any[]>('/admin/voucher-transactions').catch(() => []),
+      ]);
+      setVouchersData(vouchers);
+      setVoucherTransactions(Array.isArray(txs) ? txs : []);
+    } catch (err: any) {
+      console.error('Failed to fetch vouchers:', err);
+    }
   };
 
   const fetchBookings = async () => {
-    const data = await fetchApi<any>('/ev-bikes/admin/bookings');
-    setBookingsData(data);
+    try {
+      const data = await fetchApi<any>('/ev-bikes/admin/bookings');
+      setBookingsData(data);
+    } catch (err: any) {
+      console.error('Failed to fetch bookings:', err);
+    }
   };
 
   const fetchReconciliation = async () => {
@@ -472,6 +500,22 @@ export default function AdminPage() {
     },
     { id: 'audit', label: 'Audit & Security', icon: ShieldCheck, count: auditTotal },
   ];
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#F7F9FC] flex items-center justify-center font-sans">
+        <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm text-center max-w-sm w-full space-y-4">
+          <div className="w-10 h-10 rounded-lg bg-[#165DAD] text-white flex items-center justify-center font-bold text-sm mx-auto shadow-sm animate-pulse">
+            AE
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-sm font-bold text-[#253247]">ASKR EV Operations Center</h2>
+            <p className="text-xs text-slate-500">Verifying administrative security session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#253247] flex flex-col font-sans">
