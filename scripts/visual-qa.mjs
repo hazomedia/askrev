@@ -70,21 +70,21 @@ async function runVisualQA() {
     const memberRes = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'member.a@askrev.local', password: 'MemberA@AskREV2026!' }),
+      body: JSON.stringify({ email: 'rahul.sponsor@askrev.com', password: 'Member@123456' }),
     });
     if (memberRes.ok) {
       memberAuth = await memberRes.json();
-      console.log('  ✓ Member authentication session acquired');
+      console.log('  ✓ Member authentication session acquired:', memberAuth.user.fullName, `[${memberAuth.user.memberId}]`);
     }
 
     const adminRes = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'superadmin@askrev.local', password: 'SuperAdmin@AskREV2026!' }),
+      body: JSON.stringify({ email: 'admin@askrev.com', password: 'Admin@123456' }),
     });
     if (adminRes.ok) {
       adminAuth = await adminRes.json();
-      console.log('  ✓ Admin authentication session acquired');
+      console.log('  ✓ Admin authentication session acquired:', adminAuth.user.fullName);
     }
   } catch (err) {
     console.warn('  ⚠ Auth acquisition notice:', err.message);

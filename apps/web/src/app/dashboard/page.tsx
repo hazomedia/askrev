@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Wallet,
-  Zap,
   Users,
   Copy,
   Check,
@@ -20,8 +19,6 @@ import {
   ChevronRight,
   LogOut,
   LayoutDashboard,
-  CreditCard,
-  History,
   Menu,
   X,
   ExternalLink,
@@ -80,7 +77,7 @@ export default function DashboardPage() {
   };
 
   const getReferralLink = () => {
-    if (!user) return '';
+    if (!user || !user.memberId) return '';
     if (typeof window === 'undefined') return '';
     return `${window.location.origin}/auth/register?ref=${user.memberId}`;
   };
@@ -93,15 +90,22 @@ export default function DashboardPage() {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const getWhatsAppShareUrl = () => {
+    const link = getReferralLink();
+    if (!link || !user) return '#';
+    const text = `Join ASKR EV Mobility platform. Register using my sponsor referral code ${user.memberId}: ${link}`;
+    return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+  };
+
   const handleShareLink = async () => {
     const link = getReferralLink();
-    if (!link) return;
+    if (!link || !user) return;
 
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'Join ASKR EV Mobility',
-          text: `Use my sponsor referral code ${user.memberId} to register with ASKR EV electric mobility platform.`,
+          text: `Use my sponsor referral code ${user.memberId} to register with ASKR EV electric mobility platform:`,
           url: link,
         });
       } catch (err) {
@@ -171,22 +175,36 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#253247]">
-      {/* Top Corporate Portal Header */}
+      {/* =========================================================================
+          TASK 1 — TOP HEADER
+          Features ASKR EV logo, Member ID, membership badge, and Logout
+          ========================================================================= */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Left: Mobile trigger & Title */}
-            <div className="flex items-center gap-3">
+            {/* Left: Mobile trigger & ASKR EV Logo + Title */}
+            <div className="flex items-center gap-3 sm:gap-4">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100"
+                className="md:hidden p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
                 aria-label="Toggle navigation"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
 
+              <Link href="/" className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#165DAD] flex items-center justify-center text-white font-black text-sm shadow-xs">
+                  A
+                </div>
+                <span className="text-base font-bold tracking-tight text-[#253247] hidden sm:inline">
+                  ASKR <span className="text-[#165DAD]">EV</span>
+                </span>
+              </Link>
+
+              <span className="text-slate-300 hidden sm:inline">/</span>
+
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm text-[#253247]">Member Portal</span>
+                <span className="font-semibold text-xs sm:text-sm text-[#253247]">Member Portal</span>
                 <span className="text-slate-300">/</span>
                 <span className="font-mono text-xs font-bold text-[#165DAD] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
                   {user.memberId}
@@ -195,7 +213,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Right: Status badge & Logout */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3">
               <span
                 className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getPackageBadge(
                   user.currentPackage
@@ -215,7 +233,7 @@ export default function DashboardPage() {
 
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-[#DC2626] transition-colors px-2 py-1.5 rounded-lg hover:bg-slate-50"
+                className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-[#DC2626] transition-colors px-2.5 py-1.5 rounded-lg hover:bg-slate-50 min-h-[36px]"
                 title="Sign out of portal"
               >
                 <LogOut className="w-4 h-4" />
@@ -325,18 +343,27 @@ export default function DashboardPage() {
             {/* TAB 1: OVERVIEW */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Welcome Card & Referral Link */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                    <div>
+                {/* =========================================================================
+                    TASK 1 & 2 — COMPACT WELCOME CARD & REFERRAL LINK SHARING
+                    Includes Member Name, Member ID, Sponsor, Copy Link & WhatsApp Share
+                    ========================================================================= */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                    {/* Welcome Details */}
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         <span>Welcome back,</span>
-                        <span className="font-semibold text-[#253247]">{user.fullName}</span>
+                        <span className="font-semibold text-[#253247] text-sm">{user.fullName}</span>
                       </div>
-                      <h1 className="text-xl sm:text-2xl font-bold text-[#253247] mt-1">
-                        Member Dashboard
-                      </h1>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <h1 className="text-lg sm:text-xl font-bold text-[#253247]">
+                          Member Dashboard
+                        </h1>
+                        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                          ID: {user.memberId}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
                         Sponsor:{' '}
                         <span className="font-medium text-[#253247]">
                           {user.sponsorName
@@ -346,50 +373,76 @@ export default function DashboardPage() {
                       </p>
                     </div>
 
-                    {/* Referral Link Box */}
-                    <div className="bg-[#F7F9FC] border border-slate-200 rounded-lg p-3.5 max-w-md w-full space-y-2">
+                    {/* Referral Link Box - Compact & Multi-Share */}
+                    <div className="bg-[#F7F9FC] border border-slate-200 rounded-lg p-3 sm:p-3.5 max-w-lg w-full space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-[#253247] flex items-center gap-1.5">
                           <Share2 className="w-3.5 h-3.5 text-[#165DAD]" />
                           <span>Personal Referral Link</span>
                         </span>
-                        <span className="text-[11px] text-[#15803D] font-medium">Active</span>
+                        <span className="text-[11px] text-[#15803D] font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Active
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 select-all">
+
+                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                        <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-[200px] select-all">
                           {getReferralLink()}
                         </div>
-                        <button
-                          onClick={handleCopyLink}
-                          className="px-3 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 shrink-0"
-                          title="Copy referral link"
-                        >
-                          {copied ? (
-                            <Check className="w-3.5 h-3.5 text-white" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                          <span>{copied ? 'Copied' : 'Copy'}</span>
-                        </button>
-                        <button
-                          onClick={handleShareLink}
-                          className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors shrink-0"
-                          title="Share link"
-                        >
-                          <Share2 className="w-3.5 h-3.5" />
-                        </button>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Copy Button */}
+                          <button
+                            onClick={handleCopyLink}
+                            className="px-3 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 min-h-[36px]"
+                            title="Copy referral link to clipboard"
+                          >
+                            {copied ? (
+                              <Check className="w-3.5 h-3.5 text-white" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                            <span>{copied ? 'Copied' : 'Copy'}</span>
+                          </button>
+
+                          {/* WhatsApp Share Button */}
+                          <a
+                            href={getWhatsAppShareUrl()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-medium transition-colors flex items-center gap-1.5 min-h-[36px]"
+                            title="Share referral link via WhatsApp"
+                          >
+                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                            </svg>
+                            <span className="hidden sm:inline">WhatsApp</span>
+                          </a>
+
+                          {/* Native Device Share */}
+                          <button
+                            onClick={handleShareLink}
+                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors min-h-[36px]"
+                            title="Share link via device options"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        Share this link to invite new members into your direct lineage.
+                        Share this link to invite new members into your direct referral team.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* 4 Clean Summary Cards */}
+                {/* =========================================================================
+                    TASK 3 & 6 — FOUR PRIMARY SUMMARY CARDS WITH ACCURATE TERMINOLOGY
+                    Values from authenticated API responses; no false withdrawable claims.
+                    ========================================================================= */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {/* Earnings Wallet */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  {/* 1. Earnings Wallet */}
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
                     <div className="flex items-center justify-between text-xs font-medium text-slate-500">
                       <span>Earnings Wallet</span>
                       <Wallet className="w-4 h-4 text-[#15803D]" />
@@ -397,14 +450,14 @@ export default function DashboardPage() {
                     <div className="text-2xl font-bold text-[#253247] mt-2">
                       ₹{user.wallet?.availableEarningsINR?.toLocaleString('en-IN') ?? 0}
                     </div>
-                    <div className="text-[11px] text-[#15803D] mt-1 font-medium flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#15803D]" />
-                      <span>Withdrawable balance</span>
+                    <div className="text-[11px] text-slate-500 mt-1 font-medium flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                      <span>Available Balance (Simulation Mode)</span>
                     </div>
                   </div>
 
-                  {/* Shopping Vouchers */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  {/* 2. Shopping Vouchers */}
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
                     <div className="flex items-center justify-between text-xs font-medium text-slate-500">
                       <span>Shopping Vouchers</span>
                       <Ticket className="w-4 h-4 text-[#165DAD]" />
@@ -417,8 +470,8 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* Direct Referrals */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  {/* 3. Direct Referrals */}
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
                     <div className="flex items-center justify-between text-xs font-medium text-slate-500">
                       <span>Direct Referrals</span>
                       <Users className="w-4 h-4 text-slate-600" />
@@ -431,8 +484,8 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* Active EV Bookings */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  {/* 4. Active EV Bookings */}
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
                     <div className="flex items-center justify-between text-xs font-medium text-slate-500">
                       <span>EV Bookings</span>
                       <Bike className="w-4 h-4 text-[#165DAD]" />
@@ -446,86 +499,68 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Upgrade Callout (if not full qualified) */}
-                {!user.isFullQualified && (
-                  <div className="bg-blue-50/60 rounded-xl border border-blue-200 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                {/* =========================================================================
+                    TASK 5 — COMPACT MEMBERSHIP UPGRADE BANNER
+                    - For BASIC: ₹30,000 upgrade includes ₹30,000 voucher entitlement
+                    - For FREE: Membership activation options notice
+                    - For FULL: Hidden completely
+                    ========================================================================= */}
+                {user.currentPackage === 'BASIC' && !user.isFullQualified && (
+                  <div className="bg-blue-50/70 rounded-xl border border-blue-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-[#165DAD]">
-                        <Sparkles className="w-4 h-4 text-[#165DAD]" />
-                        <span>Full Qualification Upgrade Available</span>
+                        <Sparkles className="w-3.5 h-3.5 text-[#165DAD]" />
+                        <span>Full Membership Upgrade</span>
                       </div>
                       <h3 className="text-base font-bold text-[#253247]">
-                        Unlock ₹30,000 Shopping Vouchers & Binary Commission Rights
+                        Upgrade to Full Membership (₹30,000)
                       </h3>
                       <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                        Complete your ₹30,000 platform fee to receive a ₹30,000 shopping voucher credit and full eligibility for direct sponsor and binary matching rewards.
+                        Full Membership total package value is ₹33,000. Having already completed the ₹3,000 basic platform fee, upgrading for ₹30,000 entitles you to a <strong>₹30,000 vehicle shopping voucher credit</strong> (subject to approved terms) and full eligibility for binary matching rewards.
                       </p>
                     </div>
                     <button
                       onClick={handleUpgradePayment}
                       disabled={upgrading}
-                      className="shrink-0 px-5 py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors disabled:opacity-50"
+                      className="shrink-0 px-5 py-2.5 rounded-lg font-semibold text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-1.5 shadow-2xs"
                     >
-                      {upgrading ? 'Upgrading...' : 'Upgrade Now (₹30,000)'}
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{upgrading ? 'Processing...' : 'Upgrade Now (₹30,000)'}</span>
                     </button>
                   </div>
                 )}
 
-                {/* Quick Action Links */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-2">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-[#165DAD] flex items-center justify-center">
-                      <Bike className="w-4 h-4" />
+                {user.currentPackage === 'FREE' && (
+                  <div className="bg-amber-50/70 rounded-xl border border-amber-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Membership Activation Available</span>
+                      </div>
+                      <h3 className="text-base font-bold text-[#253247]">
+                        Activate Your ASKR EV Membership
+                      </h3>
+                      <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+                        Free accounts can activate Basic Membership (₹3,000 platform fee) to qualify for direct referral rewards, or Full Membership (₹33,000 with a ₹30,000 vehicle shopping voucher entitlement).
+                      </p>
+                      <p className="text-[11px] text-amber-700 font-medium">
+                        * Membership activation requires verified payment and authorized supervisory clearance.
+                      </p>
                     </div>
-                    <h4 className="text-sm font-bold text-[#253247]">Book an EV Bike</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      Explore our electric mobility lineup and apply your shopping vouchers towards booking deposits.
-                    </p>
-                    <Link
-                      href="/bikes"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#165DAD] hover:underline pt-1"
-                    >
-                      <span>Explore Showroom</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-2">
-                    <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <h4 className="text-sm font-bold text-[#253247]">View Direct Team</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      Review registered members, track activations, and inspect binary carry volumes.
-                    </p>
                     <button
-                      onClick={() => setActiveTab('team')}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#165DAD] hover:underline pt-1"
+                      onClick={() => setActiveTab('membership')}
+                      className="shrink-0 px-5 py-2.5 rounded-lg font-semibold text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors min-h-[44px] flex items-center justify-center gap-1.5 shadow-2xs"
                     >
-                      <span>Open Team Lineage</span>
+                      <span>Review Membership Plans</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
+                )}
 
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-2">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-[#15803D] flex items-center justify-center">
-                      <Wallet className="w-4 h-4" />
-                    </div>
-                    <h4 className="text-sm font-bold text-[#253247]">Earnings & Vouchers</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      Inspect your withdrawable balance, commission hold reserve, and voucher certificates.
-                    </p>
-                    <button
-                      onClick={() => setActiveTab('wallets')}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#165DAD] hover:underline pt-1"
-                    >
-                      <span>View Wallet Details</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Recent Direct Team Preview Table */}
+                {/* =========================================================================
+                    TASK 7 — RECENT DIRECT REFERRALS TABLE
+                    Includes Member ID, Name, Membership Status, Joining Date & View All
+                    ========================================================================= */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
                     <div>
@@ -534,9 +569,10 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => setActiveTab('team')}
-                      className="text-xs font-semibold text-[#165DAD] hover:underline"
+                      className="text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1 min-h-[36px]"
                     >
-                      View All Directs
+                      <span>View All (My Team)</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
@@ -546,9 +582,8 @@ export default function DashboardPage() {
                         <tr>
                           <th className="py-3 px-4">Member ID</th>
                           <th className="py-3 px-4">Name</th>
-                          <th className="py-3 px-4">Package</th>
-                          <th className="py-3 px-4">Qualification</th>
-                          <th className="py-3 px-4">Join Date</th>
+                          <th className="py-3 px-4">Membership Status</th>
+                          <th className="py-3 px-4">Joining Date</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-[#253247]">
@@ -567,14 +602,10 @@ export default function DashboardPage() {
                                 >
                                   {d.currentPackage}
                                 </span>
-                              </td>
-                              <td className="py-3 px-4">
-                                {d.isFullQualified ? (
-                                  <span className="text-[#15803D] font-medium flex items-center gap-1">
-                                    <Check className="w-3 h-3" /> Full Qualified
+                                {d.isFullQualified && (
+                                  <span className="ml-1.5 text-[10px] text-[#15803D] font-medium inline-flex items-center gap-0.5">
+                                    <Check className="w-2.5 h-2.5" /> Qualified
                                   </span>
-                                ) : (
-                                  <span className="text-slate-500">Basic / Free</span>
                                 )}
                               </td>
                               <td className="py-3 px-4 text-slate-500">
@@ -584,8 +615,8 @@ export default function DashboardPage() {
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={5} className="py-8 text-center text-slate-400">
-                              No direct team members yet. Share your referral link to build your team.
+                            <td colSpan={4} className="py-8 text-center text-slate-400">
+                              No direct team members registered yet. Share your referral link above to invite members.
                             </td>
                           </tr>
                         )}
@@ -662,17 +693,17 @@ export default function DashboardPage() {
                             Instant Qualification
                           </span>
                         </div>
-                        <h4 className="text-base font-bold text-[#253247] mt-1">Direct Fee Upgrade</h4>
+                        <h4 className="text-base font-bold text-[#253247] mt-1">Direct Upgrade to Full Plan</h4>
                         <div className="text-2xl font-bold text-[#253247] mt-2">₹30,000</div>
                         <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                          Pay the platform fee difference of ₹30,000. You immediately receive a <strong>₹30,000 Shopping Voucher</strong> credited to your account and full commission entitlements.
+                          Pay the ₹30,000 upgrade amount to receive an immediate <strong>₹30,000 Shopping Voucher credit</strong> (subject to approved terms) and full commission qualification. The basic platform fee of ₹3,000 is already credited.
                         </p>
                       </div>
 
                       <button
                         onClick={handleUpgradePayment}
                         disabled={upgrading || user.isFullQualified}
-                        className="w-full py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                        className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>
@@ -710,7 +741,7 @@ export default function DashboardPage() {
 
                       <button
                         disabled
-                        className="w-full py-2.5 rounded-lg font-medium text-xs text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
+                        className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
                       >
                         Pending Business Approval
                       </button>
@@ -871,29 +902,29 @@ export default function DashboardPage() {
             {/* TAB 4: EARNINGS WALLET */}
             {activeTab === 'wallets' && (
               <div className="space-y-6">
-                {/* 3 Clear Balances */}
+                {/* 3 Clear Balances with Simple Accurate Terminology */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                     <span className="text-xs font-semibold uppercase text-slate-400">
-                      Withdrawable Earnings
+                      Available Balance
                     </span>
                     <div className="text-2xl font-bold text-[#15803D] mt-2">
                       ₹{user.wallet?.availableEarningsINR?.toLocaleString('en-IN') ?? 0}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Available for withdrawal under platform compliance guidelines.
+                      Earnings account balance. Payouts currently disabled in compliance simulation mode.
                     </p>
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                     <span className="text-xs font-semibold uppercase text-slate-400">
-                      Commission Hold Reserve
+                      Pending / On Hold
                     </span>
                     <div className="text-2xl font-bold text-amber-600 mt-2">
                       ₹{user.wallet?.heldCommissionsINR?.toLocaleString('en-IN') ?? 0}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Target reserve of ₹1,000 maintained prior to your 2nd Full Qualified Direct. Released automatically upon qualification.
+                      Commission hold reserve of ₹1,000 maintained prior to your 2nd Full Qualified Direct. Released automatically upon qualification.
                     </p>
                   </div>
 
@@ -905,7 +936,7 @@ export default function DashboardPage() {
                       ₹{user.wallet?.pendingRecoveryINR?.toLocaleString('en-IN') ?? 0}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Advances and ledger reconciliations. Wallets are never allowed to fall below ₹0.
+                      Advance recoveries and ledger adjustments. Wallets are never allowed to drop below ₹0.
                     </p>
                   </div>
                 </div>
@@ -915,25 +946,25 @@ export default function DashboardPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-bold text-[#253247]">Withdrawal Request</h3>
-                      <p className="text-xs text-slate-500">Request payout of verified withdrawable earnings</p>
+                      <p className="text-xs text-slate-500">Payout processing status</p>
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-semibold self-start">
-                      Simulation Mode
+                      Simulation Mode — Withdrawals Unavailable
                     </span>
                   </div>
 
                   <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 text-xs text-slate-600 space-y-1">
                     <div>
-                      <strong>Compliance Notice:</strong> In simulation mode, payouts are simulated and no live bank debits or wire transfers will be executed without supervisory admin clearance.
+                      <strong>Compliance Notice:</strong> In compliance simulation mode, payouts are simulated and live bank debits or wire transfers are strictly disabled until supervisory admin clearance.
                     </div>
                     <div>Minimum withdrawal threshold: ₹1,000. Maximum processing window: 24-48 business hours.</div>
                   </div>
 
                   <button
                     disabled
-                    className="px-5 py-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-400 font-medium text-xs cursor-not-allowed"
+                    className="px-5 py-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-400 font-medium text-xs cursor-not-allowed min-h-[44px]"
                   >
-                    Request Withdrawal (Disabled in Simulation Mode)
+                    Withdrawals Unavailable (Simulation Only Mode)
                   </button>
                 </div>
               </div>
@@ -956,7 +987,7 @@ export default function DashboardPage() {
                   </div>
                   <Link
                     href="/bikes"
-                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 self-start md:self-auto"
+                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 self-start md:self-auto min-h-[44px]"
                   >
                     <Bike className="w-4 h-4" />
                     <span>Redeem on EV Superbike</span>
@@ -1029,7 +1060,7 @@ export default function DashboardPage() {
                     </div>
                     <Link
                       href="/bikes"
-                      className="px-4 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors"
+                      className="px-4 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors min-h-[40px] flex items-center"
                     >
                       Browse Fleet
                     </Link>
