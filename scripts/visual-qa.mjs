@@ -59,7 +59,7 @@ class CdpClient {
 }
 
 async function runVisualQA() {
-  console.log('--- Starting ASKR EV Classic Corporate Light-Theme Visual QA Suite ---');
+  console.log('--- Starting ASKR EV Refined Homepage & Product Display Visual QA Suite ---');
   const tempProfile = path.join(process.env.TEMP, 'chrome_qa_profile_' + Date.now());
 
   // Obtain test authentication credentials
@@ -195,28 +195,34 @@ async function runVisualQA() {
         // Wait for components and data to render
         await sleep(2200);
 
-        // Inspect computed styles
+        // Inspect computed styles & page content
         const evalResult = await cdp.send('Runtime.evaluate', {
           expression: `(() => {
             const body = document.body;
             const bodyStyle = window.getComputedStyle(body);
             const nav = document.querySelector('nav') || document.querySelector('header');
             const navStyle = nav ? window.getComputedStyle(nav) : null;
+            const h1 = document.querySelector('h1');
+            const bikeLinks = document.querySelectorAll('a[href*="/bikes/"]');
+            const membershipLinks = document.querySelectorAll('a[href*="/auth/register"]');
 
             const isLightBg = bodyStyle.backgroundColor === 'rgb(255, 255, 255)' || 
                               bodyStyle.backgroundColor === 'rgb(247, 249, 252)' ||
                               bodyStyle.backgroundColor === 'rgba(255, 255, 255, 1)';
             const isDarkNavy = bodyStyle.backgroundColor === 'rgb(6, 11, 24)';
+            const noHorizontalOverflow = document.documentElement.scrollWidth <= (window.innerWidth + 5);
 
             return {
               title: document.title,
+              h1Text: h1 ? h1.textContent.trim() : null,
+              bikeCardsCount: bikeLinks.length,
               bodyBg: bodyStyle.backgroundColor,
               bodyColor: bodyStyle.color,
               fontFamily: bodyStyle.fontFamily.split(',')[0].replace(/['"]/g, ''),
               navBg: navStyle ? navStyle.backgroundColor : 'none',
               isLightBg,
               isDarkNavy,
-              hasCssLoaded: true,
+              noHorizontalOverflow,
             };
           })()`,
           returnByValue: true,
@@ -234,6 +240,9 @@ async function runVisualQA() {
           route: route.path,
           name: route.name,
           mode: vp.mode,
+          h1Text: styles.h1Text,
+          bikeCardsCount: styles.bikeCardsCount,
+          noHorizontalOverflow: styles.noHorizontalOverflow,
           isLightCorporateTheme: styles.isLightBg,
           isDarkThemeEliminated: !styles.isDarkNavy,
           bodyBg: styles.bodyBg,
@@ -246,7 +255,7 @@ async function runVisualQA() {
         });
 
         console.log(
-          `  ✓ [${vp.mode}] ${route.path.padEnd(26)} | Light: ${styles.isLightBg ? 'YES' : 'NO'} | Body BG: ${styles.bodyBg} | Color: ${styles.bodyColor} | Shot: ${screenshotFileName}`
+          `  ✓ [${vp.mode}] ${route.path.padEnd(26)} | Light: ${styles.isLightBg ? 'YES' : 'NO'} | H1: "${styles.h1Text || 'N/A'}" | Bikes: ${styles.bikeCardsCount} | Shot: ${screenshotFileName}`
         );
       }
     }

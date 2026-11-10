@@ -201,25 +201,25 @@ export default function Navbar() {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-3">
+        <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-2">
           <Link
             href="/"
             onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="block px-3 py-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] flex items-center"
           >
             Home
           </Link>
           <Link
             href="/bikes"
             onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="block px-3 py-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] flex items-center"
           >
             EV Bikes
           </Link>
           <Link
             href="/#membership"
             onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="block px-3 py-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] flex items-center"
           >
             Membership
           </Link>
@@ -227,7 +227,7 @@ export default function Navbar() {
             <Link
               href="/dashboard"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="block px-3 py-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] flex items-center"
             >
               Member Portal
             </Link>
@@ -236,7 +236,7 @@ export default function Navbar() {
             <Link
               href="/admin"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="block px-3 py-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-50 min-h-[44px] flex items-center"
             >
               Admin Hub
             </Link>
@@ -246,24 +246,24 @@ export default function Navbar() {
             {currentUser ? (
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50"
+                className="w-full flex items-center justify-center gap-2 min-h-[48px] py-3 rounded-lg border border-red-200 text-red-600 text-base font-medium hover:bg-red-50"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Sign Out</span>
               </button>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 <Link
                   href="/auth/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="py-2.5 text-center rounded-lg border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50"
+                  className="min-h-[46px] flex items-center justify-center text-center rounded-lg border border-slate-200 text-slate-700 text-base font-medium hover:bg-slate-50"
                 >
                   Login
                 </Link>
                 <Link
                   href="/auth/register"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="py-2.5 text-center rounded-lg bg-[#165DAD] text-white text-sm font-medium hover:bg-[#124B8D]"
+                  className="min-h-[46px] flex items-center justify-center text-center rounded-lg bg-[#165DAD] text-white text-base font-medium hover:bg-[#124B8D] shadow-sm"
                 >
                   Register
                 </Link>

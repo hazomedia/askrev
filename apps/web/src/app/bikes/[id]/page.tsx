@@ -110,11 +110,14 @@ export default function BikeDetailPage() {
         {/* 2-Column Overview */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
           {/* Left: Product Image */}
-          <div className="lg:col-span-7 bg-[#F7F9FC] rounded-xl border border-slate-200 p-8 flex items-center justify-center">
+          <div className="lg:col-span-7 bg-[#F7F9FC] rounded-xl border border-slate-200 p-8 flex flex-col items-center justify-center relative">
+            <span className="absolute top-4 right-4 text-xs font-semibold tracking-wider uppercase text-slate-500 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs">
+              Concept Prototype
+            </span>
             <img
               src={imgSource}
               alt={bike.name}
-              className="w-full max-h-96 object-contain"
+              className="w-full max-h-96 object-contain py-4"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = '/images/bikes/thunder-pro.svg';
               }}
@@ -122,7 +125,7 @@ export default function BikeDetailPage() {
           </div>
 
           {/* Right: Pricing, Summary & Single Primary Action */}
-          <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-8 space-y-6 shadow-sm">
+          <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-sm">
             <div>
               <span className="text-xs font-semibold text-[#165DAD] uppercase tracking-wider">
                 {bike.modelCode}
@@ -130,15 +133,15 @@ export default function BikeDetailPage() {
               <h1 className="text-2xl sm:text-3xl font-bold text-[#253247] mt-1.5">
                 {bike.name}
               </h1>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              <p className="text-sm text-slate-500 mt-1 leading-relaxed">
                 {bike.tagline}
               </p>
             </div>
 
             {/* Price Box */}
-            <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-2 text-xs">
+            <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-2.5 text-sm">
               <div className="flex justify-between items-baseline">
-                <span className="text-slate-500">Ex-Showroom Price:</span>
+                <span className="text-slate-500">Indicative Price:</span>
                 <span className="text-xl font-bold text-[#253247]">
                   ₹{bike.exShowroomPriceINR.toLocaleString('en-IN')}
                 </span>
@@ -160,14 +163,14 @@ export default function BikeDetailPage() {
             {/* One Clear Book Now Action */}
             <button
               onClick={() => setModalOpen(true)}
-              className="w-full py-3 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-sm font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
+              className="w-full min-h-[48px] py-3.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-base font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
             >
               <span>Book Now</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            <div className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-slate-400" />
+            <div className="text-xs text-slate-500 text-center flex items-center justify-center gap-1.5 leading-relaxed">
+              <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" />
               <span>Full compliance with verified booking receipts</span>
             </div>
           </div>
@@ -175,18 +178,23 @@ export default function BikeDetailPage() {
 
         {/* Clean Engineering Specifications Table */}
         <div className="mt-16 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-          <div className="px-6 py-4 bg-[#F7F9FC] border-b border-slate-200">
-            <h2 className="text-base font-bold text-[#253247]">Technical Specifications</h2>
-            <p className="text-xs text-slate-500">Official commercial parameters for {bike.name}</p>
+          <div className="px-6 py-4 bg-[#F7F9FC] border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-[#253247]">Indicative Concept Specifications</h2>
+              <p className="text-xs text-slate-500">Preliminary technical design parameters for {bike.name}</p>
+            </div>
+            <span className="text-xs text-slate-500 bg-white px-2.5 py-1 rounded border border-slate-200 self-start sm:self-auto">
+              Pre-Production
+            </span>
           </div>
 
-          <div className="divide-y divide-slate-100 text-xs">
+          <div className="divide-y divide-slate-100 text-sm">
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Battery Capacity</span>
-              <span className="text-[#253247] font-semibold">{bike.batteryCapacityKwh} kWh Lithium Pack</span>
+              <span className="text-slate-500 font-medium">Battery Pack Architecture</span>
+              <span className="text-[#253247] font-semibold">{bike.batteryCapacityKwh} kWh Lithium Battery</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Max Riding Range</span>
+              <span className="text-slate-500 font-medium">Estimated Riding Range</span>
               <span className="text-[#253247] font-semibold">{bike.rangeKm} km per charge</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
@@ -194,7 +202,7 @@ export default function BikeDetailPage() {
               <span className="text-[#253247] font-semibold">{bike.topSpeedKmh} km/h</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Charging Time (0-100%)</span>
+              <span className="text-slate-500 font-medium">Estimated Charging Duration</span>
               <span className="text-[#253247] font-semibold">{bike.chargingTimeHours} hours</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
@@ -214,12 +222,12 @@ export default function BikeDetailPage() {
               <span className="text-[#253247] font-semibold">{bike.specs?.brakes || 'Dual Disc with CBS & Regenerative'}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Instrument Cluster</span>
-              <span className="text-[#253247] font-semibold">{bike.specs?.display || '7-inch Touch TFT Cluster'}</span>
+              <span className="text-slate-500 font-medium">Instrument Display</span>
+              <span className="text-[#253247] font-semibold">{bike.specs?.display || 'Digital TFT Telemetry Display'}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Manufacturer Warranty</span>
-              <span className="text-[#15803D] font-semibold">{bike.specs?.warranty || '3 Years Comprehensive'}</span>
+              <span className="text-slate-500 font-medium">Status</span>
+              <span className="text-[#165DAD] font-semibold">Pre-Production Concept Design</span>
             </div>
           </div>
         </div>

@@ -17,17 +17,17 @@ export default function Footer() {
                 ASKR <span className="text-[#165DAD]">EV</span>
               </span>
             </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              ASKR EV Mobility Private Limited is an Indian electric automobile company developing sustainable electric motorcycles and verified consumer membership commerce.
+            <p className="text-sm text-slate-500 leading-relaxed">
+              ASKR EV is an electric mobility platform presenting next-generation electric motorcycle concepts and verified customer membership management.
             </p>
           </div>
 
           {/* EV Models */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-[#253247] uppercase tracking-wider">
-              EV Models
+              EV Concepts
             </h4>
-            <ul className="space-y-2 text-xs">
+            <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/bikes" className="hover:text-[#165DAD] transition-colors">
                   ASKR Thunder Pro
@@ -51,7 +51,7 @@ export default function Footer() {
             <h4 className="text-xs font-bold text-[#253247] uppercase tracking-wider">
               Membership Portal
             </h4>
-            <ul className="space-y-2 text-xs">
+            <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/#membership" className="hover:text-[#165DAD] transition-colors">
                   Membership Plans
@@ -64,7 +64,7 @@ export default function Footer() {
               </li>
               <li>
                 <Link href="/dashboard" className="hover:text-[#165DAD] transition-colors">
-                  Customer Dashboard
+                  Member Portal
                 </Link>
               </li>
             </ul>
@@ -73,18 +73,18 @@ export default function Footer() {
           {/* Corporate Compliance */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-[#253247] uppercase tracking-wider">
-              Governance & Compliance
+              Governance & Safety
             </h4>
             <ul className="space-y-1.5 text-xs text-slate-500 leading-relaxed">
-              <li>Direct selling guidelines compliant.</li>
+              <li>Direct selling guidelines compliant framework.</li>
               <li>Currency: INR (₹) • Timezone: Asia/Kolkata.</li>
-              <li>Shopping vouchers are non-cash retail credits.</li>
+              <li>Shopping vouchers are non-cash vehicle purchase credits.</li>
               <li className="pt-2">
                 <Link
                   href="/simulator"
-                  className="text-[11px] text-slate-400 hover:text-slate-600 underline inline-flex items-center gap-1"
+                  className="text-xs text-slate-400 hover:text-slate-600 underline inline-flex items-center gap-1"
                 >
-                  <span>Internal Developer QA Tools</span>
+                  <span>Internal Developer Verification Tools</span>
                   <ExternalLink className="w-3 h-3" />
                 </Link>
               </li>
@@ -92,15 +92,20 @@ export default function Footer() {
           </div>
         </div>
 
+        {/* Disclaimer Note */}
+        <div className="mt-8 pt-6 border-t border-slate-200 text-xs text-slate-400 leading-relaxed">
+          <strong>Notice:</strong> Vehicle images, specifications, range estimates, and prices displayed on this platform are indicative pre-production concept designs subject to final automotive homologation and production release.
+        </div>
+
         {/* Bottom bar */}
-        <div className="mt-8 pt-8 border-t border-slate-200 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="mt-4 pt-4 border-t border-slate-200/60 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            &copy; 2026 <strong className="text-slate-700">ASKR EV Mobility Private Limited</strong>. All rights reserved.
+            &copy; 2026 <strong className="text-slate-700">ASKR EV Platform</strong>. All rights reserved.
           </div>
-          <div className="flex items-center gap-4 text-xs">
-            <span>Corporate CIN: U34100DL2026PTC123456</span>
+          <div className="flex items-center gap-4 text-xs text-slate-500">
+            <span>Pre-Production Technology Platform</span>
             <span>•</span>
-            <span>Made in India</span>
+            <span>India</span>
           </div>
         </div>
       </div>

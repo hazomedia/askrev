@@ -1,78 +1,132 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="100%" height="100%">
   <defs>
-    <linearGradient id="studioBg2" x1="0%" y1="0%" x2="0%" y2="100%">
+    <radialGradient id="studioFloorCity" cx="50%" cy="80%" r="65%">
       <stop offset="0%" stop-color="#FFFFFF" />
-      <stop offset="100%" stop-color="#F1F5F9" />
+      <stop offset="60%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </radialGradient>
+
+    <radialGradient id="tireShadowCity" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.35" />
+      <stop offset="60%" stop-color="#334155" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="cityBlue" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="40%" stop-color="#165DAD" />
+      <stop offset="100%" stop-color="#1E3A8A" />
     </linearGradient>
-    <linearGradient id="bodyGreen" x1="0%" y1="0%" x2="100%" y2="50%">
-      <stop offset="0%" stop-color="#166534" />
-      <stop offset="50%" stop-color="#15803D" />
-      <stop offset="100%" stop-color="#14532D" />
+
+    <linearGradient id="matteSlate" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#1E293B" />
     </linearGradient>
-    <filter id="softShadow2" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.12" />
+
+    <linearGradient id="alloyCity" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="50%" stop-color="#CBD5E1" />
+      <stop offset="100%" stop-color="#94A3B8" />
+    </linearGradient>
+
+    <filter id="cityShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.18" />
     </filter>
   </defs>
 
-  <!-- Clean Studio Background -->
-  <rect width="800" height="480" fill="url(#studioBg2)" rx="12" />
+  <!-- Clean Studio Floor Background -->
+  <rect width="800" height="480" fill="url(#studioFloorCity)" />
 
-  <!-- Ground Soft Shadow -->
-  <ellipse cx="400" cy="395" rx="300" ry="18" fill="#64748B" opacity="0.16" />
-
-  <!-- Rear Wheel -->
-  <g id="rearWheel">
-    <circle cx="230" cy="335" r="70" fill="#1E293B" stroke="#0F172A" stroke-width="12" />
-    <circle cx="230" cy="335" r="56" fill="#334155" stroke="#94A3B8" stroke-width="2" />
-    <circle cx="230" cy="335" r="28" fill="#E2E8F0" stroke="#64748B" stroke-width="2" />
-    <circle cx="230" cy="335" r="12" fill="#15803D" />
-    <line x1="230" y1="279" x2="230" y2="391" stroke="#94A3B8" stroke-width="2" />
-    <line x1="174" y1="335" x2="286" y2="335" stroke="#94A3B8" stroke-width="2" />
-    <circle cx="230" cy="335" r="40" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="3,3" />
-    <rect x="204" y="322" width="16" height="26" rx="3" fill="#165DAD" />
+  <!-- Pre-Production Concept Watermark Badge -->
+  <g transform="translate(620, 24)">
+    <rect width="156" height="26" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1" />
+    <circle cx="16" cy="13" r="4" fill="#165DAD" />
+    <text x="28" y="17" fill="#475569" font-size="10" font-weight="700" letter-spacing="1" font-family="Inter, sans-serif">CONCEPT DESIGN</text>
   </g>
 
-  <!-- Front Wheel -->
-  <g id="frontWheel">
-    <circle cx="590" cy="335" r="70" fill="#1E293B" stroke="#0F172A" stroke-width="12" />
-    <circle cx="590" cy="335" r="56" fill="#334155" stroke="#94A3B8" stroke-width="2" />
-    <circle cx="590" cy="335" r="28" fill="#E2E8F0" stroke="#64748B" stroke-width="2" />
-    <circle cx="590" cy="335" r="12" fill="#15803D" />
-    <line x1="590" y1="279" x2="590" y2="391" stroke="#94A3B8" stroke-width="2" />
-    <line x1="534" y1="335" x2="646" y2="335" stroke="#94A3B8" stroke-width="2" />
-    <circle cx="590" cy="335" r="40" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="3,3" />
-    <rect x="598" y="322" width="16" height="26" rx="3" fill="#165DAD" />
+  <!-- Ground Soft Shadows -->
+  <ellipse cx="230" cy="385" rx="88" ry="16" fill="url(#tireShadowCity)" />
+  <ellipse cx="580" cy="385" rx="88" ry="16" fill="url(#tireShadowCity)" />
+  <ellipse cx="405" cy="392" rx="240" ry="14" fill="#334155" opacity="0.10" />
+
+  <!-- ==================== REAR WHEEL ASSEMBLY ==================== -->
+  <g id="rear-wheel">
+    <circle cx="230" cy="320" r="74" fill="#1E293B" stroke="#0F172A" stroke-width="10" />
+    <circle cx="230" cy="320" r="66" fill="none" stroke="#334155" stroke-width="2" />
+    <circle cx="230" cy="320" r="58" fill="#0F172A" stroke="#475569" stroke-width="4" />
+    <circle cx="230" cy="320" r="38" fill="#94A3B8" stroke="#334155" stroke-width="2" />
+    <circle cx="230" cy="320" r="28" fill="#0F172A" />
+    <!-- 6-Spoke Urban Commuter Alloy Wheel -->
+    <line x1="230" y1="264" x2="230" y2="376" stroke="url(#alloyCity)" stroke-width="4" />
+    <line x1="181" y1="292" x2="279" y2="348" stroke="url(#alloyCity)" stroke-width="4" />
+    <line x1="181" y1="348" x2="279" y2="292" stroke="url(#alloyCity)" stroke-width="4" />
+    <circle cx="230" cy="320" r="14" fill="#1E293B" stroke="#64748B" stroke-width="2" />
+    <circle cx="230" cy="320" r="6" fill="#165DAD" />
+    <rect x="204" y="306" width="14" height="26" rx="2" fill="#DC2626" />
   </g>
 
-  <!-- Step-Through Chassis Body in Forest Green -->
-  <path d="M 230 335 L 370 330 L 430 315 L 480 235 L 530 175 L 490 175 L 390 275 L 290 275 Z" fill="url(#bodyGreen)" filter="url(#softShadow2)" />
-  <rect x="330" y="275" width="120" height="40" rx="6" fill="#1E293B" />
-  <text x="390" y="300" fill="#E2E8F0" font-size="10" font-weight="700" text-anchor="middle" font-family="Inter, sans-serif">2.5 kWh LFP PACK</text>
-
-  <!-- Comfort Saddle -->
-  <path d="M 270 255 Q 320 245 370 260 L 360 275 L 280 275 Z" fill="#0F172A" />
-
-  <!-- Upright Handlebars -->
-  <line x1="590" y1="335" x2="520" y2="145" stroke="#64748B" stroke-width="8" stroke-linecap="round" />
-  <path d="M 520 145 L 490 115 L 530 110" fill="none" stroke="#334155" stroke-width="6" stroke-linecap="round" />
-
-  <!-- Headlight -->
-  <circle cx="535" cy="175" r="10" fill="#E2E8F0" />
-  <circle cx="535" cy="175" r="5" fill="#15803D" />
-
-  <!-- Model Branding -->
-  <text x="420" y="215" fill="#253247" font-size="18" font-weight="800" font-family="Inter, sans-serif">CITY <tspan fill="#15803D">CRUISE</tspan></text>
-  <text x="420" y="230" fill="#64748B" font-size="10" font-weight="500" font-family="Inter, sans-serif">DAILY URBAN EFFICIENCY</text>
-
-  <!-- Clean Specs Pills in White Corporate Style -->
-  <g transform="translate(60, 40)">
-    <rect width="120" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" />
-    <text x="12" y="16" fill="#64748B" font-size="9" font-weight="600" font-family="Inter, sans-serif">RANGE</text>
-    <text x="12" y="29" fill="#15803D" font-size="13" font-weight="800" font-family="Inter, sans-serif">90 km</text>
+  <!-- ==================== FRONT WHEEL ASSEMBLY ==================== -->
+  <g id="front-wheel">
+    <circle cx="580" cy="320" r="74" fill="#1E293B" stroke="#0F172A" stroke-width="10" />
+    <circle cx="580" cy="320" r="66" fill="none" stroke="#334155" stroke-width="2" />
+    <circle cx="580" cy="320" r="58" fill="#0F172A" stroke="#475569" stroke-width="4" />
+    <circle cx="580" cy="320" r="44" fill="#94A3B8" stroke="#334155" stroke-width="2" />
+    <circle cx="580" cy="320" r="32" fill="#0F172A" />
+    <line x1="580" y1="264" x2="580" y2="376" stroke="url(#alloyCity)" stroke-width="4" />
+    <line x1="531" y1="292" x2="629" y2="348" stroke="url(#alloyCity)" stroke-width="4" />
+    <line x1="531" y1="348" x2="629" y2="292" stroke="url(#alloyCity)" stroke-width="4" />
+    <circle cx="580" cy="320" r="14" fill="#1E293B" stroke="#64748B" stroke-width="2" />
+    <circle cx="580" cy="320" r="6" fill="#165DAD" />
+    <rect x="586" y="306" width="14" height="26" rx="2" fill="#DC2626" />
   </g>
-  <g transform="translate(195, 40)">
-    <rect width="120" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" />
-    <text x="12" y="16" fill="#64748B" font-size="9" font-weight="600" font-family="Inter, sans-serif">TOP SPEED</text>
-    <text x="12" y="29" fill="#165DAD" font-size="13" font-weight="800" font-family="Inter, sans-serif">70 km/h</text>
-  </g>
+
+  <!-- ==================== REAR SWINGARM & SUSPENSION ==================== -->
+  <path d="M 230 320 L 370 310 L 365 330 L 235 330 Z" fill="#334155" stroke="#1E293B" stroke-width="2" />
+  <line x1="280" y1="320" x2="310" y2="230" stroke="#CBD5E1" stroke-width="8" stroke-linecap="round" />
+  <line x1="280" y1="320" x2="310" y2="230" stroke="#165DAD" stroke-width="6" stroke-dasharray="3,3" />
+
+  <!-- ==================== BATTERY & MOTOR CASEMENT ==================== -->
+  <polygon points="290,320 460,320 480,240 310,240" fill="url(#matteSlate)" stroke="#475569" stroke-width="2" />
+  <!-- Cooling Vents -->
+  <rect x="330" y="255" width="110" height="8" rx="2" fill="#0F172A" />
+  <rect x="330" y="270" width="110" height="8" rx="2" fill="#0F172A" />
+  <rect x="330" y="285" width="110" height="8" rx="2" fill="#0F172A" />
+  <!-- Electric Motor Hub -->
+  <circle cx="375" cy="315" r="28" fill="#0F172A" stroke="url(#alloyCity)" stroke-width="2" />
+  <text x="375" y="318" fill="#94A3B8" font-size="7" font-weight="700" text-anchor="middle" font-family="Inter, sans-serif">2.5 kWh</text>
+
+  <!-- ==================== URBAN ROADSTER BODYWORK ==================== -->
+  <!-- Sleek Curved Fuel-Tank Style Battery Top Cover -->
+  <path d="M 270 230 C 310 230, 350 195, 430 175 C 475 165, 515 180, 535 215 C 500 245, 455 265, 390 265 C 330 265, 290 245, 270 230 Z" 
+        fill="url(#cityBlue)" filter="url(#cityShadow)" stroke="#60A5FA" stroke-width="1.2" />
+
+  <!-- Silver Accent Cowl Insert -->
+  <path d="M 430 185 L 500 198 L 475 225 L 415 210 Z" fill="url(#alloyCity)" opacity="0.8" />
+
+  <!-- Branding -->
+  <text x="440" y="202" fill="#1E293B" font-size="10" font-weight="900" letter-spacing="1.5" font-family="Inter, sans-serif">ASKR</text>
+  <text x="440" y="213" fill="#1E40AF" font-size="7" font-weight="700" letter-spacing="1" font-family="Inter, sans-serif">CITY CRUISE</text>
+
+  <!-- ==================== PLUSH COMFORT DUAL SADDLE ==================== -->
+  <path d="M 210 220 C 260 215, 320 210, 380 230 L 370 242 C 310 225, 250 230, 205 235 Z" fill="#0F172A" />
+  <!-- Rear Passenger Grab Rail -->
+  <path d="M 195 220 L 225 218 L 245 224" fill="none" stroke="url(#alloyCity)" stroke-width="4" stroke-linecap="round" />
+
+  <!-- ==================== FRONT FORK & UPRIGHT HANDLEBAR ==================== -->
+  <!-- Telescopic Chrome Front Forks -->
+  <line x1="535" y1="185" x2="578" y2="318" stroke="url(#alloyCity)" stroke-width="7" stroke-linecap="round" />
+  <line x1="560" y1="260" x2="580" y2="322" stroke="#1E293B" stroke-width="10" stroke-linecap="round" />
+
+  <!-- Upright Commuter Handlebars -->
+  <line x1="530" y1="155" x2="540" y2="185" stroke="#334155" stroke-width="6" stroke-linecap="round" />
+  <circle x="528" y="154" r="5" fill="#0F172A" />
+  <line x1="528" y1="153" x2="512" y2="158" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" />
+
+  <!-- Chrome Round Classic Roadster Headlamp -->
+  <circle cx="560" cy="195" r="14" fill="#0F172A" stroke="url(#alloyCity)" stroke-width="2.5" />
+  <circle cx="560" cy="195" r="10" fill="#93C5FD" opacity="0.8" />
+  <circle cx="560" cy="195" r="5" fill="#FFFFFF" />
+
+  <!-- Commuter Front Fender -->
+  <path d="M 540 270 Q 580 250 625 285" fill="none" stroke="url(#cityBlue)" stroke-width="6" stroke-linecap="round" />
 </svg>

@@ -1,80 +1,129 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="100%" height="100%">
   <defs>
-    <linearGradient id="studioBg3" x1="0%" y1="0%" x2="0%" y2="100%">
+    <radialGradient id="studioFloorSport" cx="50%" cy="80%" r="65%">
       <stop offset="0%" stop-color="#FFFFFF" />
-      <stop offset="100%" stop-color="#F1F5F9" />
+      <stop offset="60%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </radialGradient>
+
+    <radialGradient id="tireShadowSport" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.35" />
+      <stop offset="60%" stop-color="#334155" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="racingGreen" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#22C55E" />
+      <stop offset="35%" stop-color="#15803D" />
+      <stop offset="80%" stop-color="#14532D" />
+      <stop offset="100%" stop-color="#052E16" />
     </linearGradient>
-    <linearGradient id="bodySlate" x1="0%" y1="0%" x2="100%" y2="50%">
-      <stop offset="0%" stop-color="#0F172A" />
-      <stop offset="50%" stop-color="#1E293B" />
+
+    <linearGradient id="titaniumGray" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="50%" stop-color="#64748B" />
       <stop offset="100%" stop-color="#334155" />
     </linearGradient>
-    <filter id="softShadow3" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.12" />
+
+    <linearGradient id="goldRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE68A" />
+      <stop offset="50%" stop-color="#D97706" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+
+    <filter id="sportShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.22" />
     </filter>
   </defs>
 
-  <!-- Clean Studio Background -->
-  <rect width="800" height="480" fill="url(#studioBg3)" rx="12" />
+  <!-- Clean Studio Floor Background -->
+  <rect width="800" height="480" fill="url(#studioFloorSport)" />
 
-  <!-- Ground Soft Shadow -->
-  <ellipse cx="400" cy="395" rx="320" ry="18" fill="#64748B" opacity="0.18" />
-
-  <!-- Rear Wheel -->
-  <g id="rearWheel">
-    <circle cx="200" cy="335" r="76" fill="#0F172A" stroke="#020617" stroke-width="14" />
-    <circle cx="200" cy="335" r="62" fill="#1E293B" stroke="#64748B" stroke-width="2.5" />
-    <circle cx="200" cy="335" r="32" fill="#E2E8F0" stroke="#475569" stroke-width="2" />
-    <circle cx="200" cy="335" r="14" fill="#165DAD" />
-    <line x1="200" y1="273" x2="200" y2="397" stroke="#94A3B8" stroke-width="2" />
-    <line x1="138" y1="335" x2="262" y2="335" stroke="#94A3B8" stroke-width="2" />
-    <circle cx="200" cy="335" r="44" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="4,4" />
-    <rect x="170" y="320" width="18" height="28" rx="3" fill="#DC2626" />
+  <!-- Pre-Production Concept Watermark Badge -->
+  <g transform="translate(620, 24)">
+    <rect width="156" height="26" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1" />
+    <circle cx="16" cy="13" r="4" fill="#15803D" />
+    <text x="28" y="17" fill="#475569" font-size="10" font-weight="700" letter-spacing="1" font-family="Inter, sans-serif">CONCEPT DESIGN</text>
   </g>
 
-  <!-- Front Wheel -->
-  <g id="frontWheel">
-    <circle cx="620" cy="335" r="76" fill="#0F172A" stroke="#020617" stroke-width="14" />
-    <circle cx="620" cy="335" r="62" fill="#1E293B" stroke="#64748B" stroke-width="2.5" />
-    <circle cx="620" cy="335" r="32" fill="#E2E8F0" stroke="#475569" stroke-width="2" />
-    <circle cx="620" cy="335" r="14" fill="#165DAD" />
-    <line x1="620" y1="273" x2="620" y2="397" stroke="#94A3B8" stroke-width="2" />
-    <line x1="558" y1="335" x2="682" y2="335" stroke="#94A3B8" stroke-width="2" />
-    <circle cx="620" cy="335" r="44" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="4,4" />
-    <rect x="628" y="320" width="18" height="28" rx="3" fill="#DC2626" />
+  <!-- Ground Soft Shadows -->
+  <ellipse cx="230" cy="385" rx="90" ry="16" fill="url(#tireShadowSport)" />
+  <ellipse cx="580" cy="385" rx="90" ry="16" fill="url(#tireShadowSport)" />
+  <ellipse cx="405" cy="392" rx="240" ry="14" fill="#334155" opacity="0.12" />
+
+  <!-- ==================== REAR WHEEL ASSEMBLY ==================== -->
+  <g id="rear-wheel">
+    <circle cx="230" cy="320" r="76" fill="#1E293B" stroke="#0F172A" stroke-width="10" />
+    <circle cx="230" cy="320" r="68" fill="none" stroke="#334155" stroke-width="2" />
+    <circle cx="230" cy="320" r="60" fill="#0F172A" stroke="url(#goldRim)" stroke-width="3" />
+    <circle cx="230" cy="320" r="42" fill="#94A3B8" stroke="#334155" stroke-width="2" />
+    <circle cx="230" cy="320" r="30" fill="#0F172A" />
+    <!-- 10-Spoke Lightweight Forged Racing Wheel -->
+    <line x1="230" y1="262" x2="230" y2="378" stroke="url(#goldRim)" stroke-width="3.5" />
+    <line x1="175" y1="288" x2="285" y2="352" stroke="url(#goldRim)" stroke-width="3.5" />
+    <line x1="175" y1="352" x2="285" y2="288" stroke="url(#goldRim)" stroke-width="3.5" />
+    <circle cx="230" cy="320" r="14" fill="#1E293B" stroke="#64748B" stroke-width="2" />
+    <circle cx="230" cy="320" r="6" fill="#15803D" />
+    <rect x="202" y="304" width="16" height="28" rx="3" fill="#DC2626" />
   </g>
 
-  <!-- Aerodynamic Racing Fairings in Charcoal and Deep Blue -->
-  <path d="M 220 225 L 350 235 L 460 155 L 550 165 L 610 215 L 560 325 L 420 335 L 320 335 L 290 275 Z" fill="url(#bodySlate)" filter="url(#softShadow3)" />
-  
-  <!-- High Capacity Battery Pack -->
-  <polygon points="310,335 550,335 570,265 330,265" fill="#020617" />
-  <text x="440" y="310" fill="#94A3B8" font-size="11" font-weight="700" text-anchor="middle" font-family="Inter, sans-serif">5.2 kWh HIGH-DENSITY NMC</text>
+  <!-- ==================== FRONT WHEEL ASSEMBLY ==================== -->
+  <g id="front-wheel">
+    <circle cx="580" cy="320" r="76" fill="#1E293B" stroke="#0F172A" stroke-width="10" />
+    <circle cx="580" cy="320" r="68" fill="none" stroke="#334155" stroke-width="2" />
+    <circle cx="580" cy="320" r="60" fill="#0F172A" stroke="url(#goldRim)" stroke-width="3" />
+    <circle cx="580" cy="320" r="50" fill="#94A3B8" stroke="#334155" stroke-width="2" />
+    <circle cx="580" cy="320" r="36" fill="#0F172A" />
+    <line x1="580" y1="262" x2="580" y2="378" stroke="url(#goldRim)" stroke-width="3.5" />
+    <line x1="525" y1="288" x2="635" y2="352" stroke="url(#goldRim)" stroke-width="3.5" />
+    <line x1="525" y1="352" x2="635" y2="288" stroke="url(#goldRim)" stroke-width="3.5" />
+    <circle cx="580" cy="320" r="14" fill="#1E293B" stroke="#64748B" stroke-width="2" />
+    <circle cx="580" cy="320" r="6" fill="#15803D" />
+    <rect x="588" y="302" width="16" height="30" rx="3" fill="#DC2626" />
+  </g>
 
-  <!-- Racing Seat -->
-  <path d="M 210 215 L 310 225 L 360 230 L 360 210 L 290 200 L 210 205 Z" fill="#020617" />
+  <!-- ==================== REAR SWINGARM & DRIVE ==================== -->
+  <path d="M 230 320 L 380 305 L 375 330 L 235 330 Z" fill="#334155" stroke="#1E293B" stroke-width="2" />
+  <line x1="335" y1="295" x2="365" y2="250" stroke="#CBD5E1" stroke-width="10" stroke-linecap="round" />
+  <line x1="335" y1="295" x2="365" y2="250" stroke="#F59E0B" stroke-width="7" stroke-dasharray="4,4" />
 
-  <!-- Clip-On Handlebars -->
-  <line x1="620" y1="335" x2="540" y2="145" stroke="#64748B" stroke-width="10" stroke-linecap="round" />
-  <line x1="540" y1="145" x2="510" y2="135" stroke="#165DAD" stroke-width="6" stroke-linecap="round" />
+  <!-- ==================== FULL AERODYNAMIC RACE FAIRING ==================== -->
+  <!-- Aerodynamic Belly Pan Fairing (Wind-tunnel sculpted) -->
+  <path d="M 320 335 L 530 335 L 560 270 L 480 275 L 340 310 Z" fill="url(#titaniumGray)" stroke="#1E293B" stroke-width="1.5" />
 
-  <!-- Twin LED Headlamps -->
-  <polygon points="575,185 600,190 590,210 570,205" fill="#E2E8F0" />
-  <circle cx="585" cy="198" r="4" fill="#165DAD" />
+  <!-- Main Supersport Upper & Side Fairing in Racing Green -->
+  <path d="M 230 200 C 270 200, 310 180, 380 155 C 440 140, 520 145, 590 190 L 585 240 L 490 280 L 370 280 L 300 240 Z" 
+        fill="url(#racingGreen)" filter="url(#sportShadow)" stroke="#4ADE80" stroke-width="1.5" />
+
+  <!-- Aggressive Racing Winglets / Air Inlets -->
+  <polygon points="510,210 575,205 560,235 500,230" fill="#0F172A" stroke="#15803D" stroke-width="1" />
+  <polygon points="460,240 520,235 505,260 450,255" fill="#0F172A" />
 
   <!-- Model Branding -->
-  <text x="430" y="215" fill="#FFFFFF" font-size="18" font-weight="800" font-family="Inter, sans-serif">APEX <tspan fill="#60A5FA">SPORT</tspan></text>
-  <text x="430" y="230" fill="#CBD5E1" font-size="10" font-weight="500" font-family="Inter, sans-serif">HIGH-TORQUE PERFORMANCE</text>
+  <text x="440" y="222" fill="#FFFFFF" font-size="11" font-weight="900" letter-spacing="2" font-family="Inter, sans-serif">ASKR</text>
+  <text x="440" y="234" fill="#86EFAC" font-size="8" font-weight="700" letter-spacing="1.5" font-family="Inter, sans-serif">APEX SPORT 5.2</text>
 
-  <!-- Clean Specs Pills in White Corporate Style -->
-  <g transform="translate(60, 40)">
-    <rect width="120" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" />
-    <text x="12" y="16" fill="#64748B" font-size="9" font-weight="600" font-family="Inter, sans-serif">RANGE</text>
-    <text x="12" y="29" fill="#15803D" font-size="13" font-weight="800" font-family="Inter, sans-serif">175 km</text>
-  </g>
-  <g transform="translate(195, 40)">
-    <rect width="120" height="36" rx="8" fill="#FFFFFF" stroke="#E2E8F0" />
-    <text x="12" y="16" fill="#64748B" font-size="9" font-weight="600" font-family="Inter, sans-serif">TOP SPEED</text>
-    <text x="12" y="29" fill="#165DAD" font-size="13" font-weight="800" font-family="Inter, sans-serif">120 km/h</text>
-  </g>
+  <!-- ==================== AERODYNAMIC WINDSCREEN & COCKPIT ==================== -->
+  <!-- Tinted Smoke Racing Bubble Windshield -->
+  <path d="M 525 152 Q 565 140 600 185 L 575 190 Q 550 160 525 152 Z" fill="#0F172A" opacity="0.85" stroke="#64748B" stroke-width="1" />
+  <!-- Low Clip-on Race Handlebars -->
+  <line x1="518" y1="172" x2="538" y2="182" stroke="#334155" stroke-width="5" stroke-linecap="round" />
+  <circle x="516" y="171" r="4" fill="#0F172A" />
+  <path d="M 517 170 L 505 174" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" />
+
+  <!-- Sharp Twin LED Projector Eye Headlamps -->
+  <polygon points="585,190 605,196 595,208 580,202" fill="#4ADE80" />
+  <polygon points="587,192 602,197 594,206 583,202" fill="#FFFFFF" />
+
+  <!-- High-Rake Mono-Seat Tail Cowl -->
+  <path d="M 180 178 L 260 200 L 250 216 L 175 190 Z" fill="url(#racingGreen)" stroke="#166534" stroke-width="1" />
+  <line x1="174" y1="184" x2="184" y2="187" stroke="#EF4444" stroke-width="4" stroke-linecap="round" />
+  <path d="M 245 200 Q 300 195 345 210 L 335 224 Q 290 210 240 214 Z" fill="#0F172A" />
+
+  <!-- Front Inverted Gold Forks -->
+  <line x1="535" y1="175" x2="578" y2="315" stroke="url(#goldRim)" stroke-width="7" stroke-linecap="round" />
+  <line x1="565" y1="265" x2="582" y2="322" stroke="#1E293B" stroke-width="10" stroke-linecap="round" />
+
+  <!-- Race Fender -->
+  <path d="M 540 270 Q 580 250 625 285" fill="none" stroke="url(#racingGreen)" stroke-width="7" stroke-linecap="round" />
 </svg>

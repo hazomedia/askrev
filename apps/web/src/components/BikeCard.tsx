@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { ArrowRight, Gauge, BatteryCharging } from 'lucide-react';
 
 interface BikeCardProps {
   bike: {
@@ -27,12 +28,15 @@ export default function BikeCard({ bike }: BikeCardProps) {
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-      {/* Product Image */}
-      <div className="bg-slate-50 p-6 flex items-center justify-center border-b border-slate-100">
+      {/* Product Image on Clean Studio Background with Concept Label */}
+      <div className="bg-[#F8FAFC] p-6 flex flex-col items-center justify-center border-b border-slate-100 relative min-h-[220px]">
+        <span className="absolute top-3 right-3 text-[10px] font-semibold tracking-wider uppercase text-slate-500 bg-white/90 px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+          Concept Prototype
+        </span>
         <img
           src={imgSource}
           alt={bike.name}
-          className="w-full h-48 object-contain"
+          className="w-full h-44 object-contain"
           onError={(e) => {
             (e.target as HTMLImageElement).src = '/images/bikes/thunder-pro.svg';
           }}
@@ -40,46 +44,38 @@ export default function BikeCard({ bike }: BikeCardProps) {
       </div>
 
       {/* Product Details */}
-      <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
+      <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
         <div>
           <div className="text-xs font-semibold text-[#165DAD] uppercase tracking-wider">
             {bike.modelCode}
           </div>
           <h3 className="text-xl font-bold text-[#253247] mt-1">{bike.name}</h3>
-          <p className="text-xs text-slate-500 mt-1 line-clamp-1">{bike.tagline}</p>
+          <p className="text-sm text-slate-500 mt-1 line-clamp-1">{bike.tagline}</p>
 
-          {/* Simple Specs Summary */}
-          <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+          {/* Key Specs: Range & Top Speed */}
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-600 bg-[#F8FAFC] p-3.5 rounded-lg border border-slate-100">
             <div>
-              <span className="text-slate-400 block text-[11px]">Range</span>
-              <span className="font-semibold text-[#253247]">{bike.rangeKm} km</span>
+              <span className="text-xs text-slate-400 block font-medium">Certified Range</span>
+              <span className="text-base font-bold text-[#253247]">{bike.rangeKm} km</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[11px]">Top Speed</span>
-              <span className="font-semibold text-[#253247]">{bike.topSpeedKmh} km/h</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block text-[11px]">Battery</span>
-              <span className="font-semibold text-[#253247]">{bike.batteryCapacityKwh} kWh</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block text-[11px]">Charging</span>
-              <span className="font-semibold text-[#253247]">{bike.chargingTimeHours} hrs</span>
+              <span className="text-xs text-slate-400 block font-medium">Top Speed</span>
+              <span className="text-base font-bold text-[#253247]">{bike.topSpeedKmh} km/h</span>
             </div>
           </div>
         </div>
 
-        {/* Pricing & Single Primary Action */}
-        <div className="pt-2">
-          <div className="flex items-baseline justify-between mb-3">
+        {/* Pricing & Single Primary Action Button */}
+        <div className="pt-2 border-t border-slate-100">
+          <div className="flex items-baseline justify-between mb-4">
             <div>
-              <div className="text-[11px] text-slate-400 uppercase font-medium">Ex-Showroom</div>
-              <div className="text-lg font-bold text-[#253247]">
+              <div className="text-xs text-slate-400 uppercase font-medium">Indicative Price</div>
+              <div className="text-xl font-bold text-[#253247]">
                 ₹{bike.exShowroomPriceINR.toLocaleString('en-IN')}
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[11px] text-slate-400 uppercase font-medium">Booking Token</div>
+              <div className="text-xs text-slate-400 uppercase font-medium">Reservation Token</div>
               <div className="text-sm font-semibold text-[#165DAD]">
                 ₹{bike.bookingAmountINR.toLocaleString('en-IN')}
               </div>
@@ -88,9 +84,10 @@ export default function BikeCard({ bike }: BikeCardProps) {
 
           <Link
             href={`/bikes/${bike.modelCode}`}
-            className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-center text-sm font-medium transition-colors block"
+            className="w-full min-h-[46px] py-3 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-center text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
           >
-            View Details
+            <span>View Details</span>
+            <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
       </div>
