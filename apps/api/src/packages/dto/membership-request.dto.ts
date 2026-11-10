@@ -37,3 +37,4 @@ export class QueryMembershipRequestsDto {
   @IsOptional()
   requestType?: MembershipRequestType;
 }
+

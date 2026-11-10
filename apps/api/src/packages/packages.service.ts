@@ -291,15 +291,30 @@ export class PackagesService {
         throw new NotFoundException('Membership request not found');
       }
 
-      if (req.status !== MembershipRequestStatus.PENDING) {
+      // Lock the membership request row to serialize concurrent approvals/rejections
+      const lockedReq = await tx.$queryRaw<any[]>`
+        SELECT id, status FROM "MembershipRequest" WHERE id = ${requestId} FOR UPDATE
+      `;
+      if (!lockedReq || lockedReq.length === 0) {
+        throw new NotFoundException('Membership request not found');
+      }
+
+      if (lockedReq[0].status !== MembershipRequestStatus.PENDING) {
         throw new BadRequestException(
-          `Request cannot be approved because current status is: ${req.status}`
+          `Request cannot be approved because current status is: ${lockedReq[0].status}`
         );
       }
 
       const user = req.user;
       if (!user) {
         throw new BadRequestException('Associated member record was not found');
+      }
+
+      // If user has a sponsor, lock the sponsor to serialize concurrent qualifications
+      if (user.sponsor) {
+        await tx.$queryRaw`
+          SELECT id FROM "User" WHERE id = ${user.sponsor.id} FOR UPDATE
+        `;
       }
 
       // 1. Mark request as APPROVED
@@ -555,9 +570,17 @@ export class PackagesService {
         throw new NotFoundException('Membership request not found');
       }
 
-      if (req.status !== MembershipRequestStatus.PENDING) {
+      // Lock the membership request row to serialize concurrent actions
+      const lockedReq = await tx.$queryRaw<any[]>`
+        SELECT id, status FROM "MembershipRequest" WHERE id = ${requestId} FOR UPDATE
+      `;
+      if (!lockedReq || lockedReq.length === 0) {
+        throw new NotFoundException('Membership request not found');
+      }
+
+      if (lockedReq[0].status !== MembershipRequestStatus.PENDING) {
         throw new BadRequestException(
-          `Request cannot be rejected because current status is: ${req.status}`
+          `Request cannot be rejected because current status is: ${lockedReq[0].status}`
         );
       }
 
