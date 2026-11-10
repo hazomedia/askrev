@@ -597,7 +597,16 @@ export class MembersService {
   }
 
   /**
-   * Get Binary Tree Placement info for a user
+   * Helper to find a user by memberId
+   */
+  async findUserByMemberId(memberId: string) {
+    return this.prisma.user.findFirst({
+      where: { memberId: { equals: memberId, mode: 'insensitive' } },
+    });
+  }
+
+  /**
+   * Get Binary Tree Placement info for a user with parent and sponsor hierarchy
    */
   async getBinaryTree(userId: string) {
     const placement = await this.prisma.binaryPlacement.findUnique({
@@ -610,6 +619,9 @@ export class MembersService {
             fullName: true,
             currentPackage: true,
             isFullQualified: true,
+            sponsor: {
+              select: { id: true, memberId: true, fullName: true },
+            },
           },
         },
       },
@@ -617,6 +629,23 @@ export class MembersService {
 
     if (!placement) {
       throw new NotFoundException('Binary placement node not found');
+    }
+
+    // Fetch parent node info if present
+    let parentInfo: any = null;
+    if (placement.parentId) {
+      const parentUser = await this.prisma.user.findUnique({
+        where: { id: placement.parentId },
+        select: { id: true, memberId: true, fullName: true },
+      });
+      if (parentUser) {
+        parentInfo = {
+          id: parentUser.id,
+          memberId: parentUser.memberId,
+          fullName: parentUser.fullName,
+          leg: placement.leg,
+        };
+      }
     }
 
     // Fetch left and right direct children in binary tree
@@ -635,12 +664,31 @@ export class MembersService {
       },
     });
 
-    const leftChild = children.find((c) => c.leg === 'LEFT') || null;
-    const rightChild = children.find((c) => c.leg === 'RIGHT') || null;
+    const formatChild = (c: any) => {
+      if (!c) return null;
+      return {
+        id: c.id,
+        userId: c.userId,
+        memberId: c.user?.memberId,
+        fullName: c.user?.fullName,
+        currentPackage: c.user?.currentPackage,
+        isFullQualified: c.user?.isFullQualified,
+        leg: c.leg,
+        leftCount: c.leftCount,
+        rightCount: c.rightCount,
+        carryLeftINR: paiseToRupees(c.carryLeftPaise),
+        carryRightINR: paiseToRupees(c.carryRightPaise),
+      };
+    };
+
+    const leftChild = formatChild(children.find((c) => c.leg === 'LEFT'));
+    const rightChild = formatChild(children.find((c) => c.leg === 'RIGHT'));
 
     return {
       node: {
         ...placement,
+        parent: parentInfo,
+        sponsor: placement.user.sponsor,
         leftVolumeINR: paiseToRupees(placement.leftVolumePaise),
         rightVolumeINR: paiseToRupees(placement.rightVolumePaise),
         carryLeftINR: paiseToRupees(placement.carryLeftPaise),
@@ -661,9 +709,20 @@ export class MembersService {
   }
 
   /**
-   * Admin listing of all members
+   * Admin listing of all members with search, filters and pagination
    */
-  async getAllMembers(query?: { search?: string; role?: string; package?: string }) {
+  async getAllMembers(query?: {
+    search?: string;
+    role?: string;
+    package?: string;
+    isFullQualified?: string | boolean;
+    page?: string | number;
+    limit?: string | number;
+  }) {
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query?.limit) || 50));
+    const skip = (page - 1) * limit;
+
     const where: any = {};
 
     if (query?.search) {
@@ -671,6 +730,7 @@ export class MembersService {
         { fullName: { contains: query.search, mode: 'insensitive' } },
         { email: { contains: query.search, mode: 'insensitive' } },
         { memberId: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
       ];
     }
 
@@ -682,42 +742,183 @@ export class MembersService {
       where.currentPackage = query.package;
     }
 
-    const members = await this.prisma.user.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        wallet: true,
-        sponsor: {
-          select: { memberId: true, fullName: true },
+    if (query?.isFullQualified !== undefined) {
+      where.isFullQualified =
+        query.isFullQualified === 'true' || query.isFullQualified === true;
+    }
+
+    const [total, members] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          wallet: true,
+          sponsor: {
+            select: { memberId: true, fullName: true },
+          },
+          _count: {
+            select: { directReferrals: true },
+          },
         },
-        _count: {
-          select: { directReferrals: true },
+      }),
+    ]);
+
+    return {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      members: members.map((m) => ({
+        id: m.id,
+        memberId: m.memberId,
+        fullName: m.fullName,
+        email: m.email,
+        phone: m.phone,
+        role: m.role,
+        currentPackage: m.currentPackage,
+        isFullQualified: m.isFullQualified,
+        sponsorMemberId: m.sponsor?.memberId,
+        sponsorName: m.sponsor?.fullName,
+        directReferralCount: m._count.directReferrals,
+        wallet: m.wallet
+          ? {
+              availableEarningsINR: paiseToRupees(m.wallet.availableEarningsPaise),
+              heldCommissionsINR: paiseToRupees(m.wallet.heldCommissionsPaise),
+              pendingRecoveryINR: paiseToRupees(m.wallet.pendingRecoveryPaise),
+              shoppingVoucherINR: paiseToRupees(m.wallet.shoppingVoucherBalancePaise),
+              totalEarnedINR: paiseToRupees(m.wallet.totalEarnedPaise),
+            }
+          : null,
+        createdAt: m.createdAt,
+      })),
+    };
+  }
+
+  /**
+   * Admin view of a single member's complete profile and operations history
+   */
+  async getMemberDetails(memberIdOrId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ id: memberIdOrId }, { memberId: memberIdOrId }],
+      },
+      include: {
+        sponsor: {
+          select: { id: true, memberId: true, fullName: true, email: true },
+        },
+        wallet: true,
+        binaryPlacement: true,
+        vouchers: {
+          orderBy: { createdAt: 'desc' },
+        },
+        bookings: {
+          include: { bike: true },
+          orderBy: { createdAt: 'desc' },
+        },
+        membershipRequests: {
+          orderBy: { createdAt: 'desc' },
+        },
+        directReferrals: {
+          select: {
+            id: true,
+            memberId: true,
+            fullName: true,
+            email: true,
+            currentPackage: true,
+            isFullQualified: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
 
-    return members.map((m) => ({
-      id: m.id,
-      memberId: m.memberId,
-      fullName: m.fullName,
-      email: m.email,
-      phone: m.phone,
-      role: m.role,
-      currentPackage: m.currentPackage,
-      isFullQualified: m.isFullQualified,
-      sponsorMemberId: m.sponsor?.memberId,
-      sponsorName: m.sponsor?.fullName,
-      directReferralCount: m._count.directReferrals,
-      wallet: m.wallet
+    if (!user) {
+      throw new NotFoundException('Member not found.');
+    }
+
+    const journalLines = await this.prisma.journalLine.findMany({
+      where: { userId: user.id },
+      include: { journalEntry: true },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+    });
+
+    return {
+      profile: {
+        id: user.id,
+        memberId: user.memberId,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        currentPackage: user.currentPackage,
+        isFullQualified: user.isFullQualified,
+        createdAt: user.createdAt,
+      },
+      sponsor: user.sponsor,
+      wallet: user.wallet
         ? {
-            availableEarningsINR: paiseToRupees(m.wallet.availableEarningsPaise),
-            heldCommissionsINR: paiseToRupees(m.wallet.heldCommissionsPaise),
-            pendingRecoveryINR: paiseToRupees(m.wallet.pendingRecoveryPaise),
-            shoppingVoucherINR: paiseToRupees(m.wallet.shoppingVoucherBalancePaise),
+            availableEarningsINR: paiseToRupees(user.wallet.availableEarningsPaise),
+            heldCommissionsINR: paiseToRupees(user.wallet.heldCommissionsPaise),
+            pendingRecoveryINR: paiseToRupees(user.wallet.pendingRecoveryPaise),
+            shoppingVoucherINR: paiseToRupees(user.wallet.shoppingVoucherBalancePaise),
+            totalEarnedINR: paiseToRupees(user.wallet.totalEarnedPaise),
           }
         : null,
-      createdAt: m.createdAt,
-    }));
+      binary: user.binaryPlacement
+        ? {
+            ...user.binaryPlacement,
+            leftVolumeINR: paiseToRupees(user.binaryPlacement.leftVolumePaise),
+            rightVolumeINR: paiseToRupees(user.binaryPlacement.rightVolumePaise),
+            carryLeftINR: paiseToRupees(user.binaryPlacement.carryLeftPaise),
+            carryRightINR: paiseToRupees(user.binaryPlacement.carryRightPaise),
+          }
+        : null,
+      directReferrals: user.directReferrals,
+      vouchers: user.vouchers.map((v) => ({
+        id: v.id,
+        voucherCode: v.voucherCode,
+        initialValueINR: paiseToRupees(v.initialValuePaise),
+        remainingBalanceINR: paiseToRupees(v.remainingBalancePaise),
+        issuedReason: v.issuedReason,
+        status: v.status,
+        expiresAt: v.expiresAt,
+        createdAt: v.createdAt,
+      })),
+      bookings: user.bookings.map((b) => ({
+        id: b.id,
+        bookingNumber: b.bookingNumber,
+        bikeName: b.bike?.name || 'EV Bike',
+        bookingAmountINR: paiseToRupees(b.bookingAmountPaise),
+        voucherAppliedINR: paiseToRupees(b.voucherAppliedPaise),
+        netCashPaidINR: paiseToRupees(b.netCashPaidPaise),
+        bookingStatus: b.bookingStatus,
+        createdAt: b.createdAt,
+      })),
+      membershipRequests: user.membershipRequests.map((r) => ({
+        id: r.id,
+        requestType: r.requestType,
+        feeINR: paiseToRupees(r.feePaise),
+        status: r.status,
+        paymentReference: r.paymentReference,
+        adminNotes: r.adminNotes,
+        reviewedAt: r.reviewedAt,
+        createdAt: r.createdAt,
+      })),
+      journalLines: journalLines.map((l) => ({
+        id: l.id,
+        referenceId: l.journalEntry.referenceId,
+        eventType: l.journalEntry.eventType,
+        account: l.account,
+        debitINR: paiseToRupees(l.debitPaise),
+        creditINR: paiseToRupees(l.creditPaise),
+        description: l.description,
+        createdAt: l.createdAt,
+      })),
+    };
   }
 }

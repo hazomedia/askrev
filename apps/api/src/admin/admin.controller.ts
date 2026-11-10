@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,13 +17,23 @@ export class AdminController {
   }
 
   @Get('audit-logs')
-  async getAuditLogs() {
-    return this.adminService.getAuditLogs();
+  async getAuditLogs(@Query() query: any) {
+    return this.adminService.getAuditLogs(query);
   }
 
   @Get('financial-reconciliation')
   async getFinancialReconciliation() {
     return this.adminService.getFinancialReconciliation();
+  }
+
+  @Get('wallets')
+  async getWalletsAdmin(@Query() query: any) {
+    return this.adminService.getWalletsAdmin(query);
+  }
+
+  @Get('ledger')
+  async getLedgerAdmin(@Query() query: any) {
+    return this.adminService.getLedgerAdmin(query);
   }
 
   @Get('voucher-transactions')

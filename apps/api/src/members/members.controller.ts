@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -22,8 +22,27 @@ export class MembersController {
   }
 
   @Get('binary-tree')
-  async getBinaryTree(@CurrentUser() user: any) {
-    return this.membersService.getBinaryTree(user.id);
+  async getBinaryTree(
+    @CurrentUser() user: any,
+    @Query('userId') queryUserId?: string,
+    @Query('memberId') queryMemberId?: string
+  ) {
+    const isAdmin =
+      user.role === UserRole.SUPER_ADMIN ||
+      user.role === UserRole.ADMIN_OPERATIONS ||
+      user.role === UserRole.FINANCE_MANAGER;
+
+    let targetUserId = user.id;
+    if (isAdmin) {
+      if (queryUserId) {
+        targetUserId = queryUserId;
+      } else if (queryMemberId) {
+        const found = await this.membersService.findUserByMemberId(queryMemberId);
+        if (found) targetUserId = found.id;
+      }
+    }
+
+    return this.membersService.getBinaryTree(targetUserId);
   }
 
   // =========================================================================
@@ -84,6 +103,13 @@ export class MembersController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
   async getAdminMembersList(@Query() query: any) {
     return this.membersService.getAllMembers(query);
+  }
+
+  @Get('admin/details/:id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getMemberDetails(@Param('id') id: string) {
+    return this.membersService.getMemberDetails(id);
   }
 }
 
