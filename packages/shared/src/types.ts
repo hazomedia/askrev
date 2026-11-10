@@ -1,4 +1,20 @@
-import { UserRole, MembershipPackage, QualificationMethod, JournalAccount } from './constants';
+import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus } from './constants';
+
+export interface MembershipRequestItem {
+  id: string;
+  userId: string;
+  user?: UserProfile;
+  requestType: MembershipRequestType;
+  feeINR: number;
+  paymentMode: string;
+  paymentReference?: string | null;
+  status: MembershipRequestStatus;
+  adminNotes?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  isSimulated: boolean;
+  createdAt: string;
+}
 
 export interface UserProfile {
   id: string;

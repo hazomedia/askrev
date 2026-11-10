@@ -32,6 +32,19 @@ enum BinaryLeg {
   RIGHT
 }
 
+enum MembershipRequestType {
+  BASIC_ACTIVATION
+  FULL_ACTIVATION
+  BASIC_TO_FULL_UPGRADE
+}
+
+enum MembershipRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 model User {
   id                  String             @id @default(uuid())
   memberId            String             @unique
@@ -56,6 +69,7 @@ model User {
   vouchers            ShoppingVoucher[]
   bookings            EvBooking[]
   withdrawals         WithdrawalRequest[]
+  membershipRequests  MembershipRequest[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -265,4 +279,27 @@ model AuditLog {
 
   @@index([action])
   @@index([entityType])
+}
+
+model MembershipRequest {
+  id               String                  @id @default(uuid())
+  userId           String
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestType      MembershipRequestType
+  feePaise         BigInt
+  paymentMode      String                  @default("SIMULATED_TEST")
+  paymentReference String?
+  status           MembershipRequestStatus @default(PENDING)
+  adminNotes       String?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  idempotencyKey   String?                 @unique
+  isSimulated      Boolean                 @default(true)
+  metadata         Json?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([requestType])
 }

@@ -29,6 +29,9 @@ export class AdminService {
 
     const totalBookings = await this.prisma.evBooking.count();
     const totalVouchersIssued = await this.prisma.shoppingVoucher.count();
+    const pendingMembershipRequests = await this.prisma.membershipRequest.count({
+      where: { status: 'PENDING' },
+    });
 
     return {
       memberships: {
@@ -37,6 +40,7 @@ export class AdminService {
         basicMembers,
         fullMembers,
         fullQualified,
+        pendingMembershipRequests,
       },
       financialLiabilities: {
         totalAvailableEarningsPayableINR: paiseToRupees(totalAvailableEarningsPaise),

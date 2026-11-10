@@ -23,6 +23,19 @@ export enum BinaryLeg {
   RIGHT = 'RIGHT',
 }
 
+export enum MembershipRequestType {
+  BASIC_ACTIVATION = 'BASIC_ACTIVATION',
+  FULL_ACTIVATION = 'FULL_ACTIVATION',
+  BASIC_TO_FULL_UPGRADE = 'BASIC_TO_FULL_UPGRADE',
+}
+
+export enum MembershipRequestStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  CANCELLED = 'CANCELLED',
+}
+
 export enum JournalAccount {
   CASH_AND_BANK = '1000_CASH_AND_BANK',
   MEMBER_PENDING_RECOVERY = '1200_MEMBER_PENDING_RECOVERY',
