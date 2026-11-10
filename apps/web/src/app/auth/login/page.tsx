@@ -3,7 +3,16 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Zap, Lock, Mail, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
+import {
+  Zap,
+  Lock,
+  Mail,
+  ArrowRight,
+  ShieldCheck,
+  UserCheck,
+  Bike,
+  Sparkles,
+} from 'lucide-react';
 import { fetchApi, setAuthSession } from '../../../lib/api';
 
 export default function LoginPage() {
@@ -32,7 +41,7 @@ export default function LoginPage() {
         router.push('/dashboard');
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err.message || 'Login failed. Please verify your email and password.');
     } finally {
       setLoading(false);
     }
@@ -41,54 +50,65 @@ export default function LoginPage() {
   const fillDemo = (demoEmail: string, demoPass: string) => {
     setEmail(demoEmail);
     setPassword(demoPass);
+    setError(null);
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative">
-      <div className="max-w-md w-full space-y-8 card-gradient p-8 rounded-2xl border-navy-700 shadow-2xl relative">
+    <div className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative min-h-[calc(100vh-140px)]">
+      {/* Background glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl h-96 gradient-glow pointer-events-none opacity-50" />
+
+      <div className="max-w-md w-full space-y-8 card-gradient p-8 sm:p-10 rounded-3xl border border-navy-700/80 shadow-2xl relative z-10">
         <div className="text-center">
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-gradient-to-tr from-electric-600 to-electric-400 flex items-center justify-center text-white shadow-lg shadow-electric-500/20 mb-4">
-            <Zap className="w-7 h-7 fill-white text-white" />
-          </div>
-          <h2 className="text-2xl font-black text-white">Sign In to ASKR EV</h2>
+          <Link href="/" className="inline-flex items-center gap-2 mb-4 group">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-electric-600 to-electric-400 flex items-center justify-center text-white shadow-lg shadow-electric-500/25 group-hover:scale-105 transition-transform">
+              <Zap className="w-7 h-7 fill-white text-white" />
+            </div>
+          </Link>
+          <h2 className="text-3xl font-black text-white">Sign In to ASKR EV</h2>
           <p className="mt-2 text-xs text-slate-400">
-            Access your membership wallet, EV booking history, and sponsor network
+            Access your Member Portal, EV bookings, and shopping voucher balances.
           </p>
         </div>
 
         {error && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">
+          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">
             {error}
           </div>
         )}
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Email Address
+            </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3.5" />
+              <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-navy-950 border border-navy-700 focus:border-electric-500 focus:outline-none text-white text-sm"
+                placeholder="member@askrev.local"
+                className="w-full pl-10 pr-3.5 py-3 rounded-xl bg-navy-950 border border-navy-700 focus:border-electric-500 focus:outline-none text-white text-sm placeholder:text-slate-600"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Password</label>
+              <span className="text-[11px] text-slate-500">Secured via Bcrypt</span>
+            </div>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3.5" />
+              <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-navy-950 border border-navy-700 focus:border-electric-500 focus:outline-none text-white text-sm"
+                placeholder="••••••••••••"
+                className="w-full pl-10 pr-3.5 py-3 rounded-xl bg-navy-950 border border-navy-700 focus:border-electric-500 focus:outline-none text-white text-sm placeholder:text-slate-600"
               />
             </div>
           </div>
@@ -96,42 +116,66 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-electric-600 to-electric-500 hover:from-electric-500 hover:to-electric-400 shadow-lg shadow-electric-600/25 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-electric-600 via-electric-500 to-emerald-500 hover:from-electric-500 hover:to-emerald-400 shadow-xl shadow-electric-500/25 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
           >
-            {loading ? 'Authenticating...' : 'Sign In'}
-            <ArrowRight className="w-4 h-4" />
+            <Zap className="w-4 h-4 fill-white" />
+            <span>{loading ? 'Authenticating...' : 'Sign In to Portal'}</span>
           </button>
         </form>
 
-        {/* Quick Demo Logins */}
+        {/* Demo Fast Login Switcher for QA */}
         <div className="pt-4 border-t border-navy-800">
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">
-            Sandbox Instant Sign-In
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-bold mb-2.5 flex items-center justify-between">
+            <span>Quick Demo Accounts (QA)</span>
+            <span className="text-emerald-400 font-normal">Click to Autofill</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 text-xs">
             <button
               type="button"
-              onClick={() => fillDemo('admin@askrev.com', 'Admin@123456')}
-              className="px-2.5 py-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-[11px] font-medium text-slate-200 transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => fillDemo('superadmin@askrev.local', 'SuperAdmin@AskREV2026!')}
+              className="p-2.5 rounded-xl bg-navy-900 hover:bg-navy-800 border border-navy-700 text-left transition-colors"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>Super Admin</span>
+              <div className="font-bold text-amber-400 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Super Admin
+              </div>
+              <div className="text-[10px] text-slate-400 truncate">superadmin@askrev.local</div>
             </button>
+
             <button
               type="button"
-              onClick={() => fillDemo('rahul.sponsor@askrev.com', 'Member@123456')}
-              className="px-2.5 py-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-[11px] font-medium text-slate-200 transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => fillDemo('member.a@askrev.local', 'MemberA@AskREV2026!')}
+              className="p-2.5 rounded-xl bg-navy-900 hover:bg-navy-800 border border-navy-700 text-left transition-colors"
             >
-              <UserCheck className="w-3.5 h-3.5 text-electric-400" />
-              <span>Sponsor A (Rahul)</span>
+              <div className="font-bold text-electric-400 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5" /> Active Member
+              </div>
+              <div className="text-[10px] text-slate-400 truncate">member.a@askrev.local</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fillDemo('ops@askrev.local', 'OpsAdmin@AskREV2026!')}
+              className="p-2.5 rounded-xl bg-navy-900 hover:bg-navy-800 border border-navy-700 text-left transition-colors"
+            >
+              <div className="font-bold text-slate-300">Operations Admin</div>
+              <div className="text-[10px] text-slate-400 truncate">ops@askrev.local</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fillDemo('user.free@askrev.local', 'FreeUser@AskREV2026!')}
+              className="p-2.5 rounded-xl bg-navy-900 hover:bg-navy-800 border border-navy-700 text-left transition-colors"
+            >
+              <div className="font-bold text-slate-400">Free Registered</div>
+              <div className="text-[10px] text-slate-400 truncate">user.free@askrev.local</div>
             </button>
           </div>
         </div>
 
         <div className="text-center text-xs text-slate-400">
-          Don&apos;t have an account?{' '}
-          <Link href="/auth/register" className="text-electric-400 hover:underline font-semibold">
-            Register Free
+          Don't have an ASKR EV account yet?{' '}
+          <Link href="/auth/register" className="text-electric-400 hover:text-electric-300 font-bold underline">
+            Register for Free
           </Link>
         </div>
       </div>

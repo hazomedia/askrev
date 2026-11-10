@@ -3,7 +3,20 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Zap, Menu, X, ShieldAlert, User, LogOut, LayoutDashboard, Bike, Cpu, ShieldCheck } from 'lucide-react';
+import {
+  Zap,
+  Menu,
+  X,
+  User,
+  LogOut,
+  LayoutDashboard,
+  Bike,
+  ShieldCheck,
+  ChevronDown,
+  Sparkles,
+  Ticket,
+  ArrowRight,
+} from 'lucide-react';
 import { getStoredUser, clearAuthSession } from '../lib/api';
 
 export default function Navbar() {
@@ -11,6 +24,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   useEffect(() => {
     setCurrentUser(getStoredUser());
@@ -19,23 +33,43 @@ export default function Navbar() {
   const handleLogout = () => {
     clearAuthSession();
     setCurrentUser(null);
+    setUserDropdownOpen(false);
+    setMobileMenuOpen(false);
     router.push('/auth/login');
   };
 
-  const isAdmin = currentUser?.role && ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(currentUser.role);
+  const isAdmin =
+    currentUser?.role &&
+    ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(currentUser.role);
+
+  const getPackageBadgeColor = (pkg?: string) => {
+    switch (pkg) {
+      case 'FULL':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+      case 'BASIC':
+        return 'bg-electric-500/20 text-electric-300 border-electric-500/40';
+      default:
+        return 'bg-slate-700/50 text-slate-300 border-slate-600/50';
+    }
+  };
 
   return (
-    <nav className="sticky top-0 z-50 bg-navy-950/80 backdrop-blur-md border-b border-navy-700/60">
+    <nav className="sticky top-0 z-50 bg-navy-950/85 backdrop-blur-md border-b border-navy-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-electric-600 to-electric-400 flex items-center justify-center text-white shadow-lg shadow-electric-500/20 group-hover:scale-105 transition-transform">
+        <div className="flex items-center justify-between h-20">
+          {/* Brand Logo */}
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-electric-600 to-electric-400 flex items-center justify-center text-white shadow-lg shadow-electric-500/25 group-hover:scale-105 transition-transform">
               <Zap className="w-6 h-6 fill-white text-white" />
             </div>
             <div>
-              <span className="text-xl font-black tracking-wider text-white">ASKR <span className="text-electric-400">EV</span></span>
-              <span className="block text-[10px] tracking-widest text-navy-600 font-semibold uppercase -mt-1">Next-Gen Mobility</span>
+              <div className="text-2xl font-black tracking-wider text-white flex items-center gap-1.5">
+                <span>ASKR</span>
+                <span className="text-electric-400">EV</span>
+              </div>
+              <span className="block text-[10px] tracking-widest text-slate-400 font-semibold uppercase -mt-0.5">
+                Electric Mobility
+              </span>
             </div>
           </Link>
 
@@ -43,106 +77,170 @@ export default function Navbar() {
           <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
             <Link
               href="/"
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pathname === '/' ? 'text-electric-400 bg-navy-800' : 'text-slate-300 hover:text-white hover:bg-navy-800/60'
+              className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                pathname === '/'
+                  ? 'text-white bg-navy-800'
+                  : 'text-slate-300 hover:text-white hover:bg-navy-900'
               }`}
             >
               Home
             </Link>
             <Link
               href="/bikes"
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                pathname === '/bikes' ? 'text-electric-400 bg-navy-800' : 'text-slate-300 hover:text-white hover:bg-navy-800/60'
+              className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2 ${
+                pathname.startsWith('/bikes')
+                  ? 'text-electric-400 bg-navy-800'
+                  : 'text-slate-300 hover:text-white hover:bg-navy-900'
               }`}
             >
               <Bike className="w-4 h-4" />
-              EV Bikes
+              <span>EV Superbikes</span>
             </Link>
             <Link
-              href="/simulator"
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                pathname === '/simulator' ? 'text-electric-400 bg-navy-800' : 'text-slate-300 hover:text-white hover:bg-navy-800/60'
-              }`}
+              href="/#membership"
+              className="px-3.5 py-2 rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-navy-900 transition-colors"
             >
-              <Cpu className="w-4 h-4 text-emerald-400" />
-              Simulation Engine
+              Membership Plans
+            </Link>
+            <Link
+              href="/#ecosystem"
+              className="px-3.5 py-2 rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-navy-900 transition-colors"
+            >
+              Ecosystem & Specs
             </Link>
             {currentUser && (
               <Link
                 href="/dashboard"
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                  pathname === '/dashboard' ? 'text-electric-400 bg-navy-800' : 'text-slate-300 hover:text-white hover:bg-navy-800/60'
+                className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  pathname.startsWith('/dashboard')
+                    ? 'text-electric-400 bg-navy-800'
+                    : 'text-slate-300 hover:text-white hover:bg-navy-900'
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                Dashboard
+                <span>Member Portal</span>
               </Link>
             )}
             {isAdmin && (
               <Link
                 href="/admin"
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                  pathname === '/admin' ? 'text-amber-400 bg-navy-800' : 'text-slate-300 hover:text-amber-400 hover:bg-navy-800/60'
+                className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  pathname.startsWith('/admin')
+                    ? 'text-amber-400 bg-navy-800'
+                    : 'text-slate-300 hover:text-amber-400 hover:bg-navy-900'
                 }`}
               >
                 <ShieldCheck className="w-4 h-4 text-amber-400" />
-                Admin Panel
+                <span>Admin Hub</span>
               </Link>
             )}
           </div>
 
-          {/* User Account / Auth Buttons */}
+          {/* Right Action / Auth Buttons */}
           <div className="hidden md:flex items-center gap-3">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Phase 1 Sandbox
-            </div>
-
             {currentUser ? (
-              <div className="flex items-center gap-3">
-                <Link
-                  href="/dashboard"
-                  className="flex items-center gap-2 pl-2 pr-3 py-1 rounded-full bg-navy-800 border border-navy-700 hover:border-electric-500/50 transition-all text-xs text-slate-200"
-                >
-                  <div className="w-6 h-6 rounded-full bg-electric-500/20 flex items-center justify-center text-electric-400 font-bold">
-                    {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : 'U'}
-                  </div>
-                  <span className="font-medium truncate max-w-[120px]">{currentUser.fullName}</span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-navy-950 text-electric-400 border border-navy-700">
-                    {currentUser.memberId}
-                  </span>
-                </Link>
+              <div className="relative">
                 <button
-                  onClick={handleLogout}
-                  title="Logout"
-                  className="p-1.5 rounded-lg bg-navy-800 text-slate-400 hover:text-rose-400 hover:bg-navy-700 transition-colors"
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-navy-900 border border-navy-700/80 hover:border-slate-500 transition-all text-left"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-navy-800 to-navy-700 border border-navy-600 flex items-center justify-center text-electric-400 font-bold text-xs">
+                    {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : 'M'}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white leading-tight">
+                      {currentUser.memberId}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase ${getPackageBadgeColor(
+                          currentUser.currentPackage
+                        )}`}
+                      >
+                        {currentUser.currentPackage || 'FREE'}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-400 ml-1" />
                 </button>
+
+                {/* Dropdown Menu */}
+                {userDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-navy-900/95 border border-navy-700/80 shadow-2xl backdrop-blur-xl py-2 z-50">
+                    <div className="px-4 py-2.5 border-b border-navy-800">
+                      <div className="text-xs font-semibold text-slate-400">Signed in as</div>
+                      <div className="text-sm font-bold text-white truncate">
+                        {currentUser.fullName || currentUser.email}
+                      </div>
+                      <div className="text-[11px] text-electric-400 font-mono mt-0.5">
+                        ID: {currentUser.memberId}
+                      </div>
+                    </div>
+                    <div className="py-1">
+                      <Link
+                        href="/dashboard"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-navy-800 transition-colors"
+                      >
+                        <LayoutDashboard className="w-4 h-4 text-electric-400" />
+                        <span>Member Portal</span>
+                      </Link>
+                      <Link
+                        href="/bikes"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-navy-800 transition-colors"
+                      >
+                        <Bike className="w-4 h-4 text-emerald-400" />
+                        <span>Book EV Superbike</span>
+                      </Link>
+                      {isAdmin && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setUserDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-amber-400 hover:bg-navy-800 transition-colors"
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Admin Hub</span>
+                        </Link>
+                      )}
+                    </div>
+                    <div className="pt-1 border-t border-navy-800">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Log Out</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Link
                   href="/auth/login"
-                  className="px-3.5 py-1.5 rounded-lg text-sm font-medium text-slate-200 hover:text-white hover:bg-navy-800 transition-colors"
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-200 hover:text-white bg-navy-900 hover:bg-navy-800 border border-navy-700 transition-colors"
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/auth/register"
-                  className="px-3.5 py-1.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-electric-600 to-electric-500 hover:from-electric-500 hover:to-electric-400 shadow-md shadow-electric-600/20 transition-all"
+                  className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-electric-600 to-electric-500 hover:from-electric-500 hover:to-electric-400 shadow-md shadow-electric-500/20 transition-all flex items-center gap-1.5"
                 >
-                  Register Free
+                  <span>Free Register</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
             )}
           </div>
 
-          {/* Mobile menu button */}
-          <div className="md:hidden flex items-center gap-2">
+          {/* Mobile Menu Button */}
+          <div className="flex items-center md:hidden">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg bg-navy-800 text-slate-300 hover:text-white focus:outline-none"
+              className="p-2 rounded-xl bg-navy-900 border border-navy-700 text-slate-300 hover:text-white"
+              aria-label="Toggle Navigation Menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -150,74 +248,117 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Menu Dropdown */}
+      {/* Mobile Responsive Navigation Drawer */}
       {mobileMenuOpen && (
-        <div className="md:hidden px-4 pt-2 pb-4 bg-navy-900 border-b border-navy-700 space-y-2">
-          <Link
-            href="/"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-base font-medium text-slate-300 hover:text-white hover:bg-navy-800"
-          >
-            Home
-          </Link>
-          <Link
-            href="/bikes"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-base font-medium text-slate-300 hover:text-white hover:bg-navy-800"
-          >
-            EV Bikes Catalogue
-          </Link>
-          <Link
-            href="/simulator"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-base font-medium text-emerald-400 hover:bg-navy-800"
-          >
-            Commission Simulator
-          </Link>
+        <div className="md:hidden bg-navy-950/98 border-b border-navy-800 px-4 pt-3 pb-6 space-y-3">
           {currentUser && (
-            <Link
-              href="/dashboard"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-md text-base font-medium text-slate-300 hover:text-white hover:bg-navy-800"
-            >
-              Dashboard ({currentUser.memberId})
-            </Link>
+            <div className="p-3.5 rounded-2xl bg-navy-900 border border-navy-700/80 flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-navy-800 to-navy-700 border border-navy-600 flex items-center justify-center text-electric-400 font-bold text-sm">
+                  {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : 'M'}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">{currentUser.fullName}</div>
+                  <div className="text-[11px] text-electric-400 font-mono">
+                    {currentUser.memberId}
+                  </div>
+                </div>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${getPackageBadgeColor(
+                  currentUser.currentPackage
+                )}`}
+              >
+                {currentUser.currentPackage || 'FREE'}
+              </span>
+            </div>
           )}
-          {isAdmin && (
+
+          <div className="space-y-1">
             <Link
-              href="/admin"
+              href="/"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-md text-base font-medium text-amber-400 hover:bg-navy-800"
+              className={`block px-3.5 py-2.5 rounded-xl text-base font-semibold ${
+                pathname === '/' ? 'text-white bg-navy-800' : 'text-slate-300'
+              }`}
             >
-              Admin Operations Panel
+              Home
             </Link>
-          )}
-          <div className="pt-2 border-t border-navy-800">
+            <Link
+              href="/bikes"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`block px-3.5 py-2.5 rounded-xl text-base font-semibold ${
+                pathname.startsWith('/bikes') ? 'text-electric-400 bg-navy-800' : 'text-slate-300'
+              }`}
+            >
+              EV Superbikes
+            </Link>
+            <Link
+              href="/#membership"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3.5 py-2.5 rounded-xl text-base font-semibold text-slate-300"
+            >
+              Membership Plans
+            </Link>
+            <Link
+              href="/#ecosystem"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block px-3.5 py-2.5 rounded-xl text-base font-semibold text-slate-300"
+            >
+              Ecosystem & Specs
+            </Link>
+
+            {currentUser && (
+              <Link
+                href="/dashboard"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3.5 py-2.5 rounded-xl text-base font-semibold ${
+                  pathname.startsWith('/dashboard')
+                    ? 'text-electric-400 bg-navy-800'
+                    : 'text-slate-300'
+                }`}
+              >
+                Member Portal
+              </Link>
+            )}
+
+            {isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3.5 py-2.5 rounded-xl text-base font-semibold ${
+                  pathname.startsWith('/admin') ? 'text-amber-400 bg-navy-800' : 'text-slate-300'
+                }`}
+              >
+                Admin Hub
+              </Link>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-navy-800 space-y-2">
             {currentUser ? (
               <button
-                onClick={() => {
-                  handleLogout();
-                  setMobileMenuOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-rose-400 hover:bg-navy-800"
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 font-semibold text-sm"
               >
-                Sign Out ({currentUser.fullName})
+                <LogOut className="w-4 h-4" />
+                <span>Log Out</span>
               </button>
             ) : (
-              <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2 pt-2">
                 <Link
                   href="/auth/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-center px-3 py-2 rounded-md text-sm font-medium bg-navy-800 text-slate-200"
+                  className="py-3 text-center rounded-xl bg-navy-900 border border-navy-700 text-slate-200 font-semibold text-sm"
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/auth/register"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-center px-3 py-2 rounded-md text-sm font-semibold bg-electric-600 text-white"
+                  className="py-3 text-center rounded-xl bg-gradient-to-r from-electric-600 to-electric-500 text-white font-bold text-sm shadow-md"
                 >
-                  Register
+                  Register Free
                 </Link>
               </div>
             )}

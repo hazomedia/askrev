@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B132B" />
+      <stop offset="100%" stop-color="#060B18" />
+    </linearGradient>
+    <linearGradient id="frameGrad3" x1="0%" y1="0%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#7C3AED" />
+      <stop offset="50%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#00B4D8" />
+    </linearGradient>
+    <linearGradient id="neonGlow3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#A855F7" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+    <filter id="glowFilter3" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="800" height="480" fill="url(#bgGrad3)" rx="16" />
+  
+  <!-- Race Track Grid Lines -->
+  <g opacity="0.08" stroke="#A855F7" stroke-width="1">
+    <line x1="0" y1="120" x2="800" y2="120" />
+    <line x1="0" y1="240" x2="800" y2="240" />
+    <line x1="0" y1="360" x2="800" y2="360" />
+    <line x1="200" y1="0" x2="200" y2="480" />
+    <line x1="400" y1="0" x2="400" y2="480" />
+    <line x1="600" y1="0" x2="600" y2="480" />
+  </g>
+
+  <!-- Ground Plane & Track Apex Lines -->
+  <ellipse cx="400" cy="400" rx="330" ry="25" fill="#000000" opacity="0.65" filter="url(#glowFilter3)" />
+  <line x1="70" y1="400" x2="730" y2="400" stroke="#38BDF8" stroke-width="2.5" opacity="0.4" />
+
+  <!-- Rear Slick Racing Wheel -->
+  <g id="rearWheel">
+    <circle cx="200" cy="340" r="78" fill="#090D16" stroke="#1E293B" stroke-width="15" />
+    <circle cx="200" cy="340" r="62" fill="#0F172A" stroke="#A855F7" stroke-width="3.5" opacity="0.9" />
+    <circle cx="200" cy="340" r="34" fill="#030712" stroke="#475569" stroke-width="2" />
+    <circle cx="200" cy="340" r="14" fill="#38BDF8" />
+    <!-- Forged Y-Spokes -->
+    <line x1="200" y1="278" x2="200" y2="402" stroke="#38BDF8" stroke-width="2.5" opacity="0.6" />
+    <line x1="138" y1="340" x2="262" y2="340" stroke="#38BDF8" stroke-width="2.5" opacity="0.6" />
+    <line x1="156" y1="296" x2="244" y2="384" stroke="#38BDF8" stroke-width="2.5" opacity="0.6" />
+    <circle cx="200" cy="340" r="44" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="4,4" />
+    <rect x="170" y="325" width="20" height="30" rx="4" fill="#EF4444" />
+  </g>
+
+  <!-- Front Slick Racing Wheel -->
+  <g id="frontWheel">
+    <circle cx="620" cy="340" r="78" fill="#090D16" stroke="#1E293B" stroke-width="15" />
+    <circle cx="620" cy="340" r="62" fill="#0F172A" stroke="#A855F7" stroke-width="3.5" opacity="0.9" />
+    <circle cx="620" cy="340" r="34" fill="#030712" stroke="#475569" stroke-width="2" />
+    <circle cx="620" cy="340" r="14" fill="#38BDF8" />
+    <!-- Forged Y-Spokes -->
+    <line x1="620" y1="278" x2="620" y2="402" stroke="#38BDF8" stroke-width="2.5" opacity="0.6" />
+    <line x1="558" y1="340" x2="682" y2="340" stroke="#38BDF8" stroke-width="2.5" opacity="0.6" />
+    <line x1="576" y1="296" x2="664" y2="384" stroke="#38BDF8" stroke-width="2.5" opacity="0.6" />
+    <circle cx="620" cy="340" r="44" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="4,4" />
+    <rect x="630" y="325" width="20" height="30" rx="4" fill="#EF4444" />
+  </g>
+
+  <!-- High-Rigidity Carbon Swingarm -->
+  <path d="M 200 340 L 370 310 L 360 340 Z" fill="#020617" stroke="#334155" stroke-width="3" />
+
+  <!-- Fully Enclosed Aerodynamic Race Fairings -->
+  <path d="M 220 230 L 350 240 L 460 160 L 550 170 L 610 220 L 560 330 L 420 340 L 320 340 L 290 280 Z" fill="url(#frameGrad3)" stroke="#A855F7" stroke-width="2.5" />
+  
+  <!-- Carbon Fiber Lower Cowl & High-Capacity Battery -->
+  <polygon points="310,340 550,340 570,270 330,270" fill="#090D16" stroke="#38BDF8" stroke-width="2" />
+  <text x="430" y="315" fill="#38BDF8" font-size="11" font-weight="900" text-anchor="middle" letter-spacing="2" font-family="sans-serif">5.2 kWh HIGH-DENSITY NMC</text>
+
+  <!-- Aggressive Racing Seat & Tail Cowl with Winglet -->
+  <path d="M 210 220 L 310 230 L 360 235 L 360 215 L 290 205 L 210 210 Z" fill="#000000" stroke="#475569" stroke-width="2" />
+  <!-- Aero Winglet -->
+  <path d="M 540 220 L 590 205 L 595 218 L 545 230 Z" fill="#38BDF8" filter="url(#glowFilter3)" />
+
+  <!-- Clip-On Racing Handlebars -->
+  <line x1="620" y1="340" x2="540" y2="150" stroke="#E2E8F0" stroke-width="12" stroke-linecap="round" />
+  <line x1="540" y1="150" x2="510" y2="140" stroke="#38BDF8" stroke-width="8" stroke-linecap="round" />
+
+  <!-- Twin Projector LED Headlamps -->
+  <polygon points="585,185 750,150 760,230 595,215" fill="url(#neonGlow3)" opacity="0.25" filter="url(#glowFilter3)" />
+  <polygon points="575,190 600,195 590,215 570,210" fill="#A855F7" filter="url(#glowFilter3)" />
+
+  <!-- Aerodynamic Racing Decal Lines -->
+  <path d="M 330 220 L 440 180 L 535 185" fill="none" stroke="url(#neonGlow3)" stroke-width="5" stroke-linecap="round" filter="url(#glowFilter3)" />
+
+  <!-- Badging & Model Name -->
+  <text x="440" y="220" fill="#FFFFFF" font-size="16" font-weight="900" letter-spacing="3" font-family="sans-serif">APEX <tspan fill="#38BDF8">SPORT</tspan></text>
+  <text x="440" y="235" fill="#C084FC" font-size="9" font-weight="700" letter-spacing="1.5" font-family="sans-serif">TRACK TELEMETRY EDITION</text>
+
+  <!-- Speed & Range HUD Overlay Badges -->
+  <g transform="translate(60, 40)">
+    <rect width="130" height="42" rx="8" fill="#1C2541" stroke="#3A506B" opacity="0.9" />
+    <text x="14" y="20" fill="#94A3B8" font-size="9" font-weight="700" font-family="sans-serif">MAX RANGE</text>
+    <text x="14" y="36" fill="#10B981" font-size="16" font-weight="900" font-family="sans-serif">175 <tspan font-size="10" font-weight="600" fill="#94A3B8">KM</tspan></text>
+  </g>
+  <g transform="translate(205, 40)">
+    <rect width="130" height="42" rx="8" fill="#1C2541" stroke="#3A506B" opacity="0.9" />
+    <text x="14" y="20" fill="#94A3B8" font-size="9" font-weight="700" font-family="sans-serif">TOP VELOCITY</text>
+    <text x="14" y="36" fill="#38BDF8" font-size="16" font-weight="900" font-family="sans-serif">120 <tspan font-size="10" font-weight="600" fill="#94A3B8">KM/H</tspan></text>
+  </g>
+</svg>

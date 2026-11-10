@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { EvBikesService } from './ev-bikes.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -13,6 +13,11 @@ export class EvBikesController {
   @Get()
   async getAllBikes() {
     return this.evBikesService.getAllBikes();
+  }
+
+  @Get(':id')
+  async getBikeById(@Param('id') id: string) {
+    return this.evBikesService.getBikeById(id);
   }
 
   @UseGuards(JwtAuthGuard)

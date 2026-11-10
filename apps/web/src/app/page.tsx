@@ -1,321 +1,403 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Zap, ShieldCheck, ArrowRight, CheckCircle2, Bike, Award, TrendingUp, Cpu, Lock } from 'lucide-react';
+import {
+  Zap,
+  ArrowRight,
+  ShieldCheck,
+  CheckCircle2,
+  Gauge,
+  BatteryCharging,
+  Cpu,
+  Bike,
+  Sparkles,
+  Award,
+  Layers,
+  ChevronRight,
+  TrendingUp,
+} from 'lucide-react';
+import BikeCard from '../components/BikeCard';
+import BookingModal from '../components/BookingModal';
+import { fetchApi, getStoredUser } from '../lib/api';
 
 export default function HomePage() {
+  const [bikes, setBikes] = useState<any[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [selectedBike, setSelectedBike] = useState<any | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    loadBikes();
+    loadProfile();
+  }, []);
+
+  const loadBikes = async () => {
+    try {
+      const data = await fetchApi<any[]>('/ev-bikes');
+      setBikes(data);
+    } catch (err) {
+      console.error('Failed to load bikes', err);
+    }
+  };
+
+  const loadProfile = async () => {
+    const stored = getStoredUser();
+    if (!stored) return;
+    try {
+      const profile = await fetchApi<any>('/auth/me');
+      setUserProfile(profile);
+    } catch (err) {
+      console.error('Failed to load profile', err);
+    }
+  };
+
+  const handleBook = (bike: any) => {
+    setSelectedBike(bike);
+    setModalOpen(true);
+  };
+
   return (
     <div className="flex-1 flex flex-col relative overflow-hidden">
       {/* Background radial gradient glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[550px] gradient-glow pointer-events-none" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[650px] gradient-glow pointer-events-none" />
 
       {/* Hero Section */}
       <section className="relative pt-16 pb-20 md:pt-24 md:pb-28 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto text-center">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-navy-800/90 border border-electric-500/30 text-electric-300 text-xs font-semibold mb-6 shadow-sm">
-          <Zap className="w-3.5 h-3.5 text-electric-400 fill-electric-400" />
-          <span>Next-Generation EV Commerce & FinTech Ledger</span>
+        {/* Quality Pill */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-navy-900 border border-electric-500/30 text-electric-300 text-xs font-semibold mb-6 shadow-sm">
+          <Zap className="w-4 h-4 text-electric-400 fill-electric-400" />
+          <span>Next-Gen High-Torque Electric Mobility</span>
         </div>
 
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-tight md:leading-tight">
-          Powering Sustainable Transit with <span className="text-transparent bg-clip-text bg-gradient-to-r from-electric-400 via-emerald-400 to-electric-300">Verified Commerce</span>
+        {/* Main Headline */}
+        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black tracking-tight text-white max-w-5xl mx-auto leading-tight md:leading-tight">
+          Pioneering the Future of <br className="hidden sm:inline" />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-electric-400 via-emerald-400 to-electric-300">
+            Electric Performance
+          </span>
         </h1>
 
-        <p className="mt-6 text-base sm:text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
-          Book high-torque EV motorbikes, access exclusive shopping voucher liabilities, and experience a mathematical, double-entry financial simulation engine built for absolute regulatory compliance.
+        {/* Subhead */}
+        <p className="mt-6 text-base sm:text-lg text-slate-300 max-w-3xl mx-auto leading-relaxed">
+          Experience hyper-responsive electric superbikes engineered for zero emissions, relentless torque, and integrated community commerce. Book your ride today and unlock verified member rewards.
         </p>
 
+        {/* CTAs */}
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
+            href="/bikes"
+            className="w-full sm:w-auto px-8 py-4 rounded-2xl font-bold text-white bg-gradient-to-r from-electric-600 via-electric-500 to-emerald-500 hover:from-electric-500 hover:to-emerald-400 shadow-xl shadow-electric-500/25 transition-all flex items-center justify-center gap-2 group"
+          >
+            <Bike className="w-5 h-5" />
+            <span>Explore EV Superbikes</span>
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
+          <Link
             href="/auth/register"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-electric-600 via-electric-500 to-emerald-500 hover:from-electric-500 hover:to-emerald-400 shadow-lg shadow-electric-500/25 transition-all flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-8 py-4 rounded-2xl font-bold text-slate-200 bg-navy-900 hover:bg-navy-800 border border-navy-700 transition-all flex items-center justify-center gap-2"
           >
             <span>Register Free Account</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link
-            href="/simulator"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-semibold text-slate-200 bg-navy-800 hover:bg-navy-700 border border-navy-600/60 transition-all flex items-center justify-center gap-2"
-          >
-            <Cpu className="w-4 h-4 text-emerald-400" />
-            <span>Launch Commission Simulator</span>
           </Link>
         </div>
 
-        {/* Quick Highlights */}
-        <div className="mt-14 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
-          <div className="p-4 rounded-xl bg-navy-900/60 border border-navy-700/50 backdrop-blur-sm">
-            <div className="text-2xl font-black text-white">₹0</div>
-            <div className="text-xs text-slate-400 mt-1">Zero-barrier Free Registration</div>
+        {/* Real-time Fleet Metrics Bar */}
+        <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
+          <div className="p-5 rounded-2xl bg-navy-900/70 border border-navy-700/60 backdrop-blur-md">
+            <div className="text-3xl font-black text-white">175 <span className="text-base text-slate-400 font-semibold">km</span></div>
+            <div className="text-xs text-slate-400 mt-1 font-medium">Max Range per Charge</div>
           </div>
-          <div className="p-4 rounded-xl bg-navy-900/60 border border-navy-700/50 backdrop-blur-sm">
-            <div className="text-2xl font-black text-electric-400">₹30,000</div>
-            <div className="text-xs text-slate-400 mt-1">Shopping Voucher Entitlement</div>
+          <div className="p-5 rounded-2xl bg-navy-900/70 border border-navy-700/60 backdrop-blur-md">
+            <div className="text-3xl font-black text-electric-400">120 <span className="text-base text-slate-400 font-semibold">km/h</span></div>
+            <div className="text-xs text-slate-400 mt-1 font-medium">Top Velocity Profile</div>
           </div>
-          <div className="p-4 rounded-xl bg-navy-900/60 border border-navy-700/50 backdrop-blur-sm">
-            <div className="text-2xl font-black text-emerald-400">100%</div>
-            <div className="text-xs text-slate-400 mt-1">Double-Entry Balanced Ledgers</div>
+          <div className="p-5 rounded-2xl bg-navy-900/70 border border-navy-700/60 backdrop-blur-md">
+            <div className="text-3xl font-black text-emerald-400">₹30,000</div>
+            <div className="text-xs text-slate-400 mt-1 font-medium">Shopping Voucher Benefit</div>
           </div>
-          <div className="p-4 rounded-xl bg-navy-900/60 border border-navy-700/50 backdrop-blur-sm">
-            <div className="text-2xl font-black text-amber-400">Locked</div>
-            <div className="text-xs text-slate-400 mt-1">Simulation Mode (No Live Payouts)</div>
+          <div className="p-5 rounded-2xl bg-navy-900/70 border border-navy-700/60 backdrop-blur-md">
+            <div className="text-3xl font-black text-purple-400">₹0 <span className="text-base text-slate-400 font-semibold">Fee</span></div>
+            <div className="text-xs text-slate-400 mt-1 font-medium">Zero-Barrier Free Registration</div>
           </div>
         </div>
       </section>
 
-      {/* Membership Packages Section */}
-      <section className="py-16 bg-navy-900/40 border-t border-b border-navy-800/80 px-4 sm:px-6 lg:px-8">
+      {/* Featured EV Fleet Showcase Section */}
+      <section className="py-20 bg-navy-900/40 border-t border-navy-800/80 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-3xl font-extrabold text-white">Transparent Membership Tiers</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Clear participation levels aligned with genuine commerce, platform fees, and shopping entitlements.
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
+            <div>
+              <div className="text-xs font-bold text-electric-400 uppercase tracking-widest">
+                Precision Engineering
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-black text-white mt-1">
+                The ASKR EV Fleet
+              </h2>
+              <p className="text-sm text-slate-400 mt-2 max-w-xl">
+                Aerodynamic chassis, high-capacity lithium battery architectures, PMSM powertrain motors, and seamless app telemetry.
+              </p>
+            </div>
+            <Link
+              href="/bikes"
+              className="text-sm font-bold text-electric-400 hover:text-electric-300 flex items-center gap-1.5 transition-colors self-start md:self-auto"
+            >
+              <span>View All Specifications</span>
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {/* Bikes Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {bikes.map((bike) => (
+              <BikeCard
+                key={bike.id}
+                bike={bike}
+                onBook={handleBook}
+                userVoucherINR={userProfile?.wallet?.shoppingVoucherINR || 0}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Transparent Membership Packages Section */}
+      <section id="membership" className="py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest">
+            Community & Direct Participation
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black text-white mt-2">
+            Transparent Membership Plans
+          </h2>
+          <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+            Choose your participation level. Start free with zero fee obligation, or activate full membership to access genuine retail shopping vouchers and referral network rewards.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Plan 1: Free Registration */}
+          <div className="card-gradient rounded-3xl p-8 flex flex-col justify-between border-navy-700/80 hover:border-slate-500 transition-all">
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Explorer
+              </div>
+              <h3 className="text-2xl font-black text-white mt-1">Free Registration</h3>
+              <div className="mt-4 flex items-baseline">
+                <span className="text-4xl font-black text-white">₹0</span>
+                <span className="ml-2 text-xs text-slate-400">Zero mandatory fee</span>
+              </div>
+              <p className="mt-3 text-xs text-slate-300 leading-relaxed">
+                Join the platform with zero risk. Generate a verified Member ID and explore our electric vehicle lineup and community.
+              </p>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-start text-xs text-slate-300 gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Unique Member ID (ASKR-XXXXXX)</span>
+                </div>
+                <div className="flex items-start text-xs text-slate-300 gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Personal dashboard & referral link</span>
+                </div>
+                <div className="flex items-start text-xs text-slate-300 gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Browse complete EV bike catalog</span>
+                </div>
+                <div className="flex items-start text-xs text-slate-400 gap-2.5 pt-1 border-t border-navy-800">
+                  <span className="text-slate-500">•</span>
+                  <span>No income eligibility until qualifying activation</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 pt-4">
+              <Link
+                href="/auth/register"
+                className="w-full py-3.5 rounded-xl font-bold text-xs text-center text-slate-200 bg-navy-800 hover:bg-navy-700 border border-navy-600 transition-colors block"
+              >
+                Register Free
+              </Link>
+            </div>
+          </div>
+
+          {/* Plan 2: Basic Membership */}
+          <div className="card-gradient rounded-3xl p-8 flex flex-col justify-between border-electric-500/30 hover:border-electric-500/60 transition-all">
+            <div>
+              <div className="text-xs font-bold text-electric-400 uppercase tracking-wider">
+                Community Builder
+              </div>
+              <h3 className="text-2xl font-black text-white mt-1">Basic Membership</h3>
+              <div className="mt-4 flex items-baseline">
+                <span className="text-4xl font-black text-white">₹3,000</span>
+                <span className="ml-2 text-xs text-slate-400">One-time platform fee</span>
+              </div>
+              <p className="mt-3 text-xs text-slate-300 leading-relaxed">
+                Activate your membership in the sponsor network to begin qualifying for basic direct community commissions.
+              </p>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-start text-xs text-slate-300 gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Full activation in sponsor network</span>
+                </div>
+                <div className="flex items-start text-xs text-slate-300 gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Eligible for Basic Direct Sponsor Income</span>
+                </div>
+                <div className="flex items-start text-xs text-slate-300 gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Upgrade option available anytime</span>
+                </div>
+                <div className="flex items-start text-xs text-slate-400 gap-2.5 pt-1 border-t border-navy-800">
+                  <span className="text-slate-500">•</span>
+                  <span>No binary matching income until Full Qualified</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 pt-4">
+              <Link
+                href="/auth/register"
+                className="w-full py-3.5 rounded-xl font-bold text-xs text-center text-white bg-navy-800 hover:bg-navy-700 border border-electric-500/40 transition-colors block"
+              >
+                Join as Basic Member
+              </Link>
+            </div>
+          </div>
+
+          {/* Plan 3: Full Membership (Featured) */}
+          <div className="relative rounded-3xl p-8 flex flex-col justify-between bg-gradient-to-b from-navy-800 via-navy-900 to-navy-950 border-2 border-electric-400 shadow-2xl shadow-electric-500/10">
+            {/* Value Badge */}
+            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-electric-500 to-emerald-400 text-navy-950 font-black text-[11px] uppercase tracking-wider shadow-md">
+              Complete Package
+            </div>
+
+            <div>
+              <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                Executive Qualified
+              </div>
+              <h3 className="text-2xl font-black text-white mt-1">Full Membership</h3>
+              <div className="mt-4 flex items-baseline">
+                <span className="text-4xl font-black text-white">₹33,000</span>
+                <span className="ml-2 text-xs text-slate-400">Total package</span>
+              </div>
+              <div className="text-[11px] text-emerald-400 font-bold mt-1">
+                Includes ₹30,000 Shopping Voucher + ₹3,000 Platform Fee
+              </div>
+              <p className="mt-3 text-xs text-slate-300 leading-relaxed">
+                Immediate Full Qualification status with ₹30,000 shopping voucher credit, direct sponsor eligibility, and binary matching income.
+              </p>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-start text-xs text-white gap-2.5 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>₹30,000 Shopping Voucher included</span>
+                </div>
+                <div className="flex items-start text-xs text-white gap-2.5 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Immediate Full Qualification status</span>
+                </div>
+                <div className="flex items-start text-xs text-white gap-2.5 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Eligible for ₹10,000 Full Sponsor Income</span>
+                </div>
+                <div className="flex items-start text-xs text-white gap-2.5 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Eligible for Binary Matching Income</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 pt-4">
+              <Link
+                href="/auth/register"
+                className="w-full py-3.5 rounded-xl font-bold text-xs text-center text-white bg-gradient-to-r from-electric-600 via-electric-500 to-emerald-500 hover:from-electric-500 hover:to-emerald-400 shadow-lg shadow-electric-500/25 transition-all block"
+              >
+                Join as Full Member
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* Regulatory & Ethical Compliance Note */}
+        <div className="mt-12 p-6 rounded-2xl bg-navy-900/60 border border-navy-800 text-xs text-slate-400 flex flex-col sm:flex-row items-center gap-4">
+          <ShieldCheck className="w-8 h-8 text-emerald-400 shrink-0" />
+          <div className="leading-relaxed">
+            <span className="font-bold text-slate-200">Consumer Protection Disclosure: </span>
+            ASKR EV complies with Indian direct selling rules. Membership does not guarantee income. Rewards require legitimate qualifying sales of EV products and genuine consumer retail transactions. Shopping vouchers are promotional shopping credits and cannot be directly converted to cash.
+          </div>
+        </div>
+      </section>
+
+      {/* EV Mobility Ecosystem & Technology Highlights */}
+      <section id="ecosystem" className="py-20 bg-navy-900/30 border-t border-navy-800/80 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <div className="text-xs font-bold text-electric-400 uppercase tracking-widest">
+              Integrated Innovation
+            </div>
+            <h2 className="text-3xl font-black text-white mt-1">
+              Engineered for Modern Cities
+            </h2>
+            <p className="text-sm text-slate-400 mt-2">
+              Combining world-class hardware with real-time telemetry and seamless digital commerce.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-            {/* Free Registration */}
-            <div className="card-gradient rounded-2xl p-6 flex flex-col justify-between border-navy-700 hover:border-slate-500 transition-all">
-              <div>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Starter</div>
-                <h3 className="text-xl font-bold text-white mt-1">Free Registration</h3>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-3xl font-black text-white">₹0</span>
-                  <span className="ml-2 text-xs text-slate-400">No mandatory fees</span>
-                </div>
-                <p className="mt-3 text-xs text-slate-300 leading-relaxed">
-                  Join the platform with zero risk. Generate a unique Member ID and explore our electric vehicle lineup.
-                </p>
-
-                <div className="mt-6 space-y-2.5">
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Unique Member ID (ASKR-XXXXXX)</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Personal dashboard & referral link</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-400 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-slate-500 shrink-0" />
-                    <span>No income eligibility until activation</span>
-                  </div>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="p-6 rounded-2xl bg-navy-900/60 border border-navy-800 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-electric-500/10 border border-electric-500/20 flex items-center justify-center text-electric-400">
+                <BatteryCharging className="w-5 h-5" />
               </div>
-
-              <div className="mt-8">
-                <Link
-                  href="/auth/register"
-                  className="w-full block text-center py-2.5 px-4 rounded-xl font-semibold text-xs text-white bg-navy-800 hover:bg-navy-700 border border-navy-600 transition-colors"
-                >
-                  Create Free Account
-                </Link>
-              </div>
+              <h3 className="text-base font-bold text-white">Smart Battery Management</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Multi-tier thermal regulation, high-density cell architecture, and 3-year warranty protection.
+              </p>
             </div>
 
-            {/* Basic Membership */}
-            <div className="card-gradient rounded-2xl p-6 flex flex-col justify-between border-electric-500/40 relative hover:border-electric-400 transition-all">
-              <div className="absolute -top-3 right-6 px-2.5 py-0.5 rounded-full bg-electric-500 text-[10px] font-black uppercase tracking-wider text-navy-950">
-                Network Active
+            <div className="p-6 rounded-2xl bg-navy-900/60 border border-navy-800 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Gauge className="w-5 h-5" />
               </div>
-              <div>
-                <div className="text-xs font-bold text-electric-400 uppercase tracking-widest">Active Partner</div>
-                <h3 className="text-xl font-bold text-white mt-1">Basic Membership</h3>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-3xl font-black text-white">₹3,000</span>
-                  <span className="ml-2 text-xs text-slate-400">one-time platform fee</span>
-                </div>
-                <p className="mt-3 text-xs text-slate-300 leading-relaxed">
-                  Active participant in the sponsor network. Generates ₹1,000 basic direct sponsor commission.
-                </p>
-
-                <div className="mt-6 space-y-2.5">
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-electric-400 shrink-0" />
-                    <span>Eligible for Basic Sponsor Rewards</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-electric-400 shrink-0" />
-                    <span>1x ₹1,000 hold reserve mechanism</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-electric-400 shrink-0" />
-                    <span>Full upgrade path via fee or retail shopping</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-400 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-slate-500 shrink-0" />
-                    <span>No binary matching until Full Qualified</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8">
-                <Link
-                  href="/auth/register"
-                  className="w-full block text-center py-2.5 px-4 rounded-xl font-semibold text-xs text-white bg-electric-600 hover:bg-electric-500 shadow-md shadow-electric-600/20 transition-all"
-                >
-                  Join Basic Partner
-                </Link>
-              </div>
+              <h3 className="text-base font-bold text-white">Regenerative Braking</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Recovers kinetic energy during deceleration, providing smooth braking and extending urban commute range.
+              </p>
             </div>
 
-            {/* Full Membership */}
-            <div className="card-gradient rounded-2xl p-6 flex flex-col justify-between border-emerald-500/40 relative hover:border-emerald-400 transition-all">
-              <div className="absolute -top-3 right-6 px-2.5 py-0.5 rounded-full bg-emerald-500 text-[10px] font-black uppercase tracking-wider text-navy-950">
-                Full Qualified
+            <div className="p-6 rounded-2xl bg-navy-900/60 border border-navy-800 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <Cpu className="w-5 h-5" />
               </div>
-              <div>
-                <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Complete Mobility</div>
-                <h3 className="text-xl font-bold text-white mt-1">Full Membership</h3>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-3xl font-black text-white">₹33,000</span>
-                  <span className="ml-2 text-xs text-slate-400">all-inclusive</span>
-                </div>
-                <div className="mt-2 text-[11px] text-emerald-300 font-semibold bg-emerald-500/10 px-2 py-1 rounded inline-block">
-                  Includes ₹30,000 Shopping Voucher
-                </div>
-                <p className="mt-3 text-xs text-slate-300 leading-relaxed">
-                  Immediate Full Qualification status with direct sponsor eligibility and binary matching potential.
-                </p>
+              <h3 className="text-base font-bold text-white">4G Cloud Telemetry</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Continuous diagnostics, GPS theft tracking, and over-the-air firmware updates straight to your bike.
+              </p>
+            </div>
 
-                <div className="mt-6 space-y-2.5">
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>₹30,000 Shopping Voucher issued instantly</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Immediate Full Qualification</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Binary Matching Income (₹3,000/match)</span>
-                  </div>
-                  <div className="flex items-center text-xs text-slate-300 gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>₹10,000 Full Direct sponsor reward tier</span>
-                  </div>
-                </div>
+            <div className="p-6 rounded-2xl bg-navy-900/60 border border-navy-800 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <ShieldCheck className="w-5 h-5" />
               </div>
-
-              <div className="mt-8">
-                <Link
-                  href="/auth/register"
-                  className="w-full block text-center py-2.5 px-4 rounded-xl font-semibold text-xs text-white bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 shadow-md shadow-emerald-600/20 transition-all"
-                >
-                  Select Full Package
-                </Link>
-              </div>
+              <h3 className="text-base font-bold text-white">Verified Ledger</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                All booking receipts, voucher balances, and sponsor commissions recorded with double-entry precision.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* EV Bikes Teaser Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
-          <div>
-            <div className="text-xs font-bold text-electric-400 uppercase tracking-widest">Fleet & Hardware</div>
-            <h2 className="text-3xl font-extrabold text-white mt-1">Flagship EV Motorbike Models</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              High-torque brushless PMSM powertrains with intelligent battery thermal management.
-            </p>
-          </div>
-          <Link
-            href="/bikes"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-electric-400 hover:text-electric-300 transition-colors"
-          >
-            <span>Explore All 3 Models</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="card-gradient rounded-2xl p-6 border-navy-700">
-            <div className="h-36 rounded-xl bg-gradient-to-br from-navy-800 to-navy-950 flex items-center justify-center border border-navy-700/60 mb-4">
-              <Bike className="w-16 h-16 text-electric-400" />
-            </div>
-            <h3 className="text-lg font-bold text-white">ASKR Thunder Pro</h3>
-            <p className="text-xs text-slate-400 mt-1">High-Torque Performance Urban Commuter</p>
-            <div className="mt-4 pt-4 border-t border-navy-800 grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Range</div>
-                <div className="text-sm font-bold text-white">135 km</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Top Speed</div>
-                <div className="text-sm font-bold text-white">95 km/h</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Charge</div>
-                <div className="text-sm font-bold text-white">3.5 hrs</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card-gradient rounded-2xl p-6 border-navy-700">
-            <div className="h-36 rounded-xl bg-gradient-to-br from-navy-800 to-navy-950 flex items-center justify-center border border-navy-700/60 mb-4">
-              <Bike className="w-16 h-16 text-emerald-400" />
-            </div>
-            <h3 className="text-lg font-bold text-white">ASKR City Cruise</h3>
-            <p className="text-xs text-slate-400 mt-1">Ultra-Efficient Daily City Rider</p>
-            <div className="mt-4 pt-4 border-t border-navy-800 grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Range</div>
-                <div className="text-sm font-bold text-white">90 km</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Top Speed</div>
-                <div className="text-sm font-bold text-white">70 km/h</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Charge</div>
-                <div className="text-sm font-bold text-white">2.8 hrs</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card-gradient rounded-2xl p-6 border-navy-700">
-            <div className="h-36 rounded-xl bg-gradient-to-br from-navy-800 to-navy-950 flex items-center justify-center border border-navy-700/60 mb-4">
-              <Bike className="w-16 h-16 text-amber-400" />
-            </div>
-            <h3 className="text-lg font-bold text-white">ASKR Apex Sport</h3>
-            <p className="text-xs text-slate-400 mt-1">Track-Inspired Speed & Smart Telemetry</p>
-            <div className="mt-4 pt-4 border-t border-navy-800 grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Range</div>
-                <div className="text-sm font-bold text-white">175 km</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Top Speed</div>
-                <div className="text-sm font-bold text-white">120 km/h</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase">Charge</div>
-                <div className="text-sm font-bold text-white">4.0 hrs</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Compliance Callout */}
-      <section className="py-12 bg-navy-900 border-t border-navy-800 px-4">
-        <div className="max-w-4xl mx-auto rounded-2xl p-6 bg-navy-950/80 border border-emerald-500/30 flex flex-col md:flex-row items-center gap-6">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-            <ShieldCheck className="w-8 h-8" />
-          </div>
-          <div className="flex-1 text-center md:text-left">
-            <h3 className="text-lg font-bold text-white">Strict Legal Safety & Direct Selling Guardrails</h3>
-            <p className="mt-1 text-xs text-slate-300 leading-relaxed">
-              In accordance with the Consumer Protection (Direct Selling) Rules, 2021, all MLM matching payouts and withdrawable earnings are kept in SIMULATION_ONLY mode pending statutory audit and formal legal sign-off.
-            </p>
-          </div>
-          <Link
-            href="/simulator"
-            className="shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-navy-800 hover:bg-navy-700 border border-navy-600 transition-colors"
-          >
-            Audit Simulator
-          </Link>
-        </div>
-      </section>
+      {/* Booking Modal */}
+      <BookingModal
+        bike={selectedBike}
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        user={userProfile}
+        onSuccess={() => {
+          loadProfile();
+        }}
+      />
     </div>
   );
 }

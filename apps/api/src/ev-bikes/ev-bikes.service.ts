@@ -30,6 +30,46 @@ export class EvBikesService {
     }));
   }
 
+  async getBikeById(idOrCode: string) {
+    const bike = await this.prisma.evBike.findFirst({
+      where: {
+        OR: [{ id: idOrCode }, { modelCode: idOrCode }],
+      },
+    });
+
+    if (!bike) {
+      throw new NotFoundException(`EV Bike model '${idOrCode}' not found`);
+    }
+
+    return {
+      id: bike.id,
+      modelCode: bike.modelCode,
+      name: bike.name,
+      tagline: bike.tagline,
+      batteryCapacityKwh: bike.batteryCapacityKwh,
+      rangeKm: bike.rangeKm,
+      topSpeedKmh: bike.topSpeedKmh,
+      chargingTimeHours: bike.chargingTimeHours,
+      exShowroomPriceINR: paiseToRupees(bike.exShowroomPricePaise),
+      bookingAmountINR: paiseToRupees(bike.bookingAmountPaise),
+      voucherRedeemLimitINR: paiseToRupees(bike.voucherRedeemLimitPaise),
+      imageUrl: bike.imageUrl,
+      isAvailable: bike.isAvailable,
+      specs: {
+        motorType: 'Permanent Magnet Synchronous Motor (PMSM)',
+        peakPowerKw: bike.topSpeedKmh > 100 ? 12.5 : bike.topSpeedKmh > 80 ? 8.5 : 6.0,
+        peakTorqueNm: bike.topSpeedKmh > 100 ? 78 : bike.topSpeedKmh > 80 ? 52 : 36,
+        acceleration0to40: bike.topSpeedKmh > 100 ? '2.8 sec' : bike.topSpeedKmh > 80 ? '3.5 sec' : '4.2 sec',
+        brakes: 'Dual Disc with CBS & Regenerative Braking',
+        display: '7-inch High-Brightness Touch TFT with Telemetry & Navigation',
+        connectivity: '4G eSIM with Real-time GPS & OTA Updates',
+        ridingModes: ['Eco', 'Ride', 'Sport', 'Reverse Assist'],
+        warranty: '3 Years / 50,000 km Comprehensive Warranty',
+      },
+      demoNotice: 'Demo specification model for ASKR EV platform prototype',
+    };
+  }
+
   async createBooking(userId: string, bikeId: string, voucherAmountINR: number = 0) {
     const bike = await this.prisma.evBike.findUnique({
       where: { id: bikeId },

@@ -5,6 +5,7 @@ import path from 'path';
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const ARTIFACT_DIR = 'C:\\Users\\New\\.gemini\\antigravity\\brain\\2be6b61f-ae3e-45fe-b65c-bc7fd8d418f1\\screenshots';
 const BASE_URL = 'http://localhost:3000';
+const API_URL = 'http://localhost:4000/api';
 
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -58,8 +59,36 @@ class CdpClient {
 }
 
 async function runVisualQA() {
-  console.log('--- Starting ASKR EV Chrome Headless Visual QA ---');
+  console.log('--- Starting ASKR EV Phase 2 Visual QA Suite ---');
   const tempProfile = path.join(process.env.TEMP, 'chrome_qa_profile_' + Date.now());
+
+  // Obtain test authentication credentials
+  let memberAuth = null;
+  let adminAuth = null;
+
+  try {
+    const memberRes = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'member.a@askrev.local', password: 'MemberA@AskREV2026!' }),
+    });
+    if (memberRes.ok) {
+      memberAuth = await memberRes.json();
+      console.log('  ✓ Member authentication session acquired');
+    }
+
+    const adminRes = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'superadmin@askrev.local', password: 'SuperAdmin@AskREV2026!' }),
+    });
+    if (adminRes.ok) {
+      adminAuth = await adminRes.json();
+      console.log('  ✓ Admin authentication session acquired');
+    }
+  } catch (err) {
+    console.warn('  ⚠ Auth acquisition notice:', err.message);
+  }
 
   const chromeProc = spawn(CHROME_PATH, [
     '--headless=new',
@@ -71,14 +100,14 @@ async function runVisualQA() {
     'about:blank',
   ]);
 
-  await sleep(2000);
+  await sleep(2500);
 
   try {
     const versionRes = await fetch('http://localhost:9222/json/version');
     const version = await versionRes.json();
     console.log(`Connected to Chrome via CDP: ${version.Browser}`);
 
-    // Connect to the page tab
+    // Connect to page tab
     const listRes = await fetch('http://localhost:9222/json');
     const tabs = await listRes.json();
     const tab = tabs.find((t) => t.type === 'page') || tabs[0];
@@ -108,13 +137,13 @@ async function runVisualQA() {
     });
 
     const routes = [
-      { name: 'homepage', path: '/' },
-      { name: 'login', path: '/auth/login' },
-      { name: 'register', path: '/auth/register' },
-      { name: 'bikes', path: '/bikes' },
-      { name: 'simulator', path: '/simulator' },
-      { name: 'dashboard', path: '/dashboard' },
-      { name: 'admin', path: '/admin' },
+      { name: 'homepage', path: '/', auth: null },
+      { name: 'bikes', path: '/bikes', auth: null },
+      { name: 'bike_detail', path: '/bikes/ASKR-THUNDER-PRO', auth: null },
+      { name: 'login', path: '/auth/login', auth: null },
+      { name: 'register', path: '/auth/register', auth: null },
+      { name: 'dashboard', path: '/dashboard', auth: memberAuth },
+      { name: 'admin', path: '/admin', auth: adminAuth },
     ];
 
     const results = [];
@@ -138,14 +167,33 @@ async function runVisualQA() {
       for (const route of routes) {
         const fullUrl = `${BASE_URL}${route.path}`;
 
-        // Reset errors for page
         networkErrors.length = 0;
         consoleLogs.length = 0;
 
+        // First navigate to set origin for localStorage
+        if (route.auth) {
+          await cdp.send('Page.navigate', { url: BASE_URL });
+          await sleep(500);
+          await cdp.send('Runtime.evaluate', {
+            expression: `(() => {
+              localStorage.setItem('askrev_access_token', ${JSON.stringify(route.auth.tokens.accessToken)});
+              localStorage.setItem('askrev_user', ${JSON.stringify(JSON.stringify(route.auth.user))});
+            })()`,
+          });
+        } else {
+          // Clear session for public views
+          await cdp.send('Runtime.evaluate', {
+            expression: `(() => {
+              localStorage.removeItem('askrev_access_token');
+              localStorage.removeItem('askrev_user');
+            })()`,
+          });
+        }
+
         await cdp.send('Page.navigate', { url: fullUrl });
 
-        // Wait for page to render
-        await sleep(1500);
+        // Wait for components and data to render
+        await sleep(2000);
 
         // Inspect computed styles
         const evalResult = await cdp.send('Runtime.evaluate', {
@@ -154,8 +202,6 @@ async function runVisualQA() {
             const bodyStyle = window.getComputedStyle(body);
             const card = document.querySelector('.card-gradient');
             const cardStyle = card ? window.getComputedStyle(card) : null;
-            const button = document.querySelector('button, a.bg-gradient-to-r');
-            const btnStyle = button ? window.getComputedStyle(button) : null;
             const nav = document.querySelector('nav');
             const navStyle = nav ? window.getComputedStyle(nav) : null;
 
@@ -165,9 +211,7 @@ async function runVisualQA() {
               bodyColor: bodyStyle.color,
               fontFamily: bodyStyle.fontFamily.split(',')[0],
               hasCardGradient: !!card,
-              cardBg: cardStyle ? cardStyle.backgroundImage : 'none',
               cardBorder: cardStyle ? cardStyle.borderColor : 'none',
-              cardRadius: cardStyle ? cardStyle.borderRadius : 'none',
               navBg: navStyle ? navStyle.backgroundColor : 'none',
               hasCssLoaded: bodyStyle.backgroundColor === 'rgb(6, 11, 24)' || bodyStyle.backgroundColor === 'rgba(6, 11, 24, 1)',
             };
@@ -177,13 +221,11 @@ async function runVisualQA() {
 
         const styles = evalResult.result.value;
 
-        // Take screenshot
+        // Capture screenshot
         const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         const screenshotFileName = `${route.name}_${vp.mode}.png`;
         const screenshotPath = path.join(ARTIFACT_DIR, screenshotFileName);
         fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
-
-        const isSuccess = styles.hasCssLoaded && networkErrors.filter((e) => e.url.includes('.css')).length === 0;
 
         results.push({
           route: route.path,
@@ -199,7 +241,7 @@ async function runVisualQA() {
         });
 
         console.log(
-          `  ✓ [${vp.mode}] ${route.path.padEnd(16)} | CSS Applied: ${styles.hasCssLoaded ? 'YES' : 'NO'} | Body BG: ${styles.bodyBg} | Card Border: ${styles.cardBorder} | Shot: ${screenshotFileName}`
+          `  ✓ [${vp.mode}] ${route.path.padEnd(26)} | CSS: ${styles.hasCssLoaded ? 'YES' : 'NO'} | Body BG: ${styles.bodyBg} | Card Border: ${styles.cardBorder} | Shot: ${screenshotFileName}`
         );
       }
     }
@@ -209,7 +251,7 @@ async function runVisualQA() {
     console.log('\n--- Visual QA Complete ---');
     console.log(`All ${results.length} screenshots saved to: ${ARTIFACT_DIR}`);
 
-    // Output JSON report for parsing
+    // Output JSON report
     fs.writeFileSync(path.join(ARTIFACT_DIR, 'qa_summary.json'), JSON.stringify(results, null, 2));
 
     return results;

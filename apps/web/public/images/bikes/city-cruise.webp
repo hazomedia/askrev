@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B132B" />
+      <stop offset="100%" stop-color="#060B18" />
+    </linearGradient>
+    <linearGradient id="frameGrad2" x1="0%" y1="0%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#064E3B" />
+    </linearGradient>
+    <linearGradient id="neonGlow2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#34D399" />
+    </linearGradient>
+    <filter id="glowFilter2" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="800" height="480" fill="url(#bgGrad2)" rx="16" />
+  
+  <!-- Subtle Grid Lines -->
+  <g opacity="0.08" stroke="#10B981" stroke-width="1">
+    <line x1="0" y1="120" x2="800" y2="120" />
+    <line x1="0" y1="240" x2="800" y2="240" />
+    <line x1="0" y1="360" x2="800" y2="360" />
+    <line x1="200" y1="0" x2="200" y2="480" />
+    <line x1="400" y1="0" x2="400" y2="480" />
+    <line x1="600" y1="0" x2="600" y2="480" />
+  </g>
+
+  <!-- Ground Plane & Shadow -->
+  <ellipse cx="400" cy="400" rx="310" ry="22" fill="#000000" opacity="0.6" filter="url(#glowFilter2)" />
+  <line x1="90" y1="400" x2="710" y2="400" stroke="#10B981" stroke-width="2" opacity="0.3" />
+
+  <!-- Rear Wheel Assembly (Step-Through / Cruiser profile) -->
+  <g id="rearWheel">
+    <circle cx="230" cy="340" r="72" fill="#111827" stroke="#1F2937" stroke-width="13" />
+    <circle cx="230" cy="340" r="58" fill="#1E293B" stroke="#10B981" stroke-width="3" opacity="0.8" />
+    <circle cx="230" cy="340" r="30" fill="#0B132B" stroke="#3A506B" stroke-width="2" />
+    <circle cx="230" cy="340" r="12" fill="#10B981" />
+    <line x1="230" y1="282" x2="230" y2="398" stroke="#10B981" stroke-width="2" opacity="0.5" />
+    <line x1="172" y1="340" x2="288" y2="340" stroke="#10B981" stroke-width="2" opacity="0.5" />
+    <circle cx="230" cy="340" r="40" fill="none" stroke="#64748B" stroke-width="3" stroke-dasharray="3,3" />
+    <rect x="200" y="325" width="18" height="28" rx="4" fill="#00B4D8" />
+  </g>
+
+  <!-- Front Wheel Assembly -->
+  <g id="frontWheel">
+    <circle cx="590" cy="340" r="72" fill="#111827" stroke="#1F2937" stroke-width="13" />
+    <circle cx="590" cy="340" r="58" fill="#1E293B" stroke="#10B981" stroke-width="3" opacity="0.8" />
+    <circle cx="590" cy="340" r="30" fill="#0B132B" stroke="#3A506B" stroke-width="2" />
+    <circle cx="590" cy="340" r="12" fill="#10B981" />
+    <line x1="590" y1="282" x2="590" y2="398" stroke="#10B981" stroke-width="2" opacity="0.5" />
+    <line x1="532" y1="340" x2="648" y2="340" stroke="#10B981" stroke-width="2" opacity="0.5" />
+    <circle cx="590" cy="340" r="40" fill="none" stroke="#64748B" stroke-width="3" stroke-dasharray="3,3" />
+    <rect x="600" y="325" width="18" height="28" rx="4" fill="#00B4D8" />
+  </g>
+
+  <!-- Step-Through City Frame & Battery -->
+  <path d="M 230 340 L 370 335 L 430 320 L 480 240 L 530 180 L 490 180 L 390 280 L 290 280 Z" fill="url(#frameGrad2)" stroke="#34D399" stroke-width="2" />
+  <rect x="330" y="280" width="120" height="40" rx="8" fill="#0F172A" stroke="#10B981" stroke-width="2" />
+  <text x="390" y="305" fill="#34D399" font-size="9" font-weight="800" text-anchor="middle" font-family="sans-serif">2.5 kWh LFP PACK</text>
+
+  <!-- Comfort Saddle -->
+  <path d="M 270 260 Q 320 250 370 265 L 360 280 L 280 280 Z" fill="#020617" stroke="#334155" stroke-width="2" />
+
+  <!-- Upright Handlebars -->
+  <line x1="590" y1="340" x2="520" y2="150" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+  <path d="M 520 150 L 490 120 L 530 115" fill="none" stroke="#E2E8F0" stroke-width="6" stroke-linecap="round" />
+
+  <!-- City LED Headlight -->
+  <polygon points="535,160 680,140 690,210 540,195" fill="url(#neonGlow2)" opacity="0.18" filter="url(#glowFilter2)" />
+  <circle cx="535" cy="180" r="10" fill="#10B981" filter="url(#glowFilter2)" />
+
+  <!-- Badging & Model Name -->
+  <text x="420" y="220" fill="#FFFFFF" font-size="16" font-weight="900" letter-spacing="3" font-family="sans-serif">CITY <tspan fill="#10B981">CRUISE</tspan></text>
+  <text x="420" y="235" fill="#94A3B8" font-size="9" font-weight="700" letter-spacing="1.5" font-family="sans-serif">EFFORTLESS COMMUTING</text>
+
+  <!-- Speed & Range HUD Overlay Badges -->
+  <g transform="translate(60, 40)">
+    <rect width="130" height="42" rx="8" fill="#1C2541" stroke="#3A506B" opacity="0.9" />
+    <text x="14" y="20" fill="#94A3B8" font-size="9" font-weight="700" font-family="sans-serif">MAX RANGE</text>
+    <text x="14" y="36" fill="#10B981" font-size="16" font-weight="900" font-family="sans-serif">90 <tspan font-size="10" font-weight="600" fill="#94A3B8">KM</tspan></text>
+  </g>
+  <g transform="translate(205, 40)">
+    <rect width="130" height="42" rx="8" fill="#1C2541" stroke="#3A506B" opacity="0.9" />
+    <text x="14" y="20" fill="#94A3B8" font-size="9" font-weight="700" font-family="sans-serif">TOP VELOCITY</text>
+    <text x="14" y="36" fill="#00B4D8" font-size="16" font-weight="900" font-family="sans-serif">70 <tspan font-size="10" font-weight="600" fill="#94A3B8">KM/H</tspan></text>
+  </g>
+</svg>
