@@ -22,6 +22,10 @@ import {
   Menu,
   X,
   ExternalLink,
+  RotateCcw,
+  History,
+  ArrowDownRight,
+  ArrowUpRight,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, clearAuthSession } from '../../lib/api';
 
@@ -34,6 +38,10 @@ export default function DashboardPage() {
   const [binaryTree, setBinaryTree] = useState<any>(null);
   const [userBookings, setUserBookings] = useState<any[]>([]);
   const [userVouchers, setUserVouchers] = useState<any[]>([]);
+  const [walletOverview, setWalletOverview] = useState<any>(null);
+  const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
+  const [voucherTransactions, setVoucherTransactions] = useState<any[]>([]);
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -55,24 +63,60 @@ export default function DashboardPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [profileData, teamData, binaryData, bookingsData, vouchersData] =
-        await Promise.all([
-          fetchApi<any>('/auth/me'),
-          fetchApi<any>('/members/direct-team').catch(() => null),
-          fetchApi<any>('/members/binary-tree').catch(() => null),
-          fetchApi<any>('/ev-bikes/my-bookings').catch(() => []),
-          fetchApi<any>('/vouchers/my-vouchers').catch(() => []),
-        ]);
+      const [
+        profileData,
+        teamData,
+        binaryData,
+        bookingsData,
+        vouchersData,
+        walletData,
+        walletTxData,
+        voucherTxData,
+      ] = await Promise.all([
+        fetchApi<any>('/auth/me'),
+        fetchApi<any>('/members/direct-team').catch(() => null),
+        fetchApi<any>('/members/binary-tree').catch(() => null),
+        fetchApi<any>('/ev-bikes/my-bookings').catch(() => []),
+        fetchApi<any>('/vouchers/my-vouchers').catch(() => []),
+        fetchApi<any>('/wallet/my-wallet').catch(() => null),
+        fetchApi<any>('/wallet/transactions').catch(() => []),
+        fetchApi<any>('/vouchers/transactions').catch(() => []),
+      ]);
 
       setUser(profileData);
       setDirectTeam(teamData);
       setBinaryTree(binaryData);
       setUserBookings(bookingsData);
       setUserVouchers(vouchersData);
+      setWalletOverview(walletData);
+      setWalletTransactions(walletTxData);
+      setVoucherTransactions(voucherTxData);
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCancelBooking = async (bookingId: string) => {
+    if (
+      !confirm(
+        'Are you sure you want to cancel this simulated EV booking? Any redeemed shopping voucher value will be restored to your account.'
+      )
+    ) {
+      return;
+    }
+    setCancellingBookingId(bookingId);
+    try {
+      await fetchApi(`/ev-bikes/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ cancellationReason: 'Member requested simulated cancellation' }),
+      });
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to cancel booking');
+    } finally {
+      setCancellingBookingId(null);
     }
   };
 
@@ -902,17 +946,17 @@ export default function DashboardPage() {
             {/* TAB 4: EARNINGS WALLET */}
             {activeTab === 'wallets' && (
               <div className="space-y-6">
-                {/* 3 Clear Balances with Simple Accurate Terminology */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 4 Balances: Available, Held, Recovery, Total Earned */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                     <span className="text-xs font-semibold uppercase text-slate-400">
                       Available Balance
                     </span>
                     <div className="text-2xl font-bold text-[#15803D] mt-2">
-                      ₹{user.wallet?.availableEarningsINR?.toLocaleString('en-IN') ?? 0}
+                      ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Earnings account balance. Payouts currently disabled in compliance simulation mode.
+                      Available for simulated earnings withdrawal.
                     </p>
                   </div>
 
@@ -921,10 +965,10 @@ export default function DashboardPage() {
                       Pending / On Hold
                     </span>
                     <div className="text-2xl font-bold text-amber-600 mt-2">
-                      ₹{user.wallet?.heldCommissionsINR?.toLocaleString('en-IN') ?? 0}
+                      ₹{(walletOverview?.heldCommissionsINR ?? user.wallet?.heldCommissionsINR ?? 0).toLocaleString('en-IN')}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Commission hold reserve of ₹1,000 maintained prior to your 2nd Full Qualified Direct. Released automatically upon qualification.
+                      Commission hold reserve of ₹1,000 released upon 2nd qualified direct.
                     </p>
                   </div>
 
@@ -933,11 +977,91 @@ export default function DashboardPage() {
                       Pending Recovery
                     </span>
                     <div className="text-2xl font-bold text-[#DC2626] mt-2">
-                      ₹{user.wallet?.pendingRecoveryINR?.toLocaleString('en-IN') ?? 0}
+                      ₹{(walletOverview?.pendingRecoveryINR ?? user.wallet?.pendingRecoveryINR ?? 0).toLocaleString('en-IN')}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Advance recoveries and ledger adjustments. Wallets are never allowed to drop below ₹0.
+                      Prior Basic commission recovery. Wallets never go negative.
                     </p>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">
+                      Total Earnings
+                    </span>
+                    <div className="text-2xl font-bold text-[#165DAD] mt-2">
+                      ₹{(walletOverview?.totalEarnedINR ?? user.wallet?.totalEarnedINR ?? 0).toLocaleString('en-IN')}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Cumulative lifetime matching & direct sponsor commissions.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Authoritative Wallet Ledger Transactions Table */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#253247]">Authoritative Wallet Transactions</h3>
+                      <p className="text-xs text-slate-500">Double-entry accounting journal entries associated with your wallet</p>
+                    </div>
+                    <span className="text-xs text-slate-500 font-mono">{walletTransactions.length} Total</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
+                        <tr>
+                          <th className="py-3 px-4">Transaction ID / Ref</th>
+                          <th className="py-3 px-4">Date & Time</th>
+                          <th className="py-3 px-4">Type</th>
+                          <th className="py-3 px-4">Description</th>
+                          <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-[#253247]">
+                        {walletTransactions.length > 0 ? (
+                          walletTransactions.map((tx: any) => (
+                            <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
+                                {tx.referenceId}
+                              </td>
+                              <td className="py-3 px-4 text-slate-500">
+                                {new Date(tx.date).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-[11px] text-slate-600">
+                                {tx.transactionType}
+                              </td>
+                              <td className="py-3 px-4 text-slate-700 max-w-xs truncate">
+                                {tx.description}
+                              </td>
+                              <td className="py-3 px-4 font-bold">
+                                {tx.isCredit ? (
+                                  <span className="text-[#15803D]">
+                                    +₹{tx.amountINR.toLocaleString('en-IN')}
+                                  </span>
+                                ) : (
+                                  <span className="text-[#DC2626]">
+                                    -₹{tx.amountINR.toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
+                                  SIMULATED_LEDGER
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                              No wallet transactions found. Refer members or complete binary matches to earn commissions.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
@@ -973,16 +1097,50 @@ export default function DashboardPage() {
             {/* TAB 5: SHOPPING VOUCHERS */}
             {activeTab === 'vouchers' && (
               <div className="space-y-6">
+                {/* 3 Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">
+                      Total Issued Value
+                    </span>
+                    <div className="text-2xl font-bold text-[#165DAD] mt-2">
+                      ₹{userVouchers.reduce((acc: number, v: any) => acc + (v.initialValueINR || 0), 0).toLocaleString('en-IN')}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Lifetime value of all shopping vouchers granted.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">
+                      Available Voucher Balance
+                    </span>
+                    <div className="text-2xl font-bold text-[#15803D] mt-2">
+                      ₹{(walletOverview?.shoppingVoucherINR ?? user.wallet?.shoppingVoucherINR ?? 0).toLocaleString('en-IN')}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Active balance redeemable against EV bike booking deposits.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">
+                      Used / Redeemed Value
+                    </span>
+                    <div className="text-2xl font-bold text-slate-700 mt-2">
+                      ₹{userVouchers.reduce((acc: number, v: any) => acc + (v.usedAmountINR || 0), 0).toLocaleString('en-IN')}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Voucher credits utilized across confirmed EV bookings.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <span className="text-xs font-semibold uppercase text-slate-400">
-                      Total Shopping Voucher Balance
-                    </span>
-                    <div className="text-2xl font-bold text-[#165DAD] mt-1">
-                      ₹{user.wallet?.shoppingVoucherINR?.toLocaleString('en-IN') ?? 0}
-                    </div>
+                    <h3 className="text-sm font-bold text-[#253247]">EV Bike Booking Redemption</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Redeem against genuine EV motorbike bookings and authorized retail merchandise.
+                      Shopping Vouchers are non-convertible to cash and can be redeemed exclusively against genuine EV bike reservations.
                     </p>
                   </div>
                   <Link
@@ -990,7 +1148,7 @@ export default function DashboardPage() {
                     className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 self-start md:self-auto min-h-[44px]"
                   >
                     <Bike className="w-4 h-4" />
-                    <span>Redeem on EV Superbike</span>
+                    <span>Browse & Redeem on EV Bikes</span>
                   </Link>
                 </div>
 
@@ -1007,8 +1165,9 @@ export default function DashboardPage() {
                         <tr>
                           <th className="py-3 px-4">Voucher Code</th>
                           <th className="py-3 px-4">Initial Value</th>
+                          <th className="py-3 px-4">Used Amount</th>
                           <th className="py-3 px-4">Remaining Balance</th>
-                          <th className="py-3 px-4">Reason</th>
+                          <th className="py-3 px-4">Grant Reason</th>
                           <th className="py-3 px-4">Status</th>
                           <th className="py-3 px-4">Expires</th>
                         </tr>
@@ -1020,13 +1179,24 @@ export default function DashboardPage() {
                               <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
                                 {v.voucherCode}
                               </td>
-                              <td className="py-3 px-4">₹{v.initialValueINR.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-4 font-medium">₹{v.initialValueINR.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-4 text-slate-500">
+                                ₹{(v.usedAmountINR || 0).toLocaleString('en-IN')}
+                              </td>
                               <td className="py-3 px-4 font-bold text-[#15803D]">
                                 ₹{v.remainingBalanceINR.toLocaleString('en-IN')}
                               </td>
-                              <td className="py-3 px-4 text-slate-500">{v.issuedReason}</td>
+                              <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">{v.issuedReason}</td>
                               <td className="py-3 px-4">
-                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                    v.status === 'ACTIVE'
+                                      ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                      : v.status === 'PARTIALLY_REDEEMED'
+                                      ? 'bg-blue-50 text-[#165DAD] border-blue-200'
+                                      : 'bg-slate-100 text-slate-500 border-slate-200'
+                                  }`}
+                                >
                                   {v.status}
                                 </span>
                               </td>
@@ -1037,8 +1207,84 @@ export default function DashboardPage() {
                           ))
                         ) : (
                           <tr>
+                            <td colSpan={7} className="py-8 text-center text-slate-400">
+                              No shopping vouchers found. Upgrade to Full Membership or qualify directs to receive ₹30,000 vouchers.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Voucher Transaction History Table */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#253247]">Voucher Transaction History</h3>
+                      <p className="text-xs text-slate-500">Audit trail of redemptions, booking applications and reversals</p>
+                    </div>
+                    <span className="text-xs text-slate-500 font-mono">{voucherTransactions.length} Total</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
+                        <tr>
+                          <th className="py-3 px-4">Voucher Code</th>
+                          <th className="py-3 px-4">Action</th>
+                          <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Remaining Balance</th>
+                          <th className="py-3 px-4">Reference / Booking</th>
+                          <th className="py-3 px-4">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-[#253247]">
+                        {voucherTransactions.length > 0 ? (
+                          voucherTransactions.map((vt: any) => (
+                            <tr key={vt.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
+                                {vt.voucherCode}
+                              </td>
+                              <td className="py-3 px-4 font-semibold">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                    vt.transactionType === 'REDEMPTION'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                      : vt.transactionType === 'REVERSAL'
+                                      ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                      : 'bg-blue-50 text-[#165DAD] border-blue-200'
+                                  }`}
+                                >
+                                  {vt.transactionType}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 font-bold">
+                                {vt.transactionType === 'REDEMPTION' ? (
+                                  <span className="text-amber-700">
+                                    -₹{vt.amountINR.toLocaleString('en-IN')}
+                                  </span>
+                                ) : (
+                                  <span className="text-[#15803D]">
+                                    +₹{vt.amountINR.toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 font-bold text-slate-700">
+                                ₹{vt.balanceAfterINR.toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-slate-600">
+                                {vt.referenceId || 'N/A'}
+                              </td>
+                              <td className="py-3 px-4 text-slate-500">
+                                {new Date(vt.createdAt).toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
                             <td colSpan={6} className="py-8 text-center text-slate-400">
-                              No shopping vouchers found. Upgrade to Full Membership to receive ₹30,000 vouchers.
+                              No voucher transactions recorded yet.
                             </td>
                           </tr>
                         )}
@@ -1056,7 +1302,7 @@ export default function DashboardPage() {
                   <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-bold text-[#253247]">My EV Bike Reservations</h3>
-                      <p className="text-xs text-slate-500">Verified booking deposits and vehicle orders</p>
+                      <p className="text-xs text-slate-500">Verified booking deposits, vehicle orders and cancellation management</p>
                     </div>
                     <Link
                       href="/bikes"
@@ -1077,36 +1323,66 @@ export default function DashboardPage() {
                           <th className="py-3 px-4">Net Cash Paid</th>
                           <th className="py-3 px-4">Status</th>
                           <th className="py-3 px-4">Booking Date</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-[#253247]">
                         {userBookings.length > 0 ? (
-                          userBookings.map((b: any) => (
-                            <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
-                                {b.bookingNumber}
-                              </td>
-                              <td className="py-3 px-4 font-medium">{b.bikeName}</td>
-                              <td className="py-3 px-4">₹{b.bookingAmountINR.toLocaleString('en-IN')}</td>
-                              <td className="py-3 px-4 text-[#15803D] font-medium">
-                                -₹{b.voucherAppliedINR.toLocaleString('en-IN')}
-                              </td>
-                              <td className="py-3 px-4 font-bold text-[#253247]">
-                                ₹{b.netCashPaidINR.toLocaleString('en-IN')}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
-                                  {b.bookingStatus}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-slate-500">
-                                {new Date(b.createdAt).toLocaleDateString('en-IN')}
-                              </td>
-                            </tr>
-                          ))
+                          userBookings.map((b: any) => {
+                            const isCancelled = b.bookingStatus === 'CANCELLED';
+                            return (
+                              <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
+                                  {b.bookingNumber}
+                                </td>
+                                <td className="py-3 px-4 font-medium">{b.bikeName}</td>
+                                <td className="py-3 px-4">₹{b.bookingAmountINR.toLocaleString('en-IN')}</td>
+                                <td className="py-3 px-4 text-[#15803D] font-medium">
+                                  {b.voucherAppliedINR > 0 ? `-₹${b.voucherAppliedINR.toLocaleString('en-IN')}` : '₹0'}
+                                </td>
+                                <td className="py-3 px-4 font-bold text-[#253247]">
+                                  ₹{b.netCashPaidINR.toLocaleString('en-IN')}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                      isCancelled
+                                        ? 'bg-red-50 text-[#DC2626] border-red-200'
+                                        : 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                    }`}
+                                  >
+                                    {b.bookingStatus}
+                                  </span>
+                                  {isCancelled && b.cancellationReason && (
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                      {b.cancellationReason}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-slate-500">
+                                  {new Date(b.createdAt).toLocaleDateString('en-IN')}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  {!isCancelled ? (
+                                    <button
+                                      disabled={cancellingBookingId === b.id}
+                                      onClick={() => handleCancelBooking(b.id)}
+                                      className="px-3 py-1.5 rounded-lg border border-red-200 text-[#DC2626] hover:bg-red-50 text-[11px] font-medium transition-colors"
+                                    >
+                                      {cancellingBookingId === b.id ? 'Cancelling...' : 'Cancel Booking'}
+                                    </button>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 italic">
+                                      Restored
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
                           <tr>
-                            <td colSpan={7} className="py-8 text-center text-slate-400">
+                            <td colSpan={8} className="py-8 text-center text-slate-400">
                               No EV reservations found. Visit the EV bikes catalog to reserve a ride.
                             </td>
                           </tr>

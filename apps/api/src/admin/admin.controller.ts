@@ -20,4 +20,19 @@ export class AdminController {
   async getAuditLogs() {
     return this.adminService.getAuditLogs();
   }
+
+  @Get('financial-reconciliation')
+  async getFinancialReconciliation() {
+    return this.adminService.getFinancialReconciliation();
+  }
+
+  @Get('voucher-transactions')
+  async getVoucherTransactions() {
+    return this.adminService.getVoucherTransactionsAdmin();
+  }
+
+  @Get('suspicious-activity')
+  async getSuspiciousActivity() {
+    return this.adminService.detectSuspiciousActivity();
+  }
 }

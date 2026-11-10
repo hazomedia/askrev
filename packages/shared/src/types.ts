@@ -170,3 +170,66 @@ export interface EvBikeModel {
   imageUrl: string;
   isAvailable: boolean;
 }
+
+export interface VoucherTransactionItem {
+  id: string;
+  voucherId: string;
+  amountINR: number;
+  transactionType: string;
+  referenceId?: string | null;
+  balanceAfterINR: number;
+  narration: string;
+  createdAt: string;
+}
+
+export interface ShoppingVoucherDetailItem {
+  id: string;
+  voucherCode: string;
+  initialValueINR: number;
+  remainingBalanceINR: number;
+  usedAmountINR: number;
+  issuedReason: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+  transactions?: VoucherTransactionItem[];
+}
+
+export interface WalletOverviewItem {
+  availableEarningsINR: number;
+  heldCommissionsINR: number;
+  pendingRecoveryINR: number;
+  totalEarnedINR: number;
+  shoppingVoucherINR: number;
+  currency: string;
+  complianceMode: string;
+  withdrawalsEnabled: boolean;
+}
+
+export interface WalletTransactionItem {
+  id: string;
+  date: string;
+  transactionType: string;
+  description: string;
+  creditINR: number;
+  debitINR: number;
+  status: string;
+  referenceId: string;
+  account: string;
+}
+
+export interface EvBookingDetailItem {
+  id: string;
+  bookingNumber: string;
+  bikeName: string;
+  modelCode: string;
+  bookingAmountINR: number;
+  voucherAppliedINR: number;
+  netCashPaidINR: number;
+  bookingStatus: string;
+  voucherCode?: string | null;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+}
+

@@ -1,6 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MembershipPackage, paiseToRupees, FINANCIAL_RULES } from '@askrev/shared';
+import { MembershipPackage, paiseToRupees, FINANCIAL_RULES, UserRole } from '@askrev/shared';
 import { BinaryLeg, Prisma } from '@prisma/client';
 import {
   PlaceBinaryNodeDto,
@@ -86,6 +86,47 @@ export class MembersService {
       });
       if (!targetUser) {
         throw new NotFoundException('Member to place was not found.');
+      }
+
+      // Authorization Check: Non-admin actors can only place their own direct referrals within their subtree
+      const actor = await tx.user.findUnique({
+        where: { id: actorId },
+        select: { role: true },
+      });
+      const isAdmin =
+        actor?.role === UserRole.SUPER_ADMIN ||
+        actor?.role === UserRole.ADMIN_OPERATIONS ||
+        actor?.role === UserRole.FINANCE_MANAGER;
+
+      if (!isAdmin) {
+        if (targetUser.sponsorId !== actorId) {
+          throw new ForbiddenException(
+            'Unprivileged members may only place their own direct referrals in the binary tree.'
+          );
+        }
+        let isDownline = dto.parentId === actorId;
+        if (!isDownline) {
+          let currCheck: string | null = dto.parentId;
+          const visitedDownline = new Set<string>();
+          while (currCheck) {
+            if (currCheck === actorId) {
+              isDownline = true;
+              break;
+            }
+            if (visitedDownline.has(currCheck)) break;
+            visitedDownline.add(currCheck);
+            const p: { parentId: string | null } | null = await tx.binaryPlacement.findUnique({
+              where: { userId: currCheck },
+              select: { parentId: true },
+            });
+            currCheck = p?.parentId || null;
+          }
+        }
+        if (!isDownline) {
+          throw new ForbiddenException(
+            'Unprivileged members may only place nodes within their own binary downline subtree.'
+          );
+        }
       }
 
       // Check if member is already placed under a parent

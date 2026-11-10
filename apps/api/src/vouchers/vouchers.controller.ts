@@ -1,5 +1,5 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { VouchersService } from './vouchers.service';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { VouchersService, RedeemVoucherDto } from './vouchers.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -14,6 +14,24 @@ export class VouchersController {
   @Get('my-vouchers')
   async getMyVouchers(@CurrentUser() user: any) {
     return this.vouchersService.getUserVouchers(user.id);
+  }
+
+  @Get('transactions')
+  async getMyVoucherTransactions(@CurrentUser() user: any) {
+    return this.vouchersService.getUserVoucherTransactions(user.id);
+  }
+
+  @Post('redeem')
+  async redeemVoucher(
+    @CurrentUser() user: any,
+    @Body() dto: RedeemVoucherDto
+  ) {
+    return this.vouchersService.redeemVoucher(user.id, dto);
+  }
+
+  @Post('convert-to-cash')
+  async convertVoucherToCash() {
+    return this.vouchersService.convertVoucherToEarnings();
   }
 
   @Get('admin/all')

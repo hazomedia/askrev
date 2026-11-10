@@ -184,9 +184,10 @@ model ShoppingVoucher {
   initialValuePaise     BigInt
   remainingBalancePaise BigInt
   issuedReason          String
-  status                String               @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED, FULLY_REDEEMED
+  status                String               @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED, FULLY_REDEEMED, PARTIALLY_REDEEMED
   expiresAt             DateTime
   transactions          VoucherTransaction[]
+  bookings              EvBooking[]
   createdAt             DateTime             @default(now())
 
   @@index([voucherCode])
@@ -202,10 +203,13 @@ model VoucherTransaction {
   referenceId       String?
   balanceAfterPaise BigInt
   narration         String
+  journalEntryId    String?
+  idempotencyKey    String?         @unique
   createdAt         DateTime        @default(now())
 
   @@index([voucherId])
   @@index([transactionType])
+  @@index([referenceId])
 }
 
 model QualificationEvent {
@@ -247,21 +251,28 @@ model EvBike {
 }
 
 model EvBooking {
-  id                  String   @id @default(uuid())
-  bookingNumber       String   @unique
+  id                  String           @id @default(uuid())
+  bookingNumber       String           @unique
   userId              String
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   bikeId              String
-  bike                EvBike   @relation(fields: [bikeId], references: [id])
+  bike                EvBike           @relation(fields: [bikeId], references: [id])
+  voucherId           String?
+  voucher             ShoppingVoucher? @relation(fields: [voucherId], references: [id])
   bookingAmountPaise  BigInt
-  voucherAppliedPaise BigInt   @default(0)
+  voucherAppliedPaise BigInt           @default(0)
   netCashPaidPaise    BigInt
-  bookingStatus       String   @default("SUBMITTED") // SUBMITTED, PAYMENT_VERIFIED, CONFIRMED, DELIVERED, CANCELLED
+  bookingStatus       String           @default("SUBMITTED") // SUBMITTED, PAYMENT_VERIFIED, CONFIRMED, DELIVERED, CANCELLED
   paymentReference    String?
-  createdAt           DateTime @default(now())
+  cancellationReason  String?
+  cancelledAt         DateTime?
+  journalEntryId      String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   @@index([userId])
   @@index([bookingNumber])
+  @@index([voucherId])
 }
 
 model WithdrawalRequest {

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, ForbiddenException } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -43,11 +43,16 @@ export class MembersController {
     @CurrentUser() user: any,
     @Body() dto: RunBinaryMatchDto
   ) {
-    // If user is admin and specifies another userId, allow admin run; otherwise use caller's user.id
     const isAdmin =
       user.role === UserRole.SUPER_ADMIN ||
       user.role === UserRole.ADMIN_OPERATIONS ||
       user.role === UserRole.FINANCE_MANAGER;
+
+    if (!isAdmin && dto.userId && dto.userId !== user.id) {
+      throw new ForbiddenException(
+        'Unprivileged members cannot trigger matching settlements for other members.'
+      );
+    }
 
     const targetUserId = isAdmin && dto.userId ? dto.userId : user.id;
     return this.membersService.settleBinaryMatching(targetUserId, dto.idempotencyKey);

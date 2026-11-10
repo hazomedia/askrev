@@ -62,10 +62,10 @@ export default function AdminPage() {
         ]);
 
       setOverview(overviewData);
-      setMembers(membersData);
-      setBookings(bookingsData);
-      setVouchers(vouchersData);
-      setAuditLogs(logsData);
+      setMembers(Array.isArray(membersData) ? membersData : (membersData as any)?.members || []);
+      setBookings(Array.isArray(bookingsData) ? bookingsData : (bookingsData as any)?.bookings || []);
+      setVouchers(Array.isArray(vouchersData) ? vouchersData : (vouchersData as any)?.vouchers || []);
+      setAuditLogs(Array.isArray(logsData) ? logsData : []);
     } catch (err: any) {
       setError(err.message || 'Failed to load administration data');
     } finally {

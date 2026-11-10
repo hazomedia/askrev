@@ -23,19 +23,35 @@ export default function BookingModal({
 }: BookingModalProps) {
   const router = useRouter();
   const [voucherAmount, setVoucherAmount] = useState<number>(0);
+  const [activeVouchers, setActiveVouchers] = useState<any[]>([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<any | null>(null);
 
   useEffect(() => {
-    if (bike && user) {
-      const availableVoucher = user.wallet?.shoppingVoucherINR || 0;
-      const maxAllowed = Math.min(
-        availableVoucher,
-        bike.voucherRedeemLimitINR,
-        bike.bookingAmountINR
-      );
-      setVoucherAmount(maxAllowed);
+    if (bike && user && isOpen) {
+      fetchApi<any[]>('/vouchers/my-vouchers')
+        .then((vouchers) => {
+          const active = (vouchers || []).filter(
+            (v) => (v.status === 'ACTIVE' || v.status === 'PARTIALLY_REDEEMED') && v.remainingBalanceINR > 0
+          );
+          setActiveVouchers(active);
+          const totalAvail = active.reduce((acc, v) => acc + v.remainingBalanceINR, 0);
+          const maxAllowed = Math.min(
+            totalAvail,
+            bike.voucherRedeemLimitINR,
+            bike.bookingAmountINR
+          );
+          setVoucherAmount(maxAllowed);
+          if (active.length > 0) {
+            setSelectedVoucherId(active[0].id);
+          }
+        })
+        .catch(() => {
+          const fallbackAvail = user.wallet?.shoppingVoucherINR || 0;
+          setVoucherAmount(Math.min(fallbackAvail, bike.voucherRedeemLimitINR, bike.bookingAmountINR));
+        });
       setBookingResult(null);
       setError(null);
     }
@@ -43,9 +59,12 @@ export default function BookingModal({
 
   if (!isOpen || !bike) return null;
 
-  const availableVoucherINR = user?.wallet?.shoppingVoucherINR || 0;
+  const totalAvailableVoucherINR = activeVouchers.length > 0
+    ? activeVouchers.reduce((acc, v) => acc + v.remainingBalanceINR, 0)
+    : user?.wallet?.shoppingVoucherINR || 0;
+
   const maxVoucherLimit = Math.min(
-    availableVoucherINR,
+    totalAvailableVoucherINR,
     bike.voucherRedeemLimitINR,
     bike.bookingAmountINR
   );
@@ -65,6 +84,7 @@ export default function BookingModal({
         method: 'POST',
         body: JSON.stringify({
           bikeId: bike.id,
+          voucherId: selectedVoucherId || undefined,
           voucherAmountINR: voucherAmount,
         }),
       });
@@ -192,12 +212,12 @@ export default function BookingModal({
               </div>
 
               {/* Voucher deduction */}
-              {availableVoucherINR > 0 && maxVoucherLimit > 0 ? (
+              {totalAvailableVoucherINR > 0 && maxVoucherLimit > 0 ? (
                 <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="font-medium text-[#253247]">Apply Shopping Voucher</span>
                     <span className="text-slate-500">
-                      Balance: <strong>₹{availableVoucherINR.toLocaleString('en-IN')}</strong>
+                      Balance: <strong>₹{totalAvailableVoucherINR.toLocaleString('en-IN')}</strong>
                     </span>
                   </div>
                   <div className="flex justify-between items-center">

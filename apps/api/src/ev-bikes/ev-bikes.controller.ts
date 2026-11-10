@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
-import { EvBikesService } from './ev-bikes.service';
+import { EvBikesService, CreateBookingDto } from './ev-bikes.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -24,9 +24,19 @@ export class EvBikesController {
   @Post('book')
   async bookBike(
     @CurrentUser() user: any,
-    @Body() body: { bikeId: string; voucherAmountINR?: number }
+    @Body() body: CreateBookingDto
   ) {
-    return this.evBikesService.createBooking(user.id, body.bikeId, body.voucherAmountINR);
+    return this.evBikesService.createBooking(user.id, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('bookings/:id/cancel')
+  async cancelBooking(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body?: { cancellationReason?: string }
+  ) {
+    return this.evBikesService.cancelBooking(user.id, id, body?.cancellationReason);
   }
 
   @UseGuards(JwtAuthGuard)
