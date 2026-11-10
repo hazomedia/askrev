@@ -45,7 +45,7 @@ async function runTest() {
     // -------------------------------------------------------------------------
     // SETUP TEST ENTITIES
     // -------------------------------------------------------------------------
-    const createMember = async (identifier, initialPkg = 'FREE', isQualified = false) => {
+    const createMember = async (identifier, initialPkg = 'FREE', isQualified = false, sponsorId = null) => {
       const user = await prisma.user.create({
         data: {
           memberId: `D-${identifier}-${testSuffix}`,
@@ -55,6 +55,7 @@ async function runTest() {
           role: isQualified ? 'MEMBER' : 'FREE_USER',
           currentPackage: initialPkg,
           isFullQualified: isQualified,
+          sponsorId: sponsorId || undefined,
           wallet: { create: {} },
           binaryPlacement: { create: {} },
         },
@@ -470,9 +471,9 @@ async function runTest() {
     console.log(`  ✓ TEST 13 PASSED: All ${allJournalEntries.length} journal entries are strictly balanced (Debit === Credit)`);
 
     // =========================================================================
-    // TEST 14: OUTSTANDING VOUCHER LIABILITIES RECONCILE WITH REMAINING BALANCES
+    // TEST 14: SYSTEM-WIDE & PER-MEMBER RECONCILIATION AUDIT
     // =========================================================================
-    console.log('\n--- TEST 14: System-wide Voucher Liability Reconciliation ---');
+    console.log('\n--- TEST 14: System-wide & Per-Member Reconciliation ---');
     const reconRes = await fetch(`${API_URL}/wallet/admin/reconciliation`, {
       method: 'GET',
       headers: adminHeaders,
@@ -486,29 +487,121 @@ async function runTest() {
     console.log(`    - Ledger Voucher Liability Net: ₹${reconJson.voucherLiability.ledgerVoucherLiabilityNetINR}`);
     console.log(`    - Discrepancy: ₹${reconJson.voucherLiability.discrepancyINR}`);
     console.log(`    - Is Balanced: ${reconJson.voucherLiability.isBalanced}`);
+    console.log(`    - Per-Member Balanced: ${reconJson.perMemberAudit?.isAllMembersBalanced}`);
+    console.log(`    - Members Audited: ${reconJson.perMemberAudit?.totalMembersAudited}`);
 
     if (!reconJson.voucherLiability.isBalanced || reconJson.voucherLiability.discrepancyINR !== 0) {
       throw new Error(`TEST 14 FAILED: Voucher liability does not reconcile! Discrepancy: ₹${reconJson.voucherLiability.discrepancyINR}`);
     }
-    console.log('  ✓ TEST 14 PASSED: Outstanding voucher liabilities perfectly match unredeemed voucher balances!');
+    if (!reconJson.perMemberAudit?.isAllMembersBalanced) {
+      throw new Error(`TEST 14 FAILED: Per-member reconciliation discrepancies detected: ${JSON.stringify(reconJson.perMemberAudit?.voucherDiscrepancies)}`);
+    }
+    console.log('  ✓ TEST 14 PASSED: Outstanding voucher liabilities and per-member balances reconcile 100% with general ledger!');
 
     // =========================================================================
-    // TEST 15: EXISTING SPONSOR A CANONICAL SCENARIO REMAINS CORRECT
+    // TEST 15: CANONICAL SPONSOR A SCENARIO RE-VERIFICATION (ISOLATED MEMBERS)
     // =========================================================================
-    console.log('\n--- TEST 15: Sponsor A Canonical Scenario Regression ---');
-    // Verify Rahul Sharma (Sponsor A) seeded record
-    const sponsorA = await prisma.user.findFirst({
-      where: { memberId: 'ASKR-100001' },
-      include: { wallet: true },
+    console.log('\n--- TEST 15: Canonical Sponsor A Scenario with Isolated Members ---');
+    const isoSuffix = Date.now().toString().slice(-6);
+
+    // 1. Create Isolated Sponsor A (Full Qualified)
+    const isoSponsorRes = await createMember(`SPON-A-${isoSuffix}`, 'FULL', true);
+
+    // 2. Create isolated direct referrals B, C, D, E under Sponsor A
+    const isoMemberB = await createMember(`MBR-B-${isoSuffix}`, 'FREE', false, isoSponsorRes.user.id);
+    const isoMemberC = await createMember(`MBR-C-${isoSuffix}`, 'FREE', false, isoSponsorRes.user.id);
+    const isoMemberD = await createMember(`MBR-D-${isoSuffix}`, 'FREE', false, isoSponsorRes.user.id);
+    const isoMemberE = await createMember(`MBR-E-${isoSuffix}`, 'FREE', false, isoSponsorRes.user.id);
+
+    // Helper to submit and approve request
+    async function submitAndApprove(memberHeaders, reqType, ref) {
+      const subRes = await fetch(`${API_URL}/packages/request`, {
+        method: 'POST',
+        headers: memberHeaders,
+        body: JSON.stringify({ requestType: reqType, paymentReference: ref }),
+      });
+      const subJson = await subRes.json();
+      if (!subRes.ok) throw new Error(`Submit failed: ${JSON.stringify(subJson)}`);
+
+      const appRes = await fetch(`${API_URL}/packages/admin/requests/${subJson.request.id}/approve`, {
+        method: 'POST',
+        headers: adminHeaders,
+        body: JSON.stringify({ adminNotes: 'Approved in canonical verification test' }),
+      });
+      const appJson = await appRes.json();
+      if (!appRes.ok) throw new Error(`Approve failed: ${JSON.stringify(appJson)}`);
+      return appJson;
+    }
+
+    // Basic Activations for B, C, D, E
+    await submitAndApprove(isoMemberB.headers, 'BASIC_ACTIVATION', `PAY-B-${isoSuffix}`);
+    await submitAndApprove(isoMemberC.headers, 'BASIC_ACTIVATION', `PAY-C-${isoSuffix}`);
+    await submitAndApprove(isoMemberD.headers, 'BASIC_ACTIVATION', `PAY-D-${isoSuffix}`);
+    await submitAndApprove(isoMemberE.headers, 'BASIC_ACTIVATION', `PAY-E-${isoSuffix}`);
+
+    // D Upgrades to Full (1st Qualified Direct -> ₹9,000 net wallet credit)
+    await submitAndApprove(isoMemberD.headers, 'BASIC_TO_FULL_UPGRADE', `UPG-D-${isoSuffix}`);
+
+    // E Upgrades to Full (2nd Qualified Direct -> ₹30,000 Shopping Voucher, Hold Released & Recovered)
+    await submitAndApprove(isoMemberE.headers, 'BASIC_TO_FULL_UPGRADE', `UPG-E-${isoSuffix}`);
+
+    // Fetch final isolated Sponsor A wallet & vouchers
+    const finalWalletA = await prisma.walletAccount.findUnique({
+      where: { userId: isoSponsorRes.user.id },
     });
-    if (!sponsorA || !sponsorA.wallet) throw new Error('Sponsor A ASKR-100001 not found');
-    console.log(`  Sponsor A Status:`);
-    console.log(`    - Member ID: ${sponsorA.memberId}`);
-    console.log(`    - Package: ${sponsorA.currentPackage}`);
-    console.log(`    - Full Qualified: ${sponsorA.isFullQualified}`);
-    console.log(`    - Shopping Voucher Balance: ₹${Number(sponsorA.wallet.shoppingVoucherBalancePaise)/100}`);
-    console.log(`    - Available Earnings: ₹${Number(sponsorA.wallet.availableEarningsPaise)/100}`);
-    console.log('  ✓ TEST 15 PASSED: Canonical rules for Sponsor A remain 100% intact');
+    const finalVouchersA = await prisma.shoppingVoucher.findMany({
+      where: { userId: isoSponsorRes.user.id, status: 'ACTIVE' },
+    });
+
+    console.log('  Canonical Sponsor A Results:');
+    console.log(`    - Available Earnings: ₹${Number(finalWalletA.availableEarningsPaise)/100} (Target: ₹12,000)`);
+    console.log(`    - Held Commissions:   ₹${Number(finalWalletA.heldCommissionsPaise)/100} (Target: ₹0)`);
+    console.log(`    - Pending Recovery:   ₹${Number(finalWalletA.pendingRecoveryPaise)/100} (Target: ₹0)`);
+    console.log(`    - Shopping Voucher:   ₹${Number(finalWalletA.shoppingVoucherBalancePaise)/100} (Target: ₹30,000)`);
+    console.log(`    - Active Vouchers:    ${finalVouchersA.length} (Sum: ₹${finalVouchersA.reduce((s, v) => s + Number(v.remainingBalancePaise)/100, 0)})`);
+
+    if (
+      finalWalletA.availableEarningsPaise !== 1200000n ||
+      finalWalletA.heldCommissionsPaise !== 0n ||
+      finalWalletA.pendingRecoveryPaise !== 0n ||
+      finalWalletA.shoppingVoucherBalancePaise !== 3000000n ||
+      finalVouchersA.length === 0 ||
+      finalVouchersA[0].remainingBalancePaise !== 3000000n
+    ) {
+      throw new Error(`TEST 15 FAILED: Exact canonical values mismatch! Available=${finalWalletA.availableEarningsPaise}, Held=${finalWalletA.heldCommissionsPaise}, Recovery=${finalWalletA.pendingRecoveryPaise}, Voucher=${finalWalletA.shoppingVoucherBalancePaise}`);
+    }
+    console.log('  ✓ TEST 15 PASSED: Canonical Sponsor A isolated scenario asserted exact figures: Avail=₹12,000, Held=₹0, Recovery=₹0, Voucher=₹30,000');
+
+    // Clean up isolated test members and their journal entries cleanly
+    const isoIds = [isoSponsorRes.user.id, isoMemberB.user.id, isoMemberC.user.id, isoMemberD.user.id, isoMemberE.user.id];
+    const isoJournalIds = (
+      await prisma.journalEntry.findMany({
+        where: {
+          lines: {
+            some: {
+              userId: { in: isoIds },
+            },
+          },
+        },
+        select: { id: true },
+      })
+    ).map((j) => j.id);
+
+    if (isoJournalIds.length > 0) {
+      await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: isoJournalIds } } });
+      await prisma.journalEntry.deleteMany({ where: { id: { in: isoJournalIds } } });
+    }
+
+    await prisma.voucherTransaction.deleteMany({ where: { voucher: { userId: { in: isoIds } } } });
+    await prisma.shoppingVoucher.deleteMany({ where: { userId: { in: isoIds } } });
+    await prisma.membershipRequest.deleteMany({ where: { userId: { in: isoIds } } });
+    await prisma.qualificationEvent.deleteMany({ where: { memberId: { in: isoIds } } });
+    await prisma.commissionHold.deleteMany({ where: { sponsorId: { in: isoIds } } });
+    await prisma.pendingRecovery.deleteMany({ where: { sponsorId: { in: isoIds } } });
+    await prisma.walletAccount.deleteMany({ where: { userId: { in: isoIds } } });
+    await prisma.binaryPlacement.deleteMany({ where: { userId: { in: isoIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: isoIds } } });
+    console.log('  ✓ Cleaned up isolated test members and journal entries.');
 
     // =========================================================================
     // TEST 16: EXISTING BINARY MATCHING RULES VERIFICATION
@@ -530,7 +623,7 @@ async function runTest() {
     console.log(`  ✓ TEST 16 PASSED: Binary Matching: ₹3,000/match, 15 max/day, ₹45k cap, volume preserved`);
 
     // =========================================================================
-    // TEST 17: UNPRIVILEGED USERS CANNOT TRIGGER UNAUTHORIZED BINARY PLACEMENT
+    // TEST 17: UNPRIVILEGED USERS CANNOT TRIGGER UNAUTHORIZED BINARY SETTLEMENTS
     // =========================================================================
     console.log('\n--- TEST 17: Unprivileged User Binary Security Audit ---');
     // Member 1 (ordinary member) attempts to place Member 2 under Member 3 (unrelated nodes)
@@ -550,7 +643,22 @@ async function runTest() {
       throw new Error(`TEST 17 FAILED: Unauthorized placement was not rejected: ${JSON.stringify(unauthPlaceJson)}`);
     }
 
-    // Member 1 attempts to trigger binary matching settlement for Member 3
+    // AUDIT REQUIREMENT 6: Member 1 attempts to trigger binary matching settlement for THEMSELVES
+    const selfMatchRes = await fetch(`${API_URL}/members/binary/run-matching`, {
+      method: 'POST',
+      headers: member1.headers,
+      body: JSON.stringify({
+        userId: member1.user.id,
+      }),
+    });
+    const selfMatchJson = await selfMatchRes.json();
+    if (selfMatchRes.status === 403) {
+      console.log(`  ✓ Regular member self-settlement rejected with 403 Forbidden ("${selfMatchJson.message}")`);
+    } else {
+      throw new Error(`TEST 17 FAILED: Regular member self-settlement was not rejected: ${JSON.stringify(selfMatchJson)}`);
+    }
+
+    // Member 1 attempts to trigger binary matching settlement for Member 3 (cross-member)
     const unauthorizedMatchRes = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
       headers: member1.headers,
@@ -559,12 +667,12 @@ async function runTest() {
       }),
     });
     const unauthMatchJson = await unauthorizedMatchRes.json();
-    if (unauthorizedMatchRes.status === 403 && unauthMatchJson.message.includes('cannot trigger matching settlements for other members')) {
-      console.log(`  ✓ Unauthorized binary settlement rejected with 403 Forbidden ("${unauthMatchJson.message}")`);
+    if (unauthorizedMatchRes.status === 403) {
+      console.log(`  ✓ Unauthorized cross-member binary settlement rejected with 403 Forbidden ("${unauthMatchJson.message}")`);
     } else {
       throw new Error(`TEST 17 FAILED: Unauthorized matching settlement was not rejected: ${JSON.stringify(unauthMatchJson)}`);
     }
-    console.log('  ✓ TEST 17 PASSED: Security audit confirmed unprivileged users cannot manipulate binary tree or trigger cross-member settlements');
+    console.log('  ✓ TEST 17 PASSED: Security audit confirmed unprivileged users cannot manipulate binary tree or initiate matching settlements (even for their own account)');
 
     console.log('\n========================================================================');
     console.log('   🎉 ALL 17 PHASE 3D INTEGRATION TESTS PASSED PERFECTLY (100%)');

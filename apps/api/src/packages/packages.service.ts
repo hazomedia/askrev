@@ -400,7 +400,7 @@ export class PackagesService {
             remainingBalancePaise: voucherIssuedPaise,
             issuedReason: 'FULL_MEMBERSHIP_ACTIVATION_GRANT',
             status: 'ACTIVE',
-            expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
         });
 
@@ -468,7 +468,7 @@ export class PackagesService {
             remainingBalancePaise: voucherIssuedPaise,
             issuedReason: 'UPGRADE_PAYMENT_GRANT',
             status: 'ACTIVE',
-            expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
         });
 
@@ -872,7 +872,7 @@ export class PackagesService {
             remainingBalancePaise: voucherGrantPaise,
             issuedReason: 'SECOND_QUALIFIED_DIRECT_GRANT',
             status: 'ACTIVE',
-            expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
         });
 

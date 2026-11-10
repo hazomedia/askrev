@@ -171,8 +171,56 @@ export class WalletService {
     const earningsDiscrepancyPaise = totalWalletAvailablePaise - ledgerEarningsPayableNetPaise;
     const voucherDiscrepancyPaise = totalActiveVoucherBalancePaise - ledgerVoucherLiabilityNetPaise;
 
+    // Per-Member Level Reconciliation Audit (Requirement 5)
+    const memberVoucherDiscrepancies: any[] = [];
+    const memberEarningsDiscrepancies: any[] = [];
+
+    const activeVouchersByUser = new Map<string, bigint>();
+    for (const v of activeVouchers) {
+      const prev = activeVouchersByUser.get(v.userId) || 0n;
+      activeVouchersByUser.set(v.userId, prev + v.remainingBalancePaise);
+    }
+
+    const earningsByUser = new Map<string, bigint>();
+    for (const l of ledgerLines) {
+      if (l.userId) {
+        const prev = earningsByUser.get(l.userId) || 0n;
+        earningsByUser.set(l.userId, prev + (l.creditPaise - l.debitPaise));
+      }
+    }
+
+    for (const w of wallets) {
+      const expectedVoucherPaise = activeVouchersByUser.get(w.userId) || 0n;
+      if (w.shoppingVoucherBalancePaise !== expectedVoucherPaise) {
+        memberVoucherDiscrepancies.push({
+          memberId: w.user.memberId,
+          walletVoucherINR: paiseToRupees(w.shoppingVoucherBalancePaise),
+          vouchersSumINR: paiseToRupees(expectedVoucherPaise),
+          discrepancyINR: paiseToRupees(w.shoppingVoucherBalancePaise - expectedVoucherPaise),
+        });
+      }
+
+      const expectedEarningsPaise = earningsByUser.get(w.userId) || 0n;
+      if (w.availableEarningsPaise !== expectedEarningsPaise) {
+        memberEarningsDiscrepancies.push({
+          memberId: w.user.memberId,
+          walletAvailableINR: paiseToRupees(w.availableEarningsPaise),
+          ledgerNetINR: paiseToRupees(expectedEarningsPaise),
+          discrepancyINR: paiseToRupees(w.availableEarningsPaise - expectedEarningsPaise),
+        });
+      }
+    }
+
+    const isPerMemberBalanced =
+      memberVoucherDiscrepancies.length === 0 && memberEarningsDiscrepancies.length === 0;
+
     return {
-      reconciliationStatus: earningsDiscrepancyPaise === 0n && voucherDiscrepancyPaise === 0n ? 'RECONCILED_PERFECT' : 'DISCREPANCY_DETECTED',
+      reconciliationStatus:
+        earningsDiscrepancyPaise === 0n &&
+        voucherDiscrepancyPaise === 0n &&
+        isPerMemberBalanced
+          ? 'RECONCILED_PERFECT'
+          : 'DISCREPANCY_DETECTED',
       walletLiability: {
         totalWalletAvailableINR: paiseToRupees(totalWalletAvailablePaise),
         ledgerEarningsPayableNetINR: paiseToRupees(ledgerEarningsPayableNetPaise),
@@ -184,6 +232,12 @@ export class WalletService {
         ledgerVoucherLiabilityNetINR: paiseToRupees(ledgerVoucherLiabilityNetPaise),
         discrepancyINR: paiseToRupees(voucherDiscrepancyPaise),
         isBalanced: voucherDiscrepancyPaise === 0n,
+      },
+      perMemberAudit: {
+        isAllMembersBalanced: isPerMemberBalanced,
+        totalMembersAudited: wallets.length,
+        voucherDiscrepancies: memberVoucherDiscrepancies,
+        earningsDiscrepancies: memberEarningsDiscrepancies,
       },
       systemMetrics: {
         totalWallets: wallets.length,

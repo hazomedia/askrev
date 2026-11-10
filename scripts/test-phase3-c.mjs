@@ -221,12 +221,24 @@ async function runTest() {
     // STEP 3: BINARY MATCHING 1:2 RATIO SETTLEMENT TEST
     // =========================================================================
     console.log('\n--- Step 3: Testing 1:2 Ratio Binary Matching Settlement ---');
-    console.log('Root has 1 Left and 2 Right. Running binary matching settlement:');
 
-    const match1Res = await fetch(`${API_URL}/members/binary/run-matching`, {
+    // AUDIT REQUIREMENT 6: Regular member cannot initiate binary matching settlements even for own account
+    const unauthMemberRes = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
       headers: rootHeaders,
-      body: JSON.stringify({}),
+      body: JSON.stringify({ userId: rootUser.id }),
+    });
+    if (unauthMemberRes.status === 403) {
+      console.log('  ✓ Requirement 6 Verified: Regular member rejected with 403 Forbidden from initiating binary settlement');
+    } else {
+      throw new Error(`Expected 403 Forbidden for regular member binary matching, got ${unauthMemberRes.status}`);
+    }
+
+    console.log('Root has 1 Left and 2 Right. Running administrative binary matching settlement:');
+    const match1Res = await fetch(`${API_URL}/members/binary/run-matching`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: rootUser.id }),
     });
     const match1Json = await match1Res.json();
     if (!match1Res.ok) throw new Error(`Matching settlement failed: ${JSON.stringify(match1Json)}`);
@@ -304,11 +316,11 @@ async function runTest() {
       throw new Error(`Expected Carry Left=2, Right=1; got Left=${rootPlacementBefore21.carryLeftPaise}, Right=${rootPlacementBefore21.carryRightPaise}`);
     }
 
-    // Settle 2:1 match
+    // Settle 2:1 match via Admin
     const match2Res = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
-      headers: rootHeaders,
-      body: JSON.stringify({}),
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: rootUser.id }),
     });
     const match2Json = await match2Res.json();
     if (!match2Res.ok) throw new Error(`Matching settlement 2:1 failed: ${JSON.stringify(match2Json)}`);
@@ -359,8 +371,8 @@ async function runTest() {
 
     const basicMatchRes = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
-      headers: basicHeaders,
-      body: JSON.stringify({}),
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: basicUser.id }),
     });
     const basicMatchJson = await basicMatchRes.json();
     console.log('  ✓ Unqualified member settlement response:');
@@ -412,8 +424,8 @@ async function runTest() {
     console.log('Simulating 16 potential matches with 15-match daily cap:');
     const capMatchRes = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
-      headers: capRootHeaders,
-      body: JSON.stringify({}),
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: capRootUser.id }),
     });
     const capMatchJson = await capMatchRes.json();
     if (!capMatchRes.ok) throw new Error(`Capping settlement failed: ${JSON.stringify(capMatchJson)}`);
@@ -446,8 +458,8 @@ async function runTest() {
     console.log('Running second matching settlement on SAME day (Cap Exhausted):');
     const capMatch2Res = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
-      headers: capRootHeaders,
-      body: JSON.stringify({}),
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: capRootUser.id }),
     });
     const capMatch2Json = await capMatch2Res.json();
     if (capMatch2Json.matchesSettled !== 0 || capMatch2Json.rewardINR !== 0) {
@@ -477,16 +489,16 @@ async function runTest() {
 
     const firstIdemRes = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
-      headers: capRootHeaders,
-      body: JSON.stringify({ idempotencyKey: idemKey }),
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: capRootUser.id, idempotencyKey: idemKey }),
     });
     const firstIdemJson = await firstIdemRes.json();
     console.log(`  ✓ First call settled: ${firstIdemJson.matchesSettled} matches, ₹${firstIdemJson.rewardINR}`);
 
     const replayIdemRes = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
-      headers: capRootHeaders,
-      body: JSON.stringify({ idempotencyKey: idemKey }),
+      headers: adminHeaders,
+      body: JSON.stringify({ userId: capRootUser.id, idempotencyKey: idemKey }),
     });
     const replayIdemJson = await replayIdemRes.json();
     if (!replayIdemJson.message || !replayIdemJson.message.includes('Idempotent replay')) {
@@ -511,13 +523,13 @@ async function runTest() {
     const [c1Res, c2Res] = await Promise.all([
       fetch(`${API_URL}/members/binary/run-matching`, {
         method: 'POST',
-        headers: capRootHeaders,
-        body: JSON.stringify({ idempotencyKey: concKey1 }),
+        headers: adminHeaders,
+        body: JSON.stringify({ userId: capRootUser.id, idempotencyKey: concKey1 }),
       }),
       fetch(`${API_URL}/members/binary/run-matching`, {
         method: 'POST',
-        headers: capRootHeaders,
-        body: JSON.stringify({ idempotencyKey: concKey2 }),
+        headers: adminHeaders,
+        body: JSON.stringify({ userId: capRootUser.id, idempotencyKey: concKey2 }),
       }),
     ]);
 

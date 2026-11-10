@@ -1201,7 +1201,9 @@ export default function DashboardPage() {
                                 </span>
                               </td>
                               <td className="py-3 px-4 text-slate-500">
-                                {new Date(v.expiresAt).toLocaleDateString('en-IN')}
+                                {new Date(v.expiresAt).getFullYear() > 2090
+                                  ? 'Lifetime (Policy Pending)'
+                                  : new Date(v.expiresAt).toLocaleDateString('en-IN')}
                               </td>
                             </tr>
                           ))

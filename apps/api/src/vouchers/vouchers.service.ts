@@ -96,6 +96,12 @@ export class VouchersService {
   /**
    * Standalone/API partial or full voucher redemption
    * Atomic, row-locked, balanced double-entry accounting
+   *
+   * AUTHORIZATION & SCOPE POLICY (Requirement 4):
+   * Voucher redemption is authorized SOLELY for simulated EV booking deposits
+   * (credited to 2300_EV_BOOKING_DEPOSITS).
+   * Final EV vehicle invoice settlement, showroom purchases, and merchandise shopping
+   * remain strictly pending business and executive policy approval.
    */
   async redeemVoucher(userId: string, dto: RedeemVoucherDto) {
     const amountPaise = BigInt(Math.max(0, Math.round(dto.amountINR * 100)));
@@ -152,9 +158,8 @@ export class VouchersService {
       if (voucher.status === 'CANCELLED') {
         throw new BadRequestException('Voucher has been cancelled and cannot be redeemed.');
       }
-      if (voucher.expiresAt && voucher.expiresAt < new Date()) {
-        throw new BadRequestException('Voucher has expired and cannot be redeemed.');
-      }
+      // CORRECTIVE AUDIT (Requirement 3): Automatic voucher expiration or forfeiture is strictly
+      // disabled pending approved business policy. Vouchers remain valid and unexpired.
 
       // 5. Balance Check
       if (amountPaise > voucher.remainingBalancePaise) {

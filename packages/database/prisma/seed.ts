@@ -101,6 +101,21 @@ async function main() {
   });
   console.log(`✓ Primary Sponsor A seeded: ${sponsorA.fullName} [${sponsorA.memberId}]`);
 
+  // Ensure seeded voucher exists for primary sponsor Rahul Sharma
+  await prisma.shoppingVoucher.upsert({
+    where: { voucherCode: 'VCHR-SEED-100001' },
+    update: {},
+    create: {
+      voucherCode: 'VCHR-SEED-100001',
+      userId: sponsorA.id,
+      initialValuePaise: 3000000n,
+      remainingBalancePaise: 3000000n,
+      issuedReason: 'FULL_MEMBERSHIP_ACTIVATION_GRANT',
+      status: 'ACTIVE',
+      expiresAt: new Date('2099-12-31T23:59:59.999Z'),
+    },
+  });
+
   // 5. Direct Referrals B, C, D, E for testing
   const referrals = [
     { memberId: 'ASKR-100002', email: 'b.patel@askrev.com', name: 'Member B (Priya Patel)' },

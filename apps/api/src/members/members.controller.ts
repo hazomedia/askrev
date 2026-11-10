@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -39,23 +39,19 @@ export class MembersController {
   }
 
   @Post('binary/run-matching')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
   async runBinaryMatching(
     @CurrentUser() user: any,
     @Body() dto: RunBinaryMatchDto
   ) {
-    const isAdmin =
-      user.role === UserRole.SUPER_ADMIN ||
-      user.role === UserRole.ADMIN_OPERATIONS ||
-      user.role === UserRole.FINANCE_MANAGER;
-
-    if (!isAdmin && dto.userId && dto.userId !== user.id) {
-      throw new ForbiddenException(
-        'Unprivileged members cannot trigger matching settlements for other members.'
-      );
+    // CORRECTIVE AUDIT (Requirement 6): Regular members cannot initiate binary matching settlements,
+    // even for their own account. Settlement execution is strictly restricted to authorized administrators.
+    if (!dto.userId) {
+      throw new BadRequestException('Target member userId is required for administrative binary matching settlement.');
     }
 
-    const targetUserId = isAdmin && dto.userId ? dto.userId : user.id;
-    return this.membersService.settleBinaryMatching(targetUserId, dto.idempotencyKey);
+    return this.membersService.settleBinaryMatching(dto.userId, dto.idempotencyKey);
   }
 
   @Get('binary/history')

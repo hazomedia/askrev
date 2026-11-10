@@ -84,6 +84,12 @@ export class EvBikesService {
 
   /**
    * Create an EV Bike Booking with atomic Shopping Voucher redemption and balanced ledger accounting
+   *
+   * AUTHORIZATION & SCOPE POLICY (Requirement 4):
+   * Voucher redemption is authorized SOLELY for simulated EV booking deposits
+   * (credited to 2300_EV_BOOKING_DEPOSITS).
+   * Final EV vehicle invoice settlement, showroom purchases, and merchandise shopping
+   * remain strictly pending business and executive policy approval.
    */
   async createBooking(userId: string, dto: CreateBookingDto) {
     const bike = await this.prisma.evBike.findUnique({
