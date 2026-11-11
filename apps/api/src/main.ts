@@ -4,9 +4,9 @@ dotenv.config();
 dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
 
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
-import * as express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 
 // Ensure BigInts serialize automatically to JSON string
@@ -40,7 +40,7 @@ function checkRateLimit(key: string, maxRequests: number, windowMs: number): { a
 
 async function bootstrap() {
   const logger = new Logger('AskrEV_API');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.disable('x-powered-by');
@@ -72,9 +72,9 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
   });
 
-  // Register global JSON/urlencoded body parsers so all controllers and middleware (including auth rate limiter) receive parsed bodies
-  app.use(express.json({ limit: '1mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+  // Register global JSON/urlencoded body parsers via @nestjs/platform-express (avoids pnpm phantom express import)
+  app.useBodyParser('json', { limit: '1mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '1mb' });
 
   // Security headers + lightweight auth brute-force rate limiter
   app.use((req: Request, res: Response, next: NextFunction) => {

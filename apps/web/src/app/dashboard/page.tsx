@@ -1453,7 +1453,7 @@ export default function DashboardPage() {
                   <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-bold text-[#253247]">My EV Bike Reservations</h3>
-                      <p className="text-xs text-slate-500">Verified booking deposits, vehicle orders and cancellation management</p>
+                      <p className="text-xs text-slate-500">Simulated booking deposits, vehicle orders and cancellation management (SIMULATION_ONLY)</p>
                     </div>
                     <Link
                       href="/bikes"
@@ -1471,7 +1471,7 @@ export default function DashboardPage() {
                           <th className="py-3 px-4">EV Model</th>
                           <th className="py-3 px-4">Booking Deposit</th>
                           <th className="py-3 px-4">Voucher Applied</th>
-                          <th className="py-3 px-4">Net Cash Paid</th>
+                          <th className="py-3 px-4">Simulated Cash Paid</th>
                           <th className="py-3 px-4">Status</th>
                           <th className="py-3 px-4">Booking Date</th>
                           <th className="py-3 px-4 text-right">Actions</th>

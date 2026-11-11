@@ -12,20 +12,32 @@ export class AdminService {
   async getOverviewStats() {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // 1. Members Breakdown
+    // 1. Members Breakdown (Packages vs Roles separated cleanly)
     const [
       totalMembers,
       freeUsers,
+      freePackageMembers,
       basicMembers,
       fullMembers,
       fullQualified,
+      memberRoleCount,
+      staffAdminCount,
       newRegistrations,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: UserRole.FREE_USER } }),
+      this.prisma.user.count({ where: { currentPackage: MembershipPackage.FREE } }),
       this.prisma.user.count({ where: { currentPackage: MembershipPackage.BASIC } }),
       this.prisma.user.count({ where: { currentPackage: MembershipPackage.FULL } }),
       this.prisma.user.count({ where: { isFullQualified: true } }),
+      this.prisma.user.count({ where: { role: UserRole.MEMBER } }),
+      this.prisma.user.count({
+        where: {
+          role: {
+            in: [UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER],
+          },
+        },
+      }),
       this.prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
     ]);
 
@@ -133,10 +145,16 @@ export class AdminService {
       memberships: {
         totalRegistered: totalMembers,
         freeUsers,
+        freePackageMembers,
         basicMembers,
         fullMembers,
         fullQualified,
         newRegistrationsLast7Days: newRegistrations,
+      },
+      roles: {
+        freeUserRole: freeUsers,
+        memberRole: memberRoleCount,
+        staffAdminRoles: staffAdminCount,
       },
       requests: {
         pending: pendingMembershipRequests,

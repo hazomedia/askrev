@@ -156,7 +156,7 @@ export default function BookingModal({
               <div>
                 <h3 className="text-lg font-bold text-[#253247]">Reservation Confirmed</h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Your EV reservation for {bookingResult.bikeName} has been recorded.
+                  Your simulated EV reservation for {bookingResult.bikeName} has been recorded (Simulation Mode — no real funds charged).
                 </p>
               </div>
 
@@ -168,7 +168,7 @@ export default function BookingModal({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Booking Token:</span>
+                  <span className="text-slate-500">Simulated Booking Token:</span>
                   <span className="text-slate-700 font-medium">
                     ₹{bookingResult.bookingAmountINR.toLocaleString('en-IN')}
                   </span>
@@ -180,7 +180,7 @@ export default function BookingModal({
                   </span>
                 </div>
                 <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm">
-                  <span className="text-[#253247]">Net Paid:</span>
+                  <span className="text-[#253247]">Simulated Cash Paid:</span>
                   <span className="text-[#165DAD]">
                     ₹{bookingResult.netCashPaidINR.toLocaleString('en-IN')}
                   </span>
@@ -255,7 +255,7 @@ export default function BookingModal({
               {/* Price summary table */}
               <div className="p-3.5 rounded-lg border border-slate-200 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-600">
-                  <span>Standard Booking Token:</span>
+                  <span>Simulated Booking Token:</span>
                   <span>₹{bike.bookingAmountINR.toLocaleString('en-IN')}</span>
                 </div>
                 {voucherAmount > 0 && (
@@ -265,7 +265,7 @@ export default function BookingModal({
                   </div>
                 )}
                 <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm">
-                  <span className="text-[#253247]">Net Payable Today:</span>
+                  <span className="text-[#253247]">Simulated Cash Payable:</span>
                   <span className="text-[#165DAD]">₹{netCashPaid.toLocaleString('en-IN')}</span>
                 </div>
               </div>

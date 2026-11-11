@@ -459,7 +459,10 @@ export default function AdminPage() {
         b.memberName.toLowerCase().includes(bookingSearch.toLowerCase()) ||
         b.bikeName.toLowerCase().includes(bookingSearch.toLowerCase());
       const matchesStatus =
-        bookingStatusFilter === 'ALL' || b.bookingStatus === bookingStatusFilter;
+        bookingStatusFilter === 'ALL' ||
+        (bookingStatusFilter === 'CONFIRMED'
+          ? b.bookingStatus === 'CONFIRMED' || b.bookingStatus === 'PAYMENT_VERIFIED'
+          : b.bookingStatus === bookingStatusFilter);
       return matchesSearch && matchesStatus;
     });
   }, [bookingsData, bookingSearch, bookingStatusFilter]);
@@ -722,11 +725,11 @@ export default function AdminPage() {
                 {/* 1. Members Breakdown Grid */}
                 <div>
                   <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                    Members & Qualifications
+                    Membership Packages & Qualification Counts
                   </h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <div className="text-[11px] font-semibold text-slate-500">Total Members</div>
+                      <div className="text-[11px] font-semibold text-slate-500">Total Accounts</div>
                       <div className="text-2xl font-bold text-[#253247] mt-1">
                         {overview?.memberships?.totalRegistered ?? '...'}
                       </div>
@@ -736,15 +739,15 @@ export default function AdminPage() {
                     </div>
 
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <div className="text-[11px] font-semibold text-slate-500">Free Users</div>
+                      <div className="text-[11px] font-semibold text-slate-500">Free Package</div>
                       <div className="text-2xl font-bold text-slate-600 mt-1">
-                        {overview?.memberships?.freeUsers ?? '...'}
+                        {overview?.memberships?.freePackageMembers ?? overview?.memberships?.freeUsers ?? '...'}
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-1">Unactivated Free Tier</div>
+                      <div className="text-[10px] text-slate-400 mt-1">Package Tier: FREE</div>
                     </div>
 
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <div className="text-[11px] font-semibold text-slate-500">Basic Members</div>
+                      <div className="text-[11px] font-semibold text-slate-500">Basic Package</div>
                       <div className="text-2xl font-bold text-[#165DAD] mt-1">
                         {overview?.memberships?.basicMembers ?? '...'}
                       </div>
@@ -752,7 +755,7 @@ export default function AdminPage() {
                     </div>
 
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                      <div className="text-[11px] font-semibold text-slate-500">Full Members</div>
+                      <div className="text-[11px] font-semibold text-slate-500">Full Package</div>
                       <div className="text-2xl font-bold text-emerald-700 mt-1">
                         {overview?.memberships?.fullMembers ?? '...'}
                       </div>
@@ -767,6 +770,22 @@ export default function AdminPage() {
                       <div className="text-[10px] text-purple-600 font-semibold mt-1">Matching Eligible</div>
                     </div>
                   </div>
+                  {overview?.roles && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                      <span className="font-semibold text-slate-400 uppercase tracking-wider text-[10px]">
+                        System Role Breakdown:
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-white border border-slate-200">
+                        FREE_USER Role: <strong>{overview.roles.freeUserRole}</strong>
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-white border border-slate-200">
+                        MEMBER Role: <strong>{overview.roles.memberRole}</strong>
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-white border border-slate-200">
+                        Admin / Ops / Finance Roles: <strong>{overview.roles.staffAdminRoles}</strong>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. Financial Liabilities & Simulated Reserves */}
@@ -871,7 +890,7 @@ export default function AdminPage() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium">Net Cash Paid:</span>
+                      <span className="text-slate-500 font-medium">Simulated Cash Paid:</span>
                       <span className="font-bold text-slate-700">
                         ₹{overview?.commerce?.totalNetCashPaidINR?.toLocaleString('en-IN') ?? 0}
                       </span>
@@ -1035,7 +1054,9 @@ export default function AdminPage() {
                               </td>
                               <td className="py-3 px-4">
                                 <div className="font-bold text-[#253247]">{m.fullName}</div>
-                                <div className="text-[10px] text-slate-400">{m.email}</div>
+                                <div className="text-[10px] text-slate-400">
+                                  {m.email} • Role: <span className="font-mono font-semibold text-slate-600">{m.role}</span>
+                                </div>
                               </td>
                               <td className="py-3 px-4">
                                 <span
@@ -1815,7 +1836,7 @@ export default function AdminPage() {
                       className="text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white"
                     >
                       <option value="ALL">All Statuses</option>
-                      <option value="CONFIRMED">Confirmed</option>
+                      <option value="CONFIRMED">Active / Verified</option>
                       <option value="CANCELLED">Cancelled</option>
                     </select>
                   </div>
@@ -1830,9 +1851,9 @@ export default function AdminPage() {
                           <th className="py-3 px-4">Booking #</th>
                           <th className="py-3 px-4">Member</th>
                           <th className="py-3 px-4">EV Bike Model</th>
-                          <th className="py-3 px-4 text-right">Booking Fee</th>
+                          <th className="py-3 px-4 text-right">Simulated Token</th>
                           <th className="py-3 px-4 text-right">Voucher Applied</th>
-                          <th className="py-3 px-4 text-right">Cash Paid</th>
+                          <th className="py-3 px-4 text-right">Simulated Cash</th>
                           <th className="py-3 px-4">Status</th>
                           <th className="py-3 px-4 text-center">Action</th>
                         </tr>
@@ -1863,7 +1884,7 @@ export default function AdminPage() {
                               <td className="py-3 px-4">
                                 <span
                                   className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                    b.bookingStatus === 'CONFIRMED'
+                                    b.bookingStatus !== 'CANCELLED'
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                       : 'bg-red-50 text-red-700 border-red-200'
                                   }`}
