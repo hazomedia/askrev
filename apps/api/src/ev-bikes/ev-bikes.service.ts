@@ -4,13 +4,28 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
 import { paiseToRupees, safeBigIntMin, JournalAccount, UserRole } from '@askrev/shared';
 
-export interface CreateBookingDto {
+export class CreateBookingDto {
+  @IsString()
+  @IsNotEmpty()
   bikeId: string;
+
+  @IsString()
+  @IsOptional()
   voucherId?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
   voucherAmountINR?: number;
+
+  @IsString()
+  @IsOptional()
   idempotencyKey?: string;
 }
 
@@ -92,6 +107,13 @@ export class EvBikesService {
    * remain strictly pending business and executive policy approval.
    */
   async createBooking(userId: string, dto: CreateBookingDto) {
+    if (
+      dto.voucherAmountINR !== undefined &&
+      (typeof dto.voucherAmountINR !== 'number' || !Number.isFinite(dto.voucherAmountINR) || dto.voucherAmountINR < 0)
+    ) {
+      throw new BadRequestException('Invalid voucher amount specified.');
+    }
+
     const bike = await this.prisma.evBike.findUnique({
       where: { id: dto.bikeId },
     });
@@ -102,12 +124,75 @@ export class EvBikesService {
 
     const bookingAmountPaise = bike.bookingAmountPaise;
     const requestedVoucherPaise = dto.voucherAmountINR
-      ? BigInt(Math.max(0, Math.round(dto.voucherAmountINR * 100)))
+      ? BigInt(Math.round(dto.voucherAmountINR * 100))
       : 0n;
 
-    const bookingNumber = `BK-${Date.now().toString().slice(-8)}`;
+    const suffix = Math.floor(100 + Math.random() * 900);
+    const bookingNumber = `BK-${Date.now().toString().slice(-8)}-${suffix}`;
 
     return await this.prisma.$transaction(async (tx) => {
+      if (dto.idempotencyKey) {
+        const existingCashBooking = await tx.evBooking.findFirst({
+          where: { paymentReference: `IDEM-PAY-${dto.idempotencyKey}` },
+          include: { bike: true, voucher: true },
+        });
+        if (existingCashBooking) {
+          if (existingCashBooking.userId !== userId) {
+            throw new ForbiddenException('Idempotency key belongs to another account.');
+          }
+          return {
+            message: 'Idempotent replay: Booking already created.',
+            idempotentReplay: true,
+            booking: {
+              id: existingCashBooking.id,
+              bookingNumber: existingCashBooking.bookingNumber,
+              bikeName: existingCashBooking.bike.name,
+              modelCode: existingCashBooking.bike.modelCode,
+              bookingAmountINR: paiseToRupees(existingCashBooking.bookingAmountPaise),
+              voucherAppliedINR: paiseToRupees(existingCashBooking.voucherAppliedPaise),
+              netCashPaidINR: paiseToRupees(existingCashBooking.netCashPaidPaise),
+              voucherCode: existingCashBooking.voucher?.voucherCode || null,
+              bookingStatus: existingCashBooking.bookingStatus,
+              journalEntryId: existingCashBooking.journalEntryId,
+              createdAt: existingCashBooking.createdAt,
+            },
+          };
+        }
+
+        const existingVtx = await tx.voucherTransaction.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+          include: { voucher: true },
+        });
+        if (existingVtx) {
+          if (existingVtx.voucher.userId !== userId) {
+            throw new ForbiddenException('Idempotency key belongs to another account.');
+          }
+          const existingBooking = await tx.evBooking.findUnique({
+            where: { bookingNumber: existingVtx.referenceId },
+            include: { bike: true, voucher: true },
+          });
+          if (existingBooking) {
+            return {
+              message: 'Idempotent replay: Booking already created.',
+              idempotentReplay: true,
+              booking: {
+                id: existingBooking.id,
+                bookingNumber: existingBooking.bookingNumber,
+                bikeName: existingBooking.bike.name,
+                modelCode: existingBooking.bike.modelCode,
+                bookingAmountINR: paiseToRupees(existingBooking.bookingAmountPaise),
+                voucherAppliedINR: paiseToRupees(existingBooking.voucherAppliedPaise),
+                netCashPaidINR: paiseToRupees(existingBooking.netCashPaidPaise),
+                voucherCode: existingBooking.voucher?.voucherCode || null,
+                bookingStatus: existingBooking.bookingStatus,
+                journalEntryId: existingBooking.journalEntryId,
+                createdAt: existingBooking.createdAt,
+              },
+            };
+          }
+        }
+      }
+
       let appliedVoucherId: string | null = null;
       let actualVoucherDeductedPaise = 0n;
 
@@ -275,7 +360,9 @@ export class EvBikesService {
           voucherAppliedPaise: actualVoucherDeductedPaise,
           netCashPaidPaise,
           bookingStatus: 'PAYMENT_VERIFIED',
-          paymentReference: `DEMO-PAY-${Date.now()}`,
+          paymentReference: dto.idempotencyKey
+            ? `IDEM-PAY-${dto.idempotencyKey}`
+            : `DEMO-PAY-${Date.now()}-${suffix}`,
           journalEntryId: journal.id,
         },
         include: {
@@ -326,18 +413,15 @@ export class EvBikesService {
    */
   async cancelBooking(userId: string, bookingIdOrNumber: string, cancellationReason?: string) {
     return await this.prisma.$transaction(async (tx) => {
-      // Find booking
-      const booking = await tx.evBooking.findFirst({
+      // Locate target booking
+      const initialBooking = await tx.evBooking.findFirst({
         where: {
           OR: [{ id: bookingIdOrNumber }, { bookingNumber: bookingIdOrNumber }],
         },
-        include: {
-          bike: true,
-          voucher: true,
-        },
+        select: { id: true, userId: true },
       });
 
-      if (!booking) {
+      if (!initialBooking) {
         throw new NotFoundException('Booking reservation not found.');
       }
 
@@ -351,19 +435,31 @@ export class EvBikesService {
         actor?.role === UserRole.ADMIN_OPERATIONS ||
         actor?.role === UserRole.FINANCE_MANAGER;
 
-      if (!isAdmin && booking.userId !== userId) {
+      if (!isAdmin && initialBooking.userId !== userId) {
         throw new ForbiddenException('You cannot cancel another member\'s booking reservation.');
       }
 
-      // Check if already cancelled
+      // Acquire Row-Level Lock on Booking BEFORE reading mutable bookingStatus
+      await tx.$queryRaw`
+        SELECT id FROM "EvBooking" WHERE id = ${initialBooking.id} FOR UPDATE
+      `;
+
+      const booking = await tx.evBooking.findUnique({
+        where: { id: initialBooking.id },
+        include: {
+          bike: true,
+          voucher: true,
+        },
+      });
+
+      if (!booking) {
+        throw new NotFoundException('Booking reservation not found.');
+      }
+
+      // Re-check status strictly AFTER acquiring FOR UPDATE lock (prevents double-refund race)
       if (booking.bookingStatus === 'CANCELLED') {
         throw new BadRequestException('Booking is already cancelled. Repeated cancellation is not permitted.');
       }
-
-      // Row-Level Lock on Booking
-      await tx.$queryRaw`
-        SELECT id FROM "EvBooking" WHERE id = ${booking.id} FOR UPDATE
-      `;
 
       let restoredVoucherBalanceINR = 0;
 
@@ -419,7 +515,8 @@ export class EvBikesService {
       }
 
       // Compensating Double-Entry Journal Entry
-      const compJnlRef = `JNL-CAN-${booking.bookingNumber}-${Date.now().toString().slice(-6)}`;
+      const cancelSuffix = Math.floor(100 + Math.random() * 900);
+      const compJnlRef = `JNL-CAN-${booking.bookingNumber}-${Date.now().toString().slice(-6)}-${cancelSuffix}`;
       const compLines: any[] = [];
 
       if (booking.voucherAppliedPaise > 0n) {

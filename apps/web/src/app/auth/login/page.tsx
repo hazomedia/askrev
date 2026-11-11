@@ -26,7 +26,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      setAuthSession(data.tokens.accessToken, data.user);
+      setAuthSession(data.tokens.accessToken, data.user, data.tokens.refreshToken);
 
       if (['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(data.user.role)) {
         router.push('/admin');

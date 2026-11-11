@@ -17,7 +17,6 @@ function RegisterForm() {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [sponsorMemberId, setSponsorMemberId] = useState('');
-  const [initialPackage, setInitialPackage] = useState<'FREE' | 'BASIC' | 'FULL'>('FREE');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,11 +41,10 @@ function RegisterForm() {
           password,
           phone: phone || undefined,
           sponsorMemberId: sponsorMemberId ? sponsorMemberId.trim() : undefined,
-          initialPackage,
         }),
       });
 
-      setAuthSession(data.tokens.accessToken, data.user);
+      setAuthSession(data.tokens.accessToken, data.user, data.tokens.refreshToken);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please check your inputs.');
@@ -162,51 +160,21 @@ function RegisterForm() {
               </div>
             </div>
 
-            {/* Simple Package Choice */}
-            <div>
-              <label className="block text-xs font-semibold text-[#253247] mb-1.5">
-                Initial Membership Selection
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setInitialPackage('FREE')}
-                  className={`p-3 rounded-lg border text-left transition-colors ${
-                    initialPackage === 'FREE'
-                      ? 'border-[#165DAD] bg-blue-50/50'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="text-[10px] text-slate-500 font-semibold uppercase">Starter</div>
-                  <div className="text-xs font-bold text-[#253247]">Free (₹0)</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setInitialPackage('BASIC')}
-                  className={`p-3 rounded-lg border text-left transition-colors ${
-                    initialPackage === 'BASIC'
-                      ? 'border-[#165DAD] bg-blue-50/50'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="text-[10px] text-slate-500 font-semibold uppercase">Basic</div>
-                  <div className="text-xs font-bold text-[#253247]">₹3,000</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setInitialPackage('FULL')}
-                  className={`p-3 rounded-lg border text-left transition-colors ${
-                    initialPackage === 'FULL'
-                      ? 'border-[#165DAD] bg-blue-50/50'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="text-[10px] text-slate-500 font-semibold uppercase">Full</div>
-                  <div className="text-xs font-bold text-[#253247]">₹33,000</div>
-                </button>
+            {/* Membership Activation Policy */}
+            <div className="p-3.5 rounded-lg border border-blue-200 bg-blue-50/50 text-left space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-[#165DAD] uppercase tracking-wider">
+                  Initial Account Tier: Free (₹0)
+                </span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-[#165DAD] border border-blue-200">
+                  Admin Approval Required for Paid Plans
+                </span>
               </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                All new registrations begin as Free accounts. After signing in, submit a simulated{' '}
+                <strong>Basic (₹3,000)</strong> or <strong>Full (₹33,000)</strong> activation request from your
+                Member Dashboard for administrative clearance.
+              </p>
             </div>
 
             <button

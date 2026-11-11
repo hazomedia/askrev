@@ -8,6 +8,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
 import { EvBikesModule } from './ev-bikes/ev-bikes.module';
 import { AdminModule } from './admin/admin.module';
 import { WalletModule } from './wallet/wallet.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -21,5 +22,6 @@ import { WalletModule } from './wallet/wallet.module';
     AdminModule,
     WalletModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

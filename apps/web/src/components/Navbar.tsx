@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   ChevronDown,
 } from 'lucide-react';
-import { getStoredUser, clearAuthSession } from '../lib/api';
+import { getStoredUser, logoutSession } from '../lib/api';
 
 export default function Navbar() {
   const router = useRouter();
@@ -25,8 +25,8 @@ export default function Navbar() {
     setCurrentUser(getStoredUser());
   }, [pathname]);
 
-  const handleLogout = () => {
-    clearAuthSession();
+  const handleLogout = async () => {
+    await logoutSession();
     setCurrentUser(null);
     setUserDropdownOpen(false);
     setMobileMenuOpen(false);

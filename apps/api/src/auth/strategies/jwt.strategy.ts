@@ -1,7 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
+import { getJwtAccessSecret, isAccessTokenRevoked } from '../jwt-secrets';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -9,11 +11,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_ACCESS_SECRET || 'askrev-dev-jwt-access-secret-minimum-32-chars-long!',
+      secretOrKey: getJwtAccessSecret(),
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: { sub: string; email: string; role: string }) {
+  async validate(req: Request, payload: { sub: string; email: string; role: string }) {
+    const authHeader = req.headers?.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (token && isAccessTokenRevoked(token)) {
+      throw new UnauthorizedException('Session has been logged out. Please sign in again.');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {

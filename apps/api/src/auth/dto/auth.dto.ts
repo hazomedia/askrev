@@ -1,5 +1,4 @@
 import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
-import { MembershipPackage } from '@askrev/shared';
 
 export class RegisterDto {
   @IsEmail()
@@ -21,8 +20,9 @@ export class RegisterDto {
   @IsOptional()
   sponsorMemberId?: string;
 
+  @IsString()
   @IsOptional()
-  initialPackage?: MembershipPackage;
+  initialPackage?: string;
 }
 
 export class LoginDto {

@@ -1,9 +1,11 @@
-import { Injectable, BadRequestException, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
 import { UserRole, MembershipPackage, paiseToRupees } from '@askrev/shared';
+import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken } from './jwt-secrets';
 
 @Injectable()
 export class AuthService {
@@ -32,11 +34,28 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
+    if (dto.initialPackage && dto.initialPackage !== MembershipPackage.FREE) {
+      throw new ForbiddenException(
+        'Direct paid package selection during public registration is disabled. Register as FREE and submit an activation request for admin approval.'
+      );
+    }
+
     const existingEmail = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase().trim() },
     });
     if (existingEmail) {
       throw new ConflictException('An account with this email address already exists');
+    }
+
+    const cleanPhone = dto.phone?.trim() || null;
+    if (cleanPhone) {
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone: cleanPhone },
+        select: { id: true },
+      });
+      if (existingPhone) {
+        throw new ConflictException('An account with this phone number already exists');
+      }
     }
 
     let sponsorId: string | null = null;
@@ -52,8 +71,6 @@ export class AuthService {
 
     const memberId = await this.generateUniqueMemberId();
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const initialPackage = dto.initialPackage || MembershipPackage.FREE;
-    const initialRole = initialPackage === MembershipPackage.FREE ? UserRole.FREE_USER : UserRole.MEMBER;
 
     const user = await this.prisma.user.create({
       data: {
@@ -61,23 +78,21 @@ export class AuthService {
         email: dto.email.toLowerCase().trim(),
         passwordHash,
         fullName: dto.fullName.trim(),
-        phone: dto.phone?.trim(),
-        role: initialRole,
-        currentPackage: initialPackage,
-        isFullQualified: initialPackage === MembershipPackage.FULL,
+        phone: cleanPhone,
+        role: UserRole.FREE_USER,
+        currentPackage: MembershipPackage.FREE,
+        isFullQualified: false,
         sponsorId,
         wallet: {
           create: {
             availableEarningsPaise: 0n,
             heldCommissionsPaise: 0n,
             pendingRecoveryPaise: 0n,
-            shoppingVoucherBalancePaise: initialPackage === MembershipPackage.FULL ? 3000000n : 0n,
+            shoppingVoucherBalancePaise: 0n,
           },
         },
         binaryPlacement: {
-          create: {
-            parentId: sponsorId,
-          },
+          create: {},
         },
       },
       include: {
@@ -126,23 +141,62 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(userId: string, refreshToken: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { wallet: true },
-    });
-
-    if (!user || !user.refreshTokenHash) {
+  async refresh(refreshToken: string) {
+    let payload: { sub: string; email: string; role: string };
+    try {
+      payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: getJwtRefreshSecret(),
+      });
+    } catch {
       throw new UnauthorizedException('Refresh token invalid or expired');
     }
 
-    const matches = await bcrypt.compare(refreshToken, user.refreshTokenHash);
-    if (!matches) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        wallet: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    if (!user || !user.refreshTokenHash) {
+      throw new UnauthorizedException('Session has expired or been logged out');
+    }
+
+    const hashedCandidate = hashToken(refreshToken);
+    const matchesHashed = await bcrypt.compare(hashedCandidate, user.refreshTokenHash);
+    const matchesLegacyRaw = !matchesHashed && (await bcrypt.compare(refreshToken, user.refreshTokenHash));
+    if (!matchesHashed && !matchesLegacyRaw) {
       throw new UnauthorizedException('Refresh token revoked');
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
-    return tokens;
+    return {
+      message: 'Session refreshed',
+      tokens,
+      user: this.formatUserProfile(user),
+    };
+  }
+
+  async logout(userId: string, accessToken?: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null },
+    });
+
+    if (accessToken) {
+      const decoded = this.jwtService.decode(accessToken) as { exp?: number } | null;
+      revokeAccessToken(accessToken, decoded?.exp);
+    }
+
+    return {
+      message: 'Logged out successfully',
+      loggedOut: true,
+    };
+  }
+
+  async refreshTokens(userId: string, refreshToken: string) {
+    return this.refresh(refreshToken);
   }
 
   async getProfile(userId: string) {
@@ -171,19 +225,19 @@ export class AuthService {
   }
 
   private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role };
+    const payload = { sub: userId, email, role, jti: crypto.randomUUID() };
 
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_ACCESS_SECRET || 'askrev-dev-jwt-access-secret-minimum-32-chars-long!',
-      expiresIn: '15m',
+      secret: getJwtAccessSecret(),
+      expiresIn: (process.env.JWT_ACCESS_EXPIRY || '15m') as any,
     });
 
     const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_REFRESH_SECRET || 'askrev-dev-jwt-refresh-secret-minimum-32-chars-long!',
-      expiresIn: '7d',
+      secret: getJwtRefreshSecret(),
+      expiresIn: (process.env.JWT_REFRESH_EXPIRY || '7d') as any,
     });
 
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    const refreshTokenHash = await bcrypt.hash(hashToken(refreshToken), 10);
     await this.prisma.user.update({
       where: { id: userId },
       data: { refreshTokenHash },

@@ -27,7 +27,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
 } from 'lucide-react';
-import { fetchApi, getStoredUser, clearAuthSession } from '../../lib/api';
+import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
 type TabType = 'overview' | 'membership' | 'team' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
 
@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [walletOverview, setWalletOverview] = useState<any>(null);
   const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
   const [voucherTransactions, setVoucherTransactions] = useState<any[]>([]);
+  const [membershipRequests, setMembershipRequests] = useState<any[]>([]);
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -72,6 +73,7 @@ export default function DashboardPage() {
         walletData,
         walletTxData,
         voucherTxData,
+        requestsData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -81,6 +83,7 @@ export default function DashboardPage() {
         fetchApi<any>('/wallet/my-wallet').catch(() => null),
         fetchApi<any>('/wallet/transactions').catch(() => []),
         fetchApi<any>('/vouchers/transactions').catch(() => []),
+        fetchApi<any>('/packages/my-requests').catch(() => []),
       ]);
 
       setUser(profileData);
@@ -91,6 +94,7 @@ export default function DashboardPage() {
       setWalletOverview(walletData);
       setWalletTransactions(walletTxData);
       setVoucherTransactions(voucherTxData);
+      setMembershipRequests(Array.isArray(requestsData) ? requestsData : []);
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
@@ -160,26 +164,32 @@ export default function DashboardPage() {
     }
   };
 
-  const handleUpgradePayment = async () => {
+  const handleMembershipRequest = async (
+    requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE'
+  ) => {
     setUpgrading(true);
     setUpgradeSuccess(null);
     setError(null);
     try {
-      const res: any = await fetchApi('/packages/upgrade', {
+      const res: any = await fetchApi('/packages/request', {
         method: 'POST',
-        body: JSON.stringify({ method: 'UPGRADE_PAYMENT' }),
+        body: JSON.stringify({
+          requestType,
+          paymentMode: 'SIMULATED_PORTAL',
+          metadata: { compliance: 'SIMULATION_ONLY', source: 'member_dashboard' },
+        }),
       });
-      setUpgradeSuccess(res.message);
+      setUpgradeSuccess(res.message || 'Membership request submitted for administrative approval.');
       await loadData();
     } catch (err: any) {
-      setError(err.message || 'Upgrade failed');
+      setError(err.message || 'Membership request submission failed');
     } finally {
       setUpgrading(false);
     }
   };
 
-  const handleLogout = () => {
-    clearAuthSession();
+  const handleLogout = async () => {
+    await logoutSession();
     router.push('/auth/login');
   };
 
@@ -429,8 +439,8 @@ export default function DashboardPage() {
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-                        <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-[200px] select-all">
+                      <div className="flex flex-wrap xl:flex-nowrap items-center gap-2">
+                        <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-0 w-full xl:w-auto select-all">
                           {getReferralLink()}
                         </div>
 
@@ -564,12 +574,18 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <button
-                      onClick={handleUpgradePayment}
-                      disabled={upgrading}
+                      onClick={() => handleMembershipRequest('BASIC_TO_FULL_UPGRADE')}
+                      disabled={upgrading || membershipRequests.some((r) => r.status === 'PENDING')}
                       className="shrink-0 px-5 py-2.5 rounded-lg font-semibold text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-1.5 shadow-2xs"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>{upgrading ? 'Processing...' : 'Upgrade Now (₹30,000)'}</span>
+                      <span>
+                        {membershipRequests.some((r) => r.status === 'PENDING')
+                          ? 'Upgrade Pending Admin Review'
+                          : upgrading
+                          ? 'Submitting...'
+                          : 'Request Upgrade (₹30,000)'}
+                      </span>
                     </button>
                   </div>
                 )}
@@ -716,82 +732,215 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Qualification Methods */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-base font-bold text-[#253247]">Full Qualification Methods</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Choose between a direct platform fee upgrade or qualifying retail shopping.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Method 1: Direct Upgrade */}
-                    <div className="bg-white rounded-xl border border-blue-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wide">
-                            Method 1
-                          </span>
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-[#15803D] border border-emerald-200">
-                            Instant Qualification
-                          </span>
+                {/* Activation / Upgrade Actions & Request History */}
+                {membershipRequests.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
+                    <h3 className="text-sm font-bold text-[#253247]">Recent Membership Request Status</h3>
+                    <div className="space-y-2">
+                      {membershipRequests.slice(0, 3).map((req: any) => (
+                        <div
+                          key={req.id}
+                          className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                        >
+                          <div>
+                            <span className="font-bold text-[#253247]">
+                              {req.requestType.replace(/_/g, ' ')}
+                            </span>
+                            <span className="text-slate-500 ml-2 font-mono">
+                              (₹{(req.feeINR ?? 0).toLocaleString('en-IN')})
+                            </span>
+                            {req.adminNotes && (
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                Admin Note: {req.adminNotes}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                req.status === 'APPROVED'
+                                  ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                  : req.status === 'REJECTED'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                            >
+                              {req.status}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(req.createdAt).toLocaleDateString('en-IN')}
+                            </span>
+                          </div>
                         </div>
-                        <h4 className="text-base font-bold text-[#253247] mt-1">Direct Upgrade to Full Plan</h4>
-                        <div className="text-2xl font-bold text-[#253247] mt-2">₹30,000</div>
-                        <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                          Pay the ₹30,000 upgrade amount to receive an immediate <strong>₹30,000 Shopping Voucher credit</strong> (subject to approved terms) and full commission qualification. The basic platform fee of ₹3,000 is already credited.
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={handleUpgradePayment}
-                        disabled={upgrading || user.isFullQualified}
-                        className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>
-                          {user.isFullQualified
-                            ? 'Already Full Qualified'
-                            : upgrading
-                            ? 'Processing Upgrade...'
-                            : 'Upgrade with ₹30,000'}
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Method 2: Shopping Upgrade */}
-                    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                            Method 2
-                          </span>
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                            Pending Approval
-                          </span>
-                        </div>
-                        <h4 className="text-base font-bold text-[#253247] mt-1">
-                          Retail Shopping Qualification
-                        </h4>
-                        <div className="text-2xl font-bold text-slate-500 mt-2">₹60,000</div>
-                        <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                          Achieve ₹60,000 of verified qualifying retail shopping on ASKR EV bikes and approved merchant merchandise.
-                        </p>
-                        <div className="mt-3 p-3 rounded-lg bg-[#F7F9FC] border border-slate-200 text-[11px] text-slate-500 leading-relaxed">
-                          The ₹60,000 shopping qualification rules, voucher entitlement, and terms remain marked pending business approval.
-                        </div>
-                      </div>
-
-                      <button
-                        disabled
-                        className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
-                      >
-                        Pending Business Approval
-                      </button>
+                      ))}
                     </div>
                   </div>
-                </div>
+                )}
+
+                {user.currentPackage === 'FREE' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-base font-bold text-[#253247]">
+                        Submit Simulated Membership Activation Request
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Select a plan below to submit an activation request for administrative clearance.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Basic Activation */}
+                      <div className="bg-white rounded-xl border border-emerald-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#15803D] uppercase tracking-wide">
+                              Option 1 • Starter Paid
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              Admin Review Required
+                            </span>
+                          </div>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">Basic Membership</h4>
+                          <div className="text-2xl font-bold text-[#253247] mt-2">₹3,000</div>
+                          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                            Enables Direct Sponsor commission eligibility (₹1,000 per Basic direct; ₹10,000 after Full Qualification). Upgradeable later for the ₹30,000 difference.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => handleMembershipRequest('BASIC_ACTIVATION')}
+                          disabled={upgrading || membershipRequests.some((r) => r.status === 'PENDING')}
+                          className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#15803D] hover:bg-emerald-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>
+                            {membershipRequests.some((r) => r.status === 'PENDING')
+                              ? 'Request Pending Admin Review'
+                              : upgrading
+                              ? 'Submitting Request...'
+                              : 'Request Basic Activation (₹3,000)'}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Full Activation */}
+                      <div className="bg-white rounded-xl border border-blue-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wide">
+                              Option 2 • Full Qualified
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-[#165DAD] border border-blue-200">
+                              Admin Review Required
+                            </span>
+                          </div>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">Full Membership</h4>
+                          <div className="text-2xl font-bold text-[#253247] mt-2">₹33,000</div>
+                          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                            Includes ₹3,000 platform fee + <strong>₹30,000 EV Shopping Voucher</strong> liability and unlocks full Binary Matching (1:2 / 2:1, ₹3,000/match) upon approval.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => handleMembershipRequest('FULL_ACTIVATION')}
+                          disabled={upgrading || membershipRequests.some((r) => r.status === 'PENDING')}
+                          className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>
+                            {membershipRequests.some((r) => r.status === 'PENDING')
+                              ? 'Request Pending Admin Review'
+                              : upgrading
+                              ? 'Submitting Request...'
+                              : 'Request Full Activation (₹33,000)'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-base font-bold text-[#253247]">Full Qualification Methods</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Choose between a direct upgrade request (subject to admin approval) or qualifying retail shopping.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Method 1: Direct Upgrade */}
+                      <div className="bg-white rounded-xl border border-blue-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wide">
+                              Method 1
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-[#165DAD] border border-blue-200">
+                              {user.isFullQualified ? 'Completed' : 'Admin Review Required'}
+                            </span>
+                          </div>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">Direct Upgrade to Full Plan</h4>
+                          <div className="text-2xl font-bold text-[#253247] mt-2">₹30,000</div>
+                          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                            Submit a ₹30,000 upgrade request to receive a <strong>₹30,000 Shopping Voucher credit</strong> and full commission qualification upon admin approval.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => handleMembershipRequest('BASIC_TO_FULL_UPGRADE')}
+                          disabled={
+                            upgrading ||
+                            user.isFullQualified ||
+                            membershipRequests.some((r) => r.status === 'PENDING')
+                          }
+                          className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>
+                            {user.isFullQualified
+                              ? 'Already Full Qualified'
+                              : membershipRequests.some((r) => r.status === 'PENDING')
+                              ? 'Upgrade Pending Admin Review'
+                              : upgrading
+                              ? 'Submitting Request...'
+                              : 'Request Upgrade with ₹30,000'}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Method 2: Shopping Upgrade */}
+                      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                              Method 2
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              Pending Approval
+                            </span>
+                          </div>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">
+                            Retail Shopping Qualification
+                          </h4>
+                          <div className="text-2xl font-bold text-slate-500 mt-2">₹60,000</div>
+                          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                            Achieve ₹60,000 of verified qualifying retail shopping on ASKR EV bikes and approved merchant merchandise.
+                          </p>
+                          <div className="mt-3 p-3 rounded-lg bg-[#F7F9FC] border border-slate-200 text-[11px] text-slate-500 leading-relaxed">
+                            The ₹60,000 shopping qualification rules, voucher entitlement, and terms remain marked pending business approval.
+                          </div>
+                        </div>
+
+                        <button
+                          disabled
+                          className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
+                        >
+                          Pending Business Approval
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -911,9 +1060,9 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-500 uppercase font-semibold">Carry Volume</div>
+                          <div className="text-[10px] text-slate-500 uppercase font-semibold">Carry Units</div>
                           <div className="text-xl font-bold text-[#165DAD] mt-0.5">
-                            ₹{binaryTree?.node?.carryLeftINR ?? 0}
+                            {binaryTree?.node?.carryLeftUnits ?? 0} Units
                           </div>
                         </div>
                       </div>
@@ -931,9 +1080,9 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-500 uppercase font-semibold">Carry Volume</div>
+                          <div className="text-[10px] text-slate-500 uppercase font-semibold">Carry Units</div>
                           <div className="text-xl font-bold text-[#15803D] mt-0.5">
-                            ₹{binaryTree?.node?.carryRightINR ?? 0}
+                            {binaryTree?.node?.carryRightUnits ?? 0} Units
                           </div>
                         </div>
                       </div>
@@ -956,7 +1105,7 @@ export default function DashboardPage() {
                       ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Available for simulated earnings withdrawal.
+                      Simulated earnings ledger balance (withdrawals disabled in SIMULATION_ONLY mode).
                     </p>
                   </div>
 
@@ -1434,10 +1583,16 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">KYC Compliance Status</span>
+                      <span className="text-slate-500">Account Verification Tier</span>
                       <div className="text-sm font-bold text-[#15803D] flex items-center gap-1.5 mt-0.5">
                         <ShieldCheck className="w-4 h-4" />
-                        <span>Level 1 Basic Verified</span>
+                        <span>
+                          {user.isFullQualified
+                            ? 'Full Qualified (Simulated)'
+                            : user.currentPackage === 'BASIC'
+                            ? 'Basic Activated (Simulated)'
+                            : 'Free Starter Account'}
+                        </span>
                       </div>
                     </div>
                   </div>

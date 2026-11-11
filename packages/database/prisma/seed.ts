@@ -139,7 +139,7 @@ async function main() {
         isFullQualified: false,
         sponsorId: sponsorA.id,
         wallet: { create: {} },
-        binaryPlacement: { create: { parentId: sponsorA.id } },
+        binaryPlacement: { create: {} },
       },
     });
   }

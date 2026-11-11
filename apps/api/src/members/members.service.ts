@@ -79,6 +79,13 @@ export class MembersService {
         throw new BadRequestException('Self-placement is strictly prohibited.');
       }
 
+      // Acquire deterministic FOR UPDATE row locks on target & parent BinaryPlacement rows
+      // to eliminate concurrent placement / leg-occupation race conditions.
+      const lockUserIds = [dto.userId, dto.parentId].sort();
+      for (const uid of lockUserIds) {
+        await tx.$queryRaw`SELECT id FROM "BinaryPlacement" WHERE "userId" = ${uid} FOR UPDATE`;
+      }
+
       // 2. Validate member existence
       const targetUser = await tx.user.findUnique({
         where: { id: dto.userId },
@@ -129,8 +136,8 @@ export class MembersService {
         }
       }
 
-      // Check if member is already placed under a parent
-      if (targetUser.binaryPlacement && targetUser.binaryPlacement.parentId) {
+      // Check if member is already placed under a parent on a binary leg
+      if (targetUser.binaryPlacement && targetUser.binaryPlacement.parentId && targetUser.binaryPlacement.leg) {
         throw new BadRequestException(
           `Member ${targetUser.memberId} is already placed in the binary tree under parent ${targetUser.binaryPlacement.parentId}. Duplicate placement is not permitted.`
         );
@@ -631,9 +638,9 @@ export class MembersService {
       throw new NotFoundException('Binary placement node not found');
     }
 
-    // Fetch parent node info if present
+    // Fetch parent node info if actively placed on a leg
     let parentInfo: any = null;
-    if (placement.parentId) {
+    if (placement.parentId && placement.leg) {
       const parentUser = await this.prisma.user.findUnique({
         where: { id: placement.parentId },
         select: { id: true, memberId: true, fullName: true },
@@ -676,6 +683,10 @@ export class MembersService {
         leg: c.leg,
         leftCount: c.leftCount,
         rightCount: c.rightCount,
+        carryLeftUnits: Number(c.carryLeftPaise),
+        carryRightUnits: Number(c.carryRightPaise),
+        leftVolumeUnits: Number(c.leftVolumePaise),
+        rightVolumeUnits: Number(c.rightVolumePaise),
         carryLeftINR: paiseToRupees(c.carryLeftPaise),
         carryRightINR: paiseToRupees(c.carryRightPaise),
       };
@@ -689,6 +700,10 @@ export class MembersService {
         ...placement,
         parent: parentInfo,
         sponsor: placement.user.sponsor,
+        leftVolumeUnits: Number(placement.leftVolumePaise),
+        rightVolumeUnits: Number(placement.rightVolumePaise),
+        carryLeftUnits: Number(placement.carryLeftPaise),
+        carryRightUnits: Number(placement.carryRightPaise),
         leftVolumeINR: paiseToRupees(placement.leftVolumePaise),
         rightVolumeINR: paiseToRupees(placement.rightVolumePaise),
         carryLeftINR: paiseToRupees(placement.carryLeftPaise),

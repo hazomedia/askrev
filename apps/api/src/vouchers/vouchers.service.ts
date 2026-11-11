@@ -4,14 +4,28 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
 import { paiseToRupees, JournalAccount } from '@askrev/shared';
 import { Prisma } from '@prisma/client';
 
-export interface RedeemVoucherDto {
+export class RedeemVoucherDto {
+  @IsString()
+  @IsNotEmpty()
   voucherId: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
   amountINR: number;
+
+  @IsString()
+  @IsOptional()
   bookingNumber?: string;
+
+  @IsString()
+  @IsOptional()
   idempotencyKey?: string;
 }
 
@@ -104,6 +118,9 @@ export class VouchersService {
    * remain strictly pending business and executive policy approval.
    */
   async redeemVoucher(userId: string, dto: RedeemVoucherDto) {
+    if (typeof dto.amountINR !== 'number' || !Number.isFinite(dto.amountINR) || dto.amountINR <= 0) {
+      throw new BadRequestException('Redemption amount must be a positive finite number.');
+    }
     const amountPaise = BigInt(Math.max(0, Math.round(dto.amountINR * 100)));
     if (amountPaise <= 0n) {
       throw new BadRequestException('Redemption amount must be greater than ₹0.');
@@ -118,6 +135,9 @@ export class VouchersService {
         });
 
         if (existingTx) {
+          if (existingTx.voucher.userId !== userId) {
+            throw new ForbiddenException('Idempotency key belongs to another account.');
+          }
           return {
             message: 'Idempotent replay: Voucher already redeemed.',
             voucher: {
@@ -174,7 +194,8 @@ export class VouchersService {
       const bookingRef = dto.bookingNumber || `RED-${Date.now().toString().slice(-8)}`;
 
       // 7. Double-Entry Accounting Entry
-      const jnlRef = `JNL-RED-${voucher.voucherCode}-${Date.now().toString().slice(-6)}`;
+      const jnlSuffix = Math.floor(100 + Math.random() * 900);
+      const jnlRef = `JNL-RED-${voucher.voucherCode}-${Date.now().toString().slice(-6)}-${jnlSuffix}`;
       const journal = await tx.journalEntry.create({
         data: {
           referenceId: jnlRef,

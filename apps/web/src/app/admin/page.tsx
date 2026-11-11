@@ -35,7 +35,7 @@ import {
   HelpCircle,
   ExternalLink,
 } from 'lucide-react';
-import { fetchApi, getStoredUser, clearAuthSession } from '../../lib/api';
+import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
 type AdminTab =
   | 'overview'
@@ -428,8 +428,8 @@ export default function AdminPage() {
     }
   };
 
-  const handleLogout = () => {
-    clearAuthSession();
+  const handleLogout = async () => {
+    await logoutSession();
     router.push('/auth/login');
   };
 
@@ -522,26 +522,26 @@ export default function AdminPage() {
       {/* 1. TOP STICKY ENTERPRISE HEADER */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between gap-2 h-16 min-w-0">
             {/* Left: Branding & Mobile Menu Toggle */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100"
+                className="md:hidden shrink-0 p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100"
                 aria-label="Toggle navigation"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
 
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#165DAD] text-white flex items-center justify-center font-bold text-xs shadow-sm">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 shrink-0 rounded-lg bg-[#165DAD] text-white flex items-center justify-center font-bold text-xs shadow-sm">
                   AE
                 </div>
-                <div>
-                  <div className="font-bold text-sm text-[#253247] tracking-tight">
+                <div className="min-w-0">
+                  <div className="font-bold text-xs sm:text-sm text-[#253247] tracking-tight truncate">
                     ASKR EV Operations Center
                   </div>
-                  <div className="text-[10px] text-slate-500 font-medium">
+                  <div className="hidden sm:block text-[10px] text-slate-500 font-medium truncate">
                     Corporate Admin Platform
                   </div>
                 </div>
@@ -549,13 +549,14 @@ export default function AdminPage() {
             </div>
 
             {/* Right: Role, Compliance Badge, Portal Link & Logout */}
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                <Lock className="w-3 h-3 text-amber-600" />
-                <span>SIMULATION_ONLY</span>
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+              <span className="inline-flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+                <Lock className="w-3 h-3 shrink-0 text-amber-600" />
+                <span className="hidden sm:inline">SIMULATION_ONLY</span>
+                <span className="sm:hidden">SIM</span>
               </span>
 
-              <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+              <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span className="font-semibold text-slate-700">{currentUser?.fullName}</span>
                 <span className="text-[10px] uppercase font-bold text-slate-400">
@@ -563,7 +564,7 @@ export default function AdminPage() {
                 </span>
               </div>
 
-              <div className="h-5 w-px bg-slate-200" />
+              <div className="hidden sm:block h-5 w-px bg-slate-200" />
 
               <button
                 onClick={handleRefreshCurrentTab}
@@ -577,17 +578,18 @@ export default function AdminPage() {
               <Link
                 href="/dashboard"
                 className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-[#165DAD] px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                title="Member Portal"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Member Portal</span>
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden lg:inline">Member Portal</span>
               </Link>
 
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-red-600 px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
                 title="Sign out of console"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4 shrink-0" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
@@ -828,10 +830,10 @@ export default function AdminPage() {
                 </div>
 
                 {/* 3. EV Bookings & Quick System Health */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* EV Bookings Summary Card */}
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-bold text-sm text-[#253247] flex items-center gap-2">
                         <Bike className="w-4 h-4 text-[#165DAD]" />
                         <span>EV Bookings Summary</span>
@@ -878,7 +880,7 @@ export default function AdminPage() {
 
                   {/* System Audit & Health */}
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-bold text-sm text-[#253247] flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-emerald-600" />
                         <span>System Health & Compliance</span>
@@ -934,16 +936,16 @@ export default function AdminPage() {
 
                   <div className="divide-y divide-slate-100">
                     {overview?.recentActions?.map((act: any) => (
-                      <div key={act.id} className="py-2.5 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2.5">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                      <div key={act.id} className="py-2.5 flex items-center justify-between gap-2 text-xs min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 truncate max-w-[160px] sm:max-w-none">
                             {act.action}
                           </span>
-                          <span className="text-slate-600 truncate max-w-xs sm:max-w-md">
+                          <span className="text-slate-600 truncate min-w-0">
                             {act.entityType} ({act.entityId?.slice(0, 8)})
                           </span>
                         </div>
-                        <span className="text-[11px] text-slate-400">
+                        <span className="shrink-0 text-[11px] text-slate-400">
                           {new Date(act.createdAt).toLocaleTimeString('en-IN', {
                             hour: '2-digit',
                             minute: '2-digit',
@@ -1332,14 +1334,14 @@ export default function AdminPage() {
                             <div className="text-slate-500">Left Count</div>
                             <div className="font-bold text-slate-800">{binaryTreeData.node.leftCount}</div>
                             <div className="text-[10px] text-emerald-700 font-bold">
-                              Carry: {binaryTreeData.node.carryLeftINR}
+                              Carry: {binaryTreeData.node.carryLeftUnits ?? binaryTreeData.node.carryLeftINR ?? 0} Units
                             </div>
                           </div>
                           <div>
                             <div className="text-slate-500">Right Count</div>
                             <div className="font-bold text-slate-800">{binaryTreeData.node.rightCount}</div>
                             <div className="text-[10px] text-emerald-700 font-bold">
-                              Carry: {binaryTreeData.node.carryRightINR}
+                              Carry: {binaryTreeData.node.carryRightUnits ?? binaryTreeData.node.carryRightINR ?? 0} Units
                             </div>
                           </div>
                         </div>

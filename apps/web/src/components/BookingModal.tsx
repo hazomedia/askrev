@@ -25,12 +25,21 @@ export default function BookingModal({
   const [voucherAmount, setVoucherAmount] = useState<number>(0);
   const [activeVouchers, setActiveVouchers] = useState<any[]>([]);
   const [selectedVoucherId, setSelectedVoucherId] = useState<string>('');
+  const [loadingVouchers, setLoadingVouchers] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<any | null>(null);
 
   useEffect(() => {
-    if (bike && user && isOpen) {
+    if (!isOpen) {
+      setBookingResult(null);
+      setError(null);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (bike && user && isOpen && !bookingResult) {
+      setLoadingVouchers(true);
       fetchApi<any[]>('/vouchers/my-vouchers')
         .then((vouchers) => {
           const active = (vouchers || []).filter(
@@ -46,16 +55,17 @@ export default function BookingModal({
           setVoucherAmount(maxAllowed);
           if (active.length > 0) {
             setSelectedVoucherId(active[0].id);
+          } else {
+            setSelectedVoucherId('');
           }
         })
         .catch(() => {
           const fallbackAvail = user.wallet?.shoppingVoucherINR || 0;
           setVoucherAmount(Math.min(fallbackAvail, bike.voucherRedeemLimitINR, bike.bookingAmountINR));
-        });
-      setBookingResult(null);
-      setError(null);
+        })
+        .finally(() => setLoadingVouchers(false));
     }
-  }, [bike, user, isOpen]);
+  }, [bike?.id, user?.id, isOpen]);
 
   if (!isOpen || !bike) return null;
 
@@ -278,10 +288,10 @@ export default function BookingModal({
                 <button
                   type="button"
                   onClick={handleBookingSubmit}
-                  disabled={submitting}
+                  disabled={submitting || loadingVouchers}
                   className="px-5 py-2 rounded-lg bg-[#165DAD] text-white text-xs font-medium hover:bg-[#124B8D] disabled:opacity-50"
                 >
-                  {submitting ? 'Processing...' : 'Confirm Reservation'}
+                  {submitting ? 'Processing...' : loadingVouchers ? 'Loading Vouchers...' : 'Confirm Reservation'}
                 </button>
               </div>
             </div>

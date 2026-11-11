@@ -15,6 +15,19 @@ export class EvBikesController {
     return this.evBikesService.getAllBikes();
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('my-bookings')
+  async getMyBookings(@CurrentUser() user: any) {
+    return this.evBikesService.getUserBookings(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  @Get('admin/bookings')
+  async getAllBookingsAdmin() {
+    return this.evBikesService.getAllBookingsAdmin();
+  }
+
   @Get(':id')
   async getBikeById(@Param('id') id: string) {
     return this.evBikesService.getBikeById(id);
@@ -37,18 +50,5 @@ export class EvBikesController {
     @Body() body?: { cancellationReason?: string }
   ) {
     return this.evBikesService.cancelBooking(user.id, id, body?.cancellationReason);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('my-bookings')
-  async getMyBookings(@CurrentUser() user: any) {
-    return this.evBikesService.getUserBookings(user.id);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
-  @Get('admin/bookings')
-  async getAllBookingsAdmin() {
-    return this.evBikesService.getAllBookingsAdmin();
   }
 }

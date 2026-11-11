@@ -105,112 +105,119 @@ export class PackagesService {
   // =========================================================================
 
   async createMembershipRequest(userId: string, dto: CreateMembershipRequestDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { wallet: true },
-    });
+    return await this.prisma.$transaction(async (tx) => {
+      // Lock the User row inside the transaction to serialize concurrent request submissions
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
 
-    if (!user) {
-      throw new NotFoundException('Member not found');
-    }
-
-    // Determine expected fee in paise
-    let expectedFeePaise: bigint;
-    switch (dto.requestType) {
-      case MembershipRequestType.BASIC_ACTIVATION:
-        if (user.currentPackage !== MembershipPackage.FREE) {
-          throw new BadRequestException('Basic Activation is only available for Free accounts.');
-        }
-        expectedFeePaise = FINANCIAL_RULES.BASIC_MEMBERSHIP_PRICE_PAISE; // ₹3,000
-        break;
-
-      case MembershipRequestType.FULL_ACTIVATION:
-        if (user.currentPackage !== MembershipPackage.FREE) {
-          throw new BadRequestException('Direct Full Activation is only available for Free accounts.');
-        }
-        expectedFeePaise = FINANCIAL_RULES.FULL_MEMBERSHIP_PRICE_PAISE; // ₹33,000
-        break;
-
-      case MembershipRequestType.BASIC_TO_FULL_UPGRADE:
-        if (user.currentPackage !== MembershipPackage.BASIC) {
-          throw new BadRequestException('Upgrade is only available for active Basic members.');
-        }
-        if (user.isFullQualified) {
-          throw new BadRequestException('Member is already Full Qualified.');
-        }
-        expectedFeePaise = FINANCIAL_RULES.UPGRADE_PAYMENT_PRICE_PAISE; // ₹30,000
-        break;
-
-      default:
-        throw new BadRequestException(`Unsupported request type: ${dto.requestType}`);
-    }
-
-    // Check Idempotency Key if provided
-    if (dto.idempotencyKey) {
-      const existingKey = await this.prisma.membershipRequest.findUnique({
-        where: { idempotencyKey: dto.idempotencyKey },
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        include: { wallet: true },
       });
-      if (existingKey) {
-        return {
-          message: 'Idempotent replay: Request already exists.',
-          request: {
-            ...existingKey,
-            feeINR: paiseToRupees(existingKey.feePaise),
-          },
-        };
+
+      if (!user) {
+        throw new NotFoundException('Member not found');
       }
-    }
 
-    // Check if user already has a pending request
-    const pendingRequest = await this.prisma.membershipRequest.findFirst({
-      where: {
-        userId,
-        status: MembershipRequestStatus.PENDING,
-      },
-    });
+      // Determine expected fee in paise
+      let expectedFeePaise: bigint;
+      switch (dto.requestType) {
+        case MembershipRequestType.BASIC_ACTIVATION:
+          if (user.currentPackage !== MembershipPackage.FREE) {
+            throw new BadRequestException('Basic Activation is only available for Free accounts.');
+          }
+          expectedFeePaise = FINANCIAL_RULES.BASIC_MEMBERSHIP_PRICE_PAISE; // ₹3,000
+          break;
 
-    if (pendingRequest) {
-      throw new BadRequestException(
-        'You already have a pending membership activation/upgrade request under administrative review.'
-      );
-    }
+        case MembershipRequestType.FULL_ACTIVATION:
+          if (user.currentPackage !== MembershipPackage.FREE) {
+            throw new BadRequestException('Direct Full Activation is only available for Free accounts.');
+          }
+          expectedFeePaise = FINANCIAL_RULES.FULL_MEMBERSHIP_PRICE_PAISE; // ₹33,000
+          break;
 
-    const request = await this.prisma.membershipRequest.create({
-      data: {
-        userId,
-        requestType: dto.requestType,
-        feePaise: expectedFeePaise,
-        paymentMode: dto.paymentMode || 'SIMULATED_TEST',
-        paymentReference: dto.paymentReference || `SIM-REF-${Date.now().toString().slice(-8)}`,
-        idempotencyKey: dto.idempotencyKey || null,
-        isSimulated: true,
-        status: MembershipRequestStatus.PENDING,
-        metadata: dto.metadata || { compliance: 'SIMULATION_ONLY', source: 'member_portal' },
-      },
-    });
+        case MembershipRequestType.BASIC_TO_FULL_UPGRADE:
+          if (user.currentPackage !== MembershipPackage.BASIC) {
+            throw new BadRequestException('Upgrade is only available for active Basic members.');
+          }
+          if (user.isFullQualified) {
+            throw new BadRequestException('Member is already Full Qualified.');
+          }
+          expectedFeePaise = FINANCIAL_RULES.UPGRADE_PAYMENT_PRICE_PAISE; // ₹30,000
+          break;
 
-    await this.prisma.auditLog.create({
-      data: {
-        actorId: userId,
-        action: 'MEMBERSHIP_REQUEST_SUBMITTED',
-        entityType: 'MEMBERSHIP_REQUEST',
-        entityId: request.id,
-        metadata: {
-          requestType: request.requestType,
-          feeINR: paiseToRupees(request.feePaise),
-          paymentMode: request.paymentMode,
-          complianceMode: 'SIMULATION_ONLY',
+        default:
+          throw new BadRequestException(`Unsupported request type: ${dto.requestType}`);
+      }
+
+      // Check Idempotency Key if provided
+      if (dto.idempotencyKey) {
+        const existingKey = await tx.membershipRequest.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+        });
+        if (existingKey) {
+          return {
+            message: 'Idempotent replay: Request already exists.',
+            request: {
+              ...existingKey,
+              feeINR: paiseToRupees(existingKey.feePaise),
+            },
+          };
+        }
+      }
+
+      // Check if user already has a pending request
+      const pendingRequest = await tx.membershipRequest.findFirst({
+        where: {
+          userId,
+          status: MembershipRequestStatus.PENDING,
         },
-      },
-    });
+      });
 
-    return {
-      message: 'Membership request submitted successfully for administrative simulation review.',
-      request: {
-        ...request,
-        feeINR: paiseToRupees(request.feePaise),
-      },
-    };
+      if (pendingRequest) {
+        throw new BadRequestException(
+          'You already have a pending membership activation/upgrade request under administrative review.'
+        );
+      }
+
+      const request = await tx.membershipRequest.create({
+        data: {
+          userId,
+          requestType: dto.requestType,
+          feePaise: expectedFeePaise,
+          paymentMode: dto.paymentMode || 'SIMULATED_TEST',
+          paymentReference:
+            dto.paymentReference ||
+            `SIM-REF-${Date.now().toString().slice(-8)}-${Math.floor(100 + Math.random() * 900)}`,
+          idempotencyKey: dto.idempotencyKey || null,
+          isSimulated: true,
+          status: MembershipRequestStatus.PENDING,
+          metadata: dto.metadata || { compliance: 'SIMULATION_ONLY', source: 'member_portal' },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'MEMBERSHIP_REQUEST_SUBMITTED',
+          entityType: 'MEMBERSHIP_REQUEST',
+          entityId: request.id,
+          metadata: {
+            requestType: request.requestType,
+            feeINR: paiseToRupees(request.feePaise),
+            paymentMode: request.paymentMode,
+            complianceMode: 'SIMULATION_ONLY',
+          },
+        },
+      });
+
+      return {
+        message: 'Membership request submitted successfully for administrative simulation review.',
+        request: {
+          ...request,
+          feeINR: paiseToRupees(request.feePaise),
+        },
+      };
+    });
   }
 
   async getMyMembershipRequests(userId: string) {
@@ -391,7 +398,7 @@ export class PackagesService {
         });
 
         // Grant Member's ₹30,000 Shopping Voucher
-        const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}`;
+        const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
         await tx.shoppingVoucher.create({
           data: {
             voucherCode,
@@ -459,7 +466,7 @@ export class PackagesService {
         });
 
         // Grant Member's ₹30,000 Shopping Voucher
-        const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}`;
+        const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
         await tx.shoppingVoucher.create({
           data: {
             voucherCode,
@@ -862,7 +869,7 @@ export class PackagesService {
       if (qualificationOrder === 2) {
         // Part 1: Issue ₹30,000 Shopping Voucher
         const voucherGrantPaise = FINANCIAL_RULES.QUALIFIED_DIRECT_2ND_VOUCHER_PAISE;
-        const sponsorVoucherCode = `VCHR-SPON-${Date.now().toString().slice(-8)}`;
+        const sponsorVoucherCode = `VCHR-SPON-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         await tx.shoppingVoucher.create({
           data: {
