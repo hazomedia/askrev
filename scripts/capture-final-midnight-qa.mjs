@@ -245,8 +245,9 @@ async function main() {
   } finally {
     try {
       chromeProc.kill();
-    } catch (e) {}
+    } catch (e) { }
   }
 }
 
 main().catch(console.error);
+

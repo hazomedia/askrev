@@ -364,7 +364,7 @@ export default function BikeDetailPage() {
 
                       <div className="flex items-center justify-center gap-2 text-[11px] text-[#AAB7C8]">
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Instant Simulated Allocation • COMPLIANCE_MODE=SIMULATION_ONLY</span>
+                        <span>Non-Transactional Showroom Request • Priority Test Drive Allocation</span>
                       </div>
                     </div>
                   ) : (

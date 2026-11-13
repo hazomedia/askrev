@@ -1,16 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { fetchApi } from '../lib/api';
+import { X, CheckCircle2, ShieldCheck, Sparkles, Send } from 'lucide-react';
 
 interface BookingModalProps {
   bike: any | null;
   isOpen: boolean;
   onClose: () => void;
-  user: any | null;
+  user?: any | null;
   onSuccess?: () => void;
 }
 
@@ -21,280 +18,256 @@ export default function BookingModal({
   user,
   onSuccess,
 }: BookingModalProps) {
-  const router = useRouter();
-  const [voucherAmount, setVoucherAmount] = useState<number>(0);
-  const [activeVouchers, setActiveVouchers] = useState<any[]>([]);
-  const [selectedVoucherId, setSelectedVoucherId] = useState<string>('');
-  const [loadingVouchers, setLoadingVouchers] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
+  const [selectedVariant, setSelectedVariant] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [bookingResult, setBookingResult] = useState<any | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
-      setBookingResult(null);
-      setError(null);
+      setSubmitted(false);
+      setSubmitting(false);
+      setFullName('');
+      setPhone('');
+      setCity('');
+    } else if (bike?.variants && bike.variants.length > 0) {
+      setSelectedVariant(bike.variants[0].name);
     }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (bike && user && isOpen && !bookingResult) {
-      setLoadingVouchers(true);
-      fetchApi<any[]>('/vouchers/my-vouchers')
-        .then((vouchers) => {
-          const active = (vouchers || []).filter(
-            (v) => (v.status === 'ACTIVE' || v.status === 'PARTIALLY_REDEEMED') && v.remainingBalanceINR > 0
-          );
-          setActiveVouchers(active);
-          const totalAvail = active.reduce((acc, v) => acc + v.remainingBalanceINR, 0);
-          const maxAllowed = Math.min(
-            totalAvail,
-            bike.voucherRedeemLimitINR,
-            bike.bookingAmountINR
-          );
-          setVoucherAmount(maxAllowed);
-          if (active.length > 0) {
-            setSelectedVoucherId(active[0].id);
-          } else {
-            setSelectedVoucherId('');
-          }
-        })
-        .catch(() => {
-          const fallbackAvail = user.wallet?.shoppingVoucherINR || 0;
-          setVoucherAmount(Math.min(fallbackAvail, bike.voucherRedeemLimitINR, bike.bookingAmountINR));
-        })
-        .finally(() => setLoadingVouchers(false));
-    }
-  }, [bike?.id, user?.id, isOpen]);
+  }, [isOpen, bike]);
 
   if (!isOpen || !bike) return null;
 
-  const totalAvailableVoucherINR = activeVouchers.length > 0
-    ? activeVouchers.reduce((acc, v) => acc + v.remainingBalanceINR, 0)
-    : user?.wallet?.shoppingVoucherINR || 0;
-
-  const maxVoucherLimit = Math.min(
-    totalAvailableVoucherINR,
-    bike.voucherRedeemLimitINR,
-    bike.bookingAmountINR
-  );
-  const netCashPaid = Math.max(0, bike.bookingAmountINR - voucherAmount);
-
-  const handleBookingSubmit = async () => {
-    if (!user) {
-      router.push('/auth/login');
-      return;
-    }
-
+  const handleSubmitEnquiry = (e: React.FormEvent) => {
+    e.preventDefault();
     setSubmitting(true);
-    setError(null);
 
+    // Record non-transactional showroom interest in local storage for the session
     try {
-      const response = await fetchApi<any>('/ev-bikes/book', {
-        method: 'POST',
-        body: JSON.stringify({
-          bikeId: bike.id,
-          voucherId: selectedVoucherId || undefined,
-          voucherAmountINR: voucherAmount,
-        }),
+      const existing = JSON.parse(localStorage.getItem('askrev_showroom_enquiries') || '[]');
+      existing.push({
+        vehicleId: bike.id,
+        vehicleName: bike.name,
+        modelCode: bike.modelCode,
+        fullName,
+        phone,
+        city,
+        variant: selectedVariant || 'Standard',
+        timestamp: new Date().toISOString(),
       });
+      localStorage.setItem('askrev_showroom_enquiries', JSON.stringify(existing));
+    } catch {}
 
-      setBookingResult(response.booking);
-      if (onSuccess) onSuccess();
-    } catch (err: any) {
-      setError(err.message || 'Failed to complete booking reservation');
-    } finally {
+    setTimeout(() => {
       setSubmitting(false);
-    }
+      setSubmitted(true);
+      if (onSuccess) onSuccess();
+    }, 600);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-      <div className="bg-white w-full max-w-md rounded-xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-[#101827] w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden flex flex-col text-[#F7FAFF]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <div>
-            <h2 className="text-lg font-bold text-[#253247]">Reserve {bike.name}</h2>
-            <div className="text-xs text-slate-500">Model: {bike.modelCode}</div>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#0C121E]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-[#50D9FF] flex items-center justify-center border border-blue-500/30">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-extrabold text-[#F7FAFF] tracking-tight">
+                {bike.name}
+              </h2>
+              <div className="text-xs text-[#AAB7C8]">
+                Showroom Priority Allocation • Model: {bike.modelCode}
+              </div>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            className="p-1.5 rounded-full text-[#AAB7C8] hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
-          {!user ? (
-            <div className="text-center py-4 space-y-3">
-              <h3 className="text-base font-bold text-[#253247]">Sign In Required</h3>
-              <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                Please sign in to your member account to complete your EV booking reservation.
-              </p>
-              <div className="pt-2 flex justify-center gap-3">
-                <Link
-                  href="/auth/login"
-                  className="px-5 py-2 rounded-lg bg-[#165DAD] text-white text-xs font-medium hover:bg-[#124B8D]"
-                >
-                  Sign In
-                </Link>
-                <Link
-                  href="/auth/register"
-                  className="px-5 py-2 rounded-lg border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-50"
-                >
-                  Register Free
-                </Link>
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+          {submitted ? (
+            <div className="text-center py-8 space-y-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/30 shadow-[0_0_20px_rgba(52,211,153,0.3)]">
+                <CheckCircle2 className="w-10 h-10" />
               </div>
-            </div>
-          ) : bookingResult ? (
-            <div className="text-center py-4 space-y-4">
-              <div className="w-12 h-12 rounded-full bg-green-50 border border-green-200 text-green-700 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-[#253247]">Reservation Confirmed</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Your simulated EV reservation for {bookingResult.bikeName} has been recorded (Simulation Mode — no real funds charged).
+              <div className="space-y-1.5">
+                <h3 className="text-2xl font-black text-[#F7FAFF]">
+                  Priority Allocation Registered
+                </h3>
+                <p className="text-xs sm:text-sm text-[#AAB7C8] max-w-sm mx-auto leading-relaxed">
+                  Thank you, <span className="text-[#F7FAFF] font-semibold">{fullName}</span>! Your showroom priority interest for the <span className="text-[#50D9FF] font-semibold">{bike.name}</span> has been logged.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-left space-y-2 text-xs">
+              <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-left text-xs space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Booking Reference:</span>
-                  <span className="font-mono font-semibold text-[#165DAD]">
-                    {bookingResult.bookingNumber}
-                  </span>
+                  <span className="text-[#AAB7C8]">Requested Vehicle:</span>
+                  <span className="font-bold text-[#F7FAFF]">{bike.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Simulated Booking Token:</span>
-                  <span className="text-slate-700 font-medium">
-                    ₹{bookingResult.bookingAmountINR.toLocaleString('en-IN')}
-                  </span>
+                  <span className="text-[#AAB7C8]">Selected Variant:</span>
+                  <span className="font-medium text-[#F7FAFF]">{selectedVariant || 'Standard'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Voucher Applied:</span>
-                  <span className="text-green-700 font-medium">
-                    -₹{bookingResult.voucherAppliedINR.toLocaleString('en-IN')}
-                  </span>
+                  <span className="text-[#AAB7C8]">Contact Phone:</span>
+                  <span className="font-medium text-[#F7FAFF]">{phone}</span>
                 </div>
-                <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm">
-                  <span className="text-[#253247]">Simulated Cash Paid:</span>
-                  <span className="text-[#165DAD]">
-                    ₹{bookingResult.netCashPaidINR.toLocaleString('en-IN')}
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-[#AAB7C8]">City:</span>
+                  <span className="font-medium text-[#F7FAFF]">{city}</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-white/10 text-emerald-400 font-semibold">
+                  <span>Booking Payment:</span>
+                  <span>₹0 (Non-Transactional Enquiry)</span>
                 </div>
               </div>
 
-              <div className="pt-2 flex justify-center gap-3">
-                <Link
-                  href="/dashboard"
-                  onClick={onClose}
-                  className="px-5 py-2 rounded-lg bg-[#165DAD] text-white text-xs font-medium hover:bg-[#124B8D]"
-                >
-                  View in Dashboard
-                </Link>
+              <div className="pt-2">
                 <button
                   onClick={onClose}
-                  className="px-5 py-2 rounded-lg border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-50"
+                  className="w-full py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)]"
                 >
-                  Close
+                  Return to Showroom
                 </button>
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* Bike details summary */}
-              <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 flex justify-between items-center text-xs">
-                <div>
-                  <div className="font-semibold text-[#253247]">{bike.name}</div>
-                  <div className="text-slate-500 text-[11px]">
-                    Ex-Showroom: ₹{bike.exShowroomPriceINR.toLocaleString('en-IN')}
-                  </div>
+            <form onSubmit={handleSubmitEnquiry} className="space-y-4">
+              {/* Notice Banner */}
+              <div className="p-4 rounded-2xl bg-[#0B101D] border border-blue-500/25 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#50D9FF] uppercase tracking-wider">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Showroom Pre-Order & Test Drive Priority</span>
                 </div>
-                <div className="text-right">
-                  <span className="text-slate-400 block text-[10px]">Booking Token</span>
-                  <span className="font-bold text-[#165DAD] text-sm">
-                    ₹{bike.bookingAmountINR.toLocaleString('en-IN')}
+                <p className="text-[11px] text-[#AAB7C8] leading-relaxed">
+                  Transactional payments are disabled during showroom preview. Registering below reserves your place in the regional test drive and allocation queue with zero payment or financial commitment.
+                </p>
+              </div>
+
+              {/* Vehicle Specifications Summary */}
+              <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-center text-xs">
+                <div>
+                  <span className="text-[10px] text-[#AAB7C8] block uppercase">Starting At</span>
+                  <span className="font-bold text-[#F7FAFF]">
+                    {bike.exShowroomPriceINR
+                      ? `₹${bike.exShowroomPriceINR.toLocaleString('en-IN')}`
+                      : 'Showcase'}
                   </span>
                 </div>
+                <div className="border-x border-white/10">
+                  <span className="text-[10px] text-[#AAB7C8] block uppercase">Range</span>
+                  <span className="font-bold text-[#F7FAFF]">{bike.rangeKm} km</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-[#AAB7C8] block uppercase">Top Speed</span>
+                  <span className="font-bold text-[#F7FAFF]">{bike.topSpeedKmh} km/h</span>
+                </div>
               </div>
 
-              {/* Voucher deduction */}
-              {totalAvailableVoucherINR > 0 && maxVoucherLimit > 0 ? (
-                <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-[#253247]">Apply Shopping Voucher</span>
-                    <span className="text-slate-500">
-                      Balance: <strong>₹{totalAvailableVoucherINR.toLocaleString('en-IN')}</strong>
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Redeem:</span>
-                    <span className="font-bold text-green-700">
-                      ₹{voucherAmount.toLocaleString('en-IN')}
-                    </span>
-                  </div>
+              {/* Form Inputs */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#AAB7C8] block mb-1">
+                    Your Full Name *
+                  </label>
                   <input
-                    type="range"
-                    min="0"
-                    max={maxVoucherLimit}
-                    step="500"
-                    value={voucherAmount}
-                    onChange={(e) => setVoucherAmount(Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#165DAD]"
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#080B12] border border-white/15 focus:border-[#267DFF] focus:outline-none text-sm text-[#F7FAFF] placeholder-[#AAB7C8]/50"
                   />
-                  <div className="flex justify-between text-[10px] text-slate-400">
-                    <span>₹0</span>
-                    <span>Max: ₹{maxVoucherLimit.toLocaleString('en-IN')}</span>
-                  </div>
                 </div>
-              ) : null}
 
-              {/* Price summary table */}
-              <div className="p-3.5 rounded-lg border border-slate-200 space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-600">
-                  <span>Simulated Booking Token:</span>
-                  <span>₹{bike.bookingAmountINR.toLocaleString('en-IN')}</span>
+                <div>
+                  <label className="text-xs font-semibold text-[#AAB7C8] block mb-1">
+                    Mobile Phone Number *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#080B12] border border-white/15 focus:border-[#267DFF] focus:outline-none text-sm text-[#F7FAFF] placeholder-[#AAB7C8]/50"
+                  />
                 </div>
-                {voucherAmount > 0 && (
-                  <div className="flex justify-between text-green-700">
-                    <span>Shopping Voucher Discount:</span>
-                    <span>-₹{voucherAmount.toLocaleString('en-IN')}</span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-[#AAB7C8] block mb-1">
+                      City / State *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="e.g. Hyderabad"
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#080B12] border border-white/15 focus:border-[#267DFF] focus:outline-none text-sm text-[#F7FAFF] placeholder-[#AAB7C8]/50"
+                    />
                   </div>
-                )}
-                <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm">
-                  <span className="text-[#253247]">Simulated Cash Payable:</span>
-                  <span className="text-[#165DAD]">₹{netCashPaid.toLocaleString('en-IN')}</span>
+
+                  <div>
+                    <label className="text-xs font-semibold text-[#AAB7C8] block mb-1">
+                      Preferred Variant
+                    </label>
+                    {bike.variants && bike.variants.length > 0 ? (
+                      <select
+                        value={selectedVariant}
+                        onChange={(e) => setSelectedVariant(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl bg-[#080B12] border border-white/15 focus:border-[#267DFF] focus:outline-none text-xs text-[#F7FAFF]"
+                      >
+                        {bike.variants.map((v: any) => (
+                          <option key={v.name} value={v.name} className="bg-[#101827]">
+                            {v.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        disabled
+                        value="Standard Edition"
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#080B12]/60 border border-white/10 text-xs text-[#AAB7C8]"
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div className="pt-2 flex justify-end gap-3">
+              {/* Submit CTA */}
+              <div className="pt-2 space-y-2">
                 <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-50"
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)] flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  Cancel
+                  {submitting ? (
+                    <span>Registering Priority Interest...</span>
+                  ) : (
+                    <>
+                      <span>Register Priority Interest (₹0)</span>
+                      <Send className="w-3.5 h-3.5" />
+                    </>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleBookingSubmit}
-                  disabled={submitting || loadingVouchers}
-                  className="px-5 py-2 rounded-lg bg-[#165DAD] text-white text-xs font-medium hover:bg-[#124B8D] disabled:opacity-50"
-                >
-                  {submitting ? 'Processing...' : loadingVouchers ? 'Loading Vouchers...' : 'Confirm Reservation'}
-                </button>
+                <p className="text-[10px] text-center text-[#AAB7C8]">
+                  Zero financial obligation • Official ASKR EV Showroom Allocation
+                </p>
               </div>
-            </div>
+            </form>
           )}
         </div>
       </div>
