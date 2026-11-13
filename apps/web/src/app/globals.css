@@ -87,8 +87,9 @@ body {
    VERTICAL ROAD & TWO-WAY VEHICLE TRAFFIC ANIMATION KEYFRAMES
    Lane 1: Top to Bottom (Downwards)
    Lane 2: Bottom to Top (Upwards)
-   Both lanes use matching 14s duration with exact 7s (50%) phase spacing to guarantee
+   Both lanes use matching durations with exact 50% phase spacing to guarantee
    ZERO overlap or collisions across infinite animation cycles.
+   Strictly vertical transform3d to prevent horizontal lane drift.
    ============================================================================= */
 
 /* Center Dashed Lane Divider Downward Flow */
@@ -97,7 +98,7 @@ body {
     background-position-y: 0px;
   }
   100% {
-    background-position-y: 36px;
+    background-position-y: 40px;
   }
 }
 
@@ -105,13 +106,13 @@ body {
   animation: roadMarkingsMove 0.85s linear infinite;
 }
 
-/* Lane 1: Downward Traffic (Top to Bottom) */
+/* Desktop Lane 1: Downward Traffic (Top to Bottom) */
 @keyframes travelLaneDown {
   0% {
-    transform: translate3d(0, 0px, 0);
+    transform: translate3d(0, -260px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 320px), 0);
+    transform: translate3d(0, calc(100vh + 260px), 0);
   }
 }
 
@@ -125,13 +126,13 @@ body {
   animation-delay: -7s;
 }
 
-/* Lane 2: Upward Traffic (Bottom to Top) */
+/* Desktop Lane 2: Upward Traffic (Bottom to Top) */
 @keyframes travelLaneUp {
   0% {
-    transform: translate3d(0, calc(100vh + 320px), 0);
+    transform: translate3d(0, calc(100vh + 260px), 0);
   }
   100% {
-    transform: translate3d(0, 0px, 0);
+    transform: translate3d(0, -260px, 0);
   }
 }
 
@@ -145,33 +146,43 @@ body {
   animation-delay: -10.5s;
 }
 
-/* Mobile Background Integrated Road Animations */
+/* Mobile Background Road Animations (Full-Screen Viewport Persistent Flow) */
 @keyframes travelMobileLaneDown {
   0% {
-    transform: translate3d(0, 0px, 0);
+    transform: translate3d(0, -220px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100% + 220px), 0);
+    transform: translate3d(0, calc(100vh + 220px), 0);
   }
 }
 
 @keyframes travelMobileLaneUp {
   0% {
-    transform: translate3d(0, calc(100% + 220px), 0);
+    transform: translate3d(0, calc(100vh + 220px), 0);
   }
   100% {
-    transform: translate3d(0, 0px, 0);
+    transform: translate3d(0, -220px, 0);
   }
 }
 
-.animate-mobile-lane-down {
+.animate-mobile-lane-down-1 {
   animation: travelMobileLaneDown 16s linear infinite;
   animation-delay: 0s;
 }
 
-.animate-mobile-lane-up {
-  animation: travelMobileLaneUp 16s linear infinite;
+.animate-mobile-lane-down-2 {
+  animation: travelMobileLaneDown 16s linear infinite;
   animation-delay: -8s;
+}
+
+.animate-mobile-lane-up-1 {
+  animation: travelMobileLaneUp 16s linear infinite;
+  animation-delay: -4s;
+}
+
+.animate-mobile-lane-up-2 {
+  animation: travelMobileLaneUp 16s linear infinite;
+  animation-delay: -12s;
 }
 
 /* =============================================================================

@@ -116,13 +116,17 @@ export default function HomePage() {
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] selection:bg-[#267DFF] selection:text-white relative overflow-x-hidden min-h-screen">
       {/* =========================================================================
-          REBUILT VERTICAL ROAD (DESKTOP RIGHT SIDE FEATURE)
-          Photorealistic top-view EV vehicles, dark asphalt, realistic lane markings
+          DESKTOP PERSISTENT 2-WAY VERTICAL ROAD (RIGHT RAIL)
           ========================================================================= */}
       <VerticalRoad />
 
+      {/* =========================================================================
+          MOBILE PERSISTENT 2-WAY BACKGROUND ROAD (FULL-PAGE SCROLL)
+          ========================================================================= */}
+      <MobileBackgroundRoad />
+
       {/* Main Content Wrapper (Leaves reserved track space on desktop for Vertical Road) */}
-      <div className="w-full lg:pr-[140px] xl:pr-[154px] 2xl:pr-[168px] transition-all">
+      <div className="relative z-10 w-full lg:pr-[144px] xl:pr-[156px] 2xl:pr-[168px] transition-all">
         <Navbar />
 
         {/* =========================================================================
@@ -133,12 +137,9 @@ export default function HomePage() {
         <section
           className="relative border-b border-white/10 overflow-hidden pt-4 pb-12 sm:pt-6 sm:pb-16 md:pt-14 md:pb-24"
           style={{
-            background: 'radial-gradient(ellipse at 75% 35%, #142138 0%, #0C1322 45%, #080B12 100%)',
+            background: 'radial-gradient(ellipse at 75% 35%, rgba(20, 33, 56, 0.88) 0%, rgba(12, 19, 34, 0.92) 45%, rgba(8, 11, 18, 0.94) 100%)',
           }}
         >
-          {/* Subtle Mobile Integrated Background Road Track (Behind foreground content) */}
-          <MobileBackgroundRoad />
-
           {/* Directional Automotive Studio Ambient Backlight Glow */}
           <div
             className="absolute top-1/4 right-1/6 w-[700px] h-[500px] pointer-events-none rounded-full filter blur-3xl opacity-80 transition-all duration-1000 animate-glow-pulse"
@@ -507,7 +508,7 @@ export default function HomePage() {
         <section
           className="py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full"
           style={{
-            background: 'linear-gradient(180deg, #0D1424 0%, #080B12 30%, #0A101D 100%)',
+            background: 'linear-gradient(180deg, rgba(13, 20, 36, 0.82) 0%, rgba(8, 11, 18, 0.88) 30%, rgba(10, 16, 29, 0.85) 100%)',
           }}
         >
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/10">
@@ -598,7 +599,7 @@ export default function HomePage() {
         <section
           className="py-20 border-y border-white/10"
           style={{
-            background: 'linear-gradient(180deg, #0A101D 0%, #080B12 50%, #101827 100%)',
+            background: 'linear-gradient(180deg, rgba(10, 16, 29, 0.85) 0%, rgba(8, 11, 18, 0.88) 50%, rgba(16, 24, 39, 0.85) 100%)',
           }}
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -665,7 +666,7 @@ export default function HomePage() {
         <section
           className="py-20"
           style={{
-            background: 'linear-gradient(180deg, #101827 0%, #080B12 100%)',
+            background: 'linear-gradient(180deg, rgba(16, 24, 39, 0.85) 0%, rgba(8, 11, 18, 0.90) 100%)',
           }}
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
