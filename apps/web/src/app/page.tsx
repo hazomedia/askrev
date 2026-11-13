@@ -19,6 +19,7 @@ import Footer from '../components/Footer';
 import BikeCard from '../components/BikeCard';
 import BookingModal from '../components/BookingModal';
 import VerticalRoad from '../components/VerticalRoad';
+import MobileBackgroundRoad from '../components/MobileBackgroundRoad';
 import GroundMist from '../components/GroundMist';
 import { fetchApi, getStoredUser } from '../lib/api';
 import {
@@ -121,7 +122,7 @@ export default function HomePage() {
       <VerticalRoad />
 
       {/* Main Content Wrapper (Leaves reserved track space on desktop for Vertical Road) */}
-      <div className="w-full lg:pr-[116px] xl:pr-[130px] 2xl:pr-[144px] transition-all">
+      <div className="w-full lg:pr-[140px] xl:pr-[154px] 2xl:pr-[168px] transition-all">
         <Navbar />
 
         {/* =========================================================================
@@ -130,11 +131,14 @@ export default function HomePage() {
             Photorealistic Large Vehicle, Physical Floor Contact, Atmospheric Mist
             ========================================================================= */}
         <section
-          className="relative border-b border-white/10 overflow-hidden pt-8 pb-16 md:pt-14 md:pb-24"
+          className="relative border-b border-white/10 overflow-hidden pt-4 pb-12 sm:pt-6 sm:pb-16 md:pt-14 md:pb-24"
           style={{
             background: 'radial-gradient(ellipse at 75% 35%, #142138 0%, #0C1322 45%, #080B12 100%)',
           }}
         >
+          {/* Subtle Mobile Integrated Background Road Track (Behind foreground content) */}
+          <MobileBackgroundRoad />
+
           {/* Directional Automotive Studio Ambient Backlight Glow */}
           <div
             className="absolute top-1/4 right-1/6 w-[700px] h-[500px] pointer-events-none rounded-full filter blur-3xl opacity-80 transition-all duration-1000 animate-glow-pulse"
@@ -144,7 +148,189 @@ export default function HomePage() {
           />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
+            {/* =====================================================================
+                MOBILE HERO LAYOUT (IMAGE-FIRST HIERARCHY)
+                Visible only on screens < lg breakpoint
+                1. Compact ASKR EV header & badge
+                2. Large premium vehicle image (prominently in initial viewport)
+                3. Short headline
+                4. One-line or two-line description
+                5. Compact vehicle specifications
+                6. Primary CTA and secondary CTA
+                ===================================================================== */}
+            <div className="block lg:hidden space-y-4">
+              {/* 1. Compact ASKR EV Header & Category Badge */}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#101827] border border-blue-500/30 text-[#50D9FF] text-[10px] font-bold tracking-wide shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#50D9FF] animate-pulse" />
+                  <span className="truncate max-w-[200px] xs:max-w-none">{activeSlide.primaryBadge}</span>
+                </div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#50D9FF] bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20 whitespace-nowrap">
+                  {activeVehicle.name}
+                </span>
+              </div>
+
+              {/* 2. Large Premium Vehicle Image Stage (Prominent in initial mobile viewport) */}
+              <div className="relative w-full h-[220px] xs:h-[250px] sm:h-[300px] flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1A]/90 shadow-2xl">
+                {/* Studio Backdrop Glow */}
+                <div
+                  className="absolute inset-0 opacity-40 pointer-events-none"
+                  style={{
+                    background: 'radial-gradient(ellipse 80% 50% at 50% 65%, rgba(38, 125, 255, 0.25) 0%, transparent 75%)',
+                  }}
+                />
+
+                {/* Primary Vehicle Image */}
+                <div className="relative z-10 w-full h-full flex items-center justify-center p-3">
+                  <img
+                    key={`mobile-${activeSlide.image}`}
+                    src={activeSlide.image}
+                    alt={activeVehicle.name}
+                    className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in rounded-xl"
+                  />
+                </div>
+
+                {/* Automotive Ground Contact Shadow */}
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-4/5 h-4 pointer-events-none z-12 animate-shadow-scale">
+                  <div className="absolute inset-x-6 top-0.5 bottom-0.5 bg-black/95 rounded-full filter blur-sm" />
+                </div>
+
+                {/* Ground Mist */}
+                <GroundMist />
+
+                {/* Mobile Slider Chevrons */}
+                <button
+                  onClick={() =>
+                    setCurrentSlideIndex((prev) => (prev - 1 + heroSlides.length) % heroSlides.length)
+                  }
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-black/60 hover:bg-black/80 border border-white/20 text-[#F7FAFF] transition-colors backdrop-blur-sm"
+                  aria-label="Previous Slide"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setCurrentSlideIndex((prev) => (prev + 1) % heroSlides.length)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-black/60 hover:bg-black/80 border border-white/20 text-[#F7FAFF] transition-colors backdrop-blur-sm"
+                  aria-label="Next Slide"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Mobile Slider Indicator Dots */}
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/50 border border-white/10 backdrop-blur-sm">
+                  {heroSlides.map((slide, idx) => (
+                    <button
+                      key={`mob-dot-${slide.vehicle.id}`}
+                      onClick={() => setCurrentSlideIndex(idx)}
+                      className={`h-1.5 rounded-full transition-all ${
+                        currentSlideIndex === idx
+                          ? 'w-5 bg-[#267DFF] shadow-[0_0_8px_rgba(38,125,255,0.8)]'
+                          : 'w-1.5 bg-white/30'
+                      }`}
+                      aria-label={`Go to slide ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Short Headline */}
+              <div className="pt-0.5">
+                <h1 className="text-2xl xs:text-3xl font-black text-[#F7FAFF] tracking-tight leading-tight">
+                  {activeSlide.headline}
+                </h1>
+                {/* 4. One-Line or Two-Line Description */}
+                <p className="mt-1.5 text-xs xs:text-sm text-[#AAB7C8] font-normal leading-relaxed line-clamp-2">
+                  {activeSlide.subline}
+                </p>
+              </div>
+
+              {/* 5. Compact Vehicle Specifications & Starting Price */}
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between px-1">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
+                    <span className="text-xl xs:text-2xl font-black text-[#F7FAFF] tracking-tight">
+                      {activeVehicle.exShowroomPriceINR
+                        ? `₹${activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
+                        : 'Showcase Preview'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
+                </div>
+
+                {/* Compact 4-Metric Grid */}
+                <div className="grid grid-cols-4 gap-1.5 py-2 px-2.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-md backdrop-blur-md">
+                  <div className="text-center">
+                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                      Range
+                    </span>
+                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                      {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
+                    </span>
+                  </div>
+
+                  <div className="text-center border-l border-white/10 pl-1">
+                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                      Speed
+                    </span>
+                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                      {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
+                    </span>
+                  </div>
+
+                  <div className="text-center border-l border-white/10 pl-1">
+                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                      Battery
+                    </span>
+                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                      {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
+                    </span>
+                  </div>
+
+                  <div className="text-center border-l border-white/10 pl-1">
+                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                      0-40 km/h
+                    </span>
+                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                      {activeVehicle.acceleration0to40 || '3.2 sec'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. Primary CTA and Secondary CTA */}
+              <div className="pt-1 flex flex-col xs:flex-row items-center gap-2.5 w-full">
+                <Link
+                  href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
+                  className="w-full py-3 px-5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.35)] flex items-center justify-center gap-1.5"
+                >
+                  <span>Explore {activeVehicle.name}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+
+                {activeVehicle.isBookable ? (
+                  <button
+                    onClick={() => handleOpenBooking(activeVehicle)}
+                    className="w-full py-3 px-5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                  >
+                    Book Now
+                  </button>
+                ) : (
+                  <Link
+                    href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
+                    className="w-full py-3 px-5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                  >
+                    View Specifications
+                  </Link>
+                )}
+              </div>
+            </div>
+
+            {/* =====================================================================
+                DESKTOP HERO LAYOUT (PRESERVED HIGH-END 12-COLUMN SHOWROOM STAGE)
+                Visible only on lg+ breakpoints
+                ===================================================================== */}
+            <div className="hidden lg:grid lg:grid-cols-12 gap-8 lg:gap-10 items-center">
               {/* Left Content Column */}
               <div className="lg:col-span-5 space-y-6 text-left z-10">
                 {/* Category / Status Pill */}

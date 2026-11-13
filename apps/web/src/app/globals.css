@@ -84,10 +84,14 @@ body {
 }
 
 /* =============================================================================
-   VERTICAL ROAD & REALISTIC VEHICLE TRAVEL ANIMATION KEYFRAMES (TOP TO BOTTOM)
+   VERTICAL ROAD & TWO-WAY VEHICLE TRAFFIC ANIMATION KEYFRAMES
+   Lane 1: Top to Bottom (Downwards)
+   Lane 2: Bottom to Top (Upwards)
+   Both lanes use matching 14s duration with exact 7s (50%) phase spacing to guarantee
+   ZERO overlap or collisions across infinite animation cycles.
    ============================================================================= */
 
-/* Lane Markings Downward Flow */
+/* Center Dashed Lane Divider Downward Flow */
 @keyframes roadMarkingsMove {
   0% {
     background-position-y: 0px;
@@ -101,64 +105,73 @@ body {
   animation: roadMarkingsMove 0.85s linear infinite;
 }
 
-/* 1. Electric Jeep 4x4 (Muscular heavy vehicle, steady descent) */
-@keyframes travelJeep {
+/* Lane 1: Downward Traffic (Top to Bottom) */
+@keyframes travelLaneDown {
   0% {
     transform: translate3d(0, 0px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 220px), 0);
+    transform: translate3d(0, calc(100vh + 320px), 0);
   }
 }
 
-.animate-vehicle-jeep {
-  animation: travelJeep 12s linear infinite;
+.animate-lane-down-1 {
+  animation: travelLaneDown 14s linear infinite;
   animation-delay: 0s;
 }
 
-/* 2. Electric Motorcycle (Fast sport streetfighter, zips down right lane) */
-@keyframes travelMotorcycle {
+.animate-lane-down-2 {
+  animation: travelLaneDown 14s linear infinite;
+  animation-delay: -7s;
+}
+
+/* Lane 2: Upward Traffic (Bottom to Top) */
+@keyframes travelLaneUp {
+  0% {
+    transform: translate3d(0, calc(100vh + 320px), 0);
+  }
+  100% {
+    transform: translate3d(0, 0px, 0);
+  }
+}
+
+.animate-lane-up-1 {
+  animation: travelLaneUp 14s linear infinite;
+  animation-delay: -3.5s;
+}
+
+.animate-lane-up-2 {
+  animation: travelLaneUp 14s linear infinite;
+  animation-delay: -10.5s;
+}
+
+/* Mobile Background Integrated Road Animations */
+@keyframes travelMobileLaneDown {
   0% {
     transform: translate3d(0, 0px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 220px), 0);
+    transform: translate3d(0, calc(100% + 220px), 0);
   }
 }
 
-.animate-vehicle-motorcycle {
-  animation: travelMotorcycle 9s linear infinite;
-  animation-delay: 2.5s;
-}
-
-/* 3. Electric Scooter (Agile urban commuter, moderate speed) */
-@keyframes travelScooter {
+@keyframes travelMobileLaneUp {
   0% {
-    transform: translate3d(0, 0px, 0);
+    transform: translate3d(0, calc(100% + 220px), 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 220px), 0);
-  }
-}
-
-.animate-vehicle-scooter {
-  animation: travelScooter 11s linear infinite;
-  animation-delay: 5.5s;
-}
-
-/* 4. Electric Cycle (Lightweight agile commuter, smooth cadence) */
-@keyframes travelCycle {
-  0% {
     transform: translate3d(0, 0px, 0);
   }
-  100% {
-    transform: translate3d(0, calc(100vh + 220px), 0);
-  }
 }
 
-.animate-vehicle-cycle {
-  animation: travelCycle 12s linear infinite;
-  animation-delay: 8.5s;
+.animate-mobile-lane-down {
+  animation: travelMobileLaneDown 16s linear infinite;
+  animation-delay: 0s;
+}
+
+.animate-mobile-lane-up {
+  animation: travelMobileLaneUp 16s linear infinite;
+  animation-delay: -8s;
 }
 
 /* =============================================================================
