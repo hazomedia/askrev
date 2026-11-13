@@ -16,7 +16,7 @@ export default function MobileBackgroundRoad() {
   return (
     <div
       aria-hidden="true"
-      className="lg:hidden fixed top-0 bottom-0 right-1 sm:right-4 w-[116px] sm:w-[136px] pointer-events-none select-none z-0 overflow-hidden"
+      className="lg:hidden fixed top-0 bottom-0 right-1 sm:right-4 w-[118px] sm:w-[136px] pointer-events-none select-none z-0 overflow-hidden"
     >
       {/* 
         Subtle Cinematic Integrated Background Road Track
@@ -27,28 +27,28 @@ export default function MobileBackgroundRoad() {
         className="relative w-full h-full flex justify-center"
         style={{
           maskImage:
-            'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)',
+            'linear-gradient(to bottom, transparent 0%, black 2%, black 98%, transparent 100%)',
           WebkitMaskImage:
-            'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)',
+            'linear-gradient(to bottom, transparent 0%, black 2%, black 98%, transparent 100%)',
         }}
       >
         {/* Road Surface */}
-        <div className="relative w-full h-full bg-gradient-to-l from-[#0B0F19]/85 via-[#111A2E]/92 to-[#090D18]/85 border-l border-r border-[#267DFF]/35 shadow-[-6px_0_30px_rgba(38,125,255,0.22)]">
+        <div className="relative w-full h-full bg-gradient-to-l from-[#0B0F19]/92 via-[#111A2E]/96 to-[#090D18]/92 border-l border-r border-[#267DFF]/45 shadow-[-8px_0_35px_rgba(38,125,255,0.30)]">
           {/* Subtle Fine Asphalt Texture Grain */}
           <div
-            className="absolute inset-0 opacity-20"
+            className="absolute inset-0 opacity-25"
             style={{
               backgroundImage:
-                'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)',
+                'radial-gradient(rgba(255, 255, 255, 0.20) 1px, transparent 1px)',
               backgroundSize: '4px 4px',
             }}
           />
 
           {/* Left Solid Shoulder / Curb Marking */}
-          <div className="absolute top-0 left-1.5 bottom-0 w-[1.5px] bg-white/45 shadow-[0_0_6px_rgba(255,255,255,0.2)]" />
+          <div className="absolute top-0 left-1.5 bottom-0 w-[1.5px] bg-white/60 shadow-[0_0_6px_rgba(80,217,255,0.4)]" />
 
           {/* Right Solid Shoulder / Curb Marking */}
-          <div className="absolute top-0 right-1.5 bottom-0 w-[1.5px] bg-white/45 shadow-[0_0_6px_rgba(255,255,255,0.2)]" />
+          <div className="absolute top-0 right-1.5 bottom-0 w-[1.5px] bg-white/60 shadow-[0_0_6px_rgba(80,217,255,0.4)]" />
 
           {/* Center Dashed Lane Divider (Separates Mobile Lane 1 & 2) */}
           <div
@@ -59,7 +59,7 @@ export default function MobileBackgroundRoad() {
               backgroundImage:
                 'linear-gradient(to bottom, #FFFFFF 0px, #FFFFFF 16px, transparent 16px, transparent 36px)',
               backgroundSize: '1.5px 36px',
-              filter: 'drop-shadow(0 0 3px rgba(80, 217, 255, 0.6))',
+              filter: 'drop-shadow(0 0 4px rgba(80, 217, 255, 0.8))',
             }}
           />
 
@@ -77,11 +77,13 @@ export default function MobileBackgroundRoad() {
               }`}
             >
               <div className="flex justify-center items-center w-full">
-                <div className="relative w-[36px] sm:w-[40px] rotate-180 filter drop-shadow-[0_8px_14px_rgba(0,0,0,0.95)] brightness-125 contrast-115">
-                  {/* Forward Headlight Glow Beam */}
-                  <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-6 h-8 rounded-full bg-cyan-400/40 blur-sm pointer-events-none" />
-                  {/* Rear Red Taillight Strip */}
-                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full bg-red-500/90 blur-[1px] shadow-[0_0_8px_#EF4444] pointer-events-none" />
+                <div className="relative w-[40px] xs:w-[44px] rotate-180 filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)] drop-shadow-[0_0_6px_rgba(80,217,255,0.45)] brightness-130 contrast-120">
+                  {/* Forward Dual Headlight Beams (Pointing Down) */}
+                  <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-cyan-400/50 blur-sm pointer-events-none" />
+                  <div className="absolute -bottom-2 left-1.5 w-2 h-3 rounded-full bg-white/70 blur-[1px] pointer-events-none" />
+                  <div className="absolute -bottom-2 right-1.5 w-2 h-3 rounded-full bg-white/70 blur-[1px] pointer-events-none" />
+                  {/* Rear Red LED Taillight Strip (At top) */}
+                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-6 h-1.5 rounded-full bg-red-500 blur-[0.5px] shadow-[0_0_8px_#EF4444] pointer-events-none" />
                   <img
                     src="/images/road/top-jeep.png"
                     alt="ASKR TerraMax 4x4"
@@ -99,11 +101,12 @@ export default function MobileBackgroundRoad() {
               }`}
             >
               <div className="flex justify-center items-center w-full">
-                <div className="relative w-[20px] sm:w-[22px] rotate-180 filter drop-shadow-[0_6px_10px_rgba(0,0,0,0.85)] brightness-125 contrast-115">
-                  {/* Forward Headlight Beam */}
-                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-4 h-6 rounded-full bg-cyan-400/40 blur-sm pointer-events-none" />
-                  {/* Rear Red Taillight */}
-                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-3 h-1 rounded-full bg-red-500/90 blur-[1px] shadow-[0_0_6px_#EF4444] pointer-events-none" />
+                <div className="relative w-[24px] xs:w-[26px] rotate-180 filter drop-shadow-[0_3px_8px_rgba(0,0,0,0.9)] drop-shadow-[0_0_5px_rgba(80,217,255,0.45)] brightness-140 contrast-125">
+                  {/* Forward Handlebar LED Headlight (Pointing Down) */}
+                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-4 h-6 rounded-full bg-cyan-300/55 blur-sm pointer-events-none" />
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-2 rounded-full bg-white/80 blur-[0.5px] pointer-events-none" />
+                  {/* Rear Seatpost Red LED (At top) */}
+                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-3 h-1 rounded-full bg-red-500 blur-[0.5px] shadow-[0_0_6px_#EF4444] pointer-events-none" />
                   <img
                     src="/images/road/top-cycle.png"
                     alt="ASKR AeroTrek Cycle"
@@ -129,11 +132,13 @@ export default function MobileBackgroundRoad() {
               }`}
             >
               <div className="flex justify-center items-center w-full">
-                <div className="relative w-[28px] sm:w-[30px] rotate-0 filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.90)] brightness-125 contrast-115">
-                  {/* Forward Headlight Beam (Pointing Up) */}
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-5 h-8 rounded-full bg-cyan-400/40 blur-sm pointer-events-none" />
-                  {/* Rear Red Taillight Glow (At bottom) */}
-                  <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full bg-red-500/90 blur-[1px] shadow-[0_0_8px_#EF4444] pointer-events-none" />
+                <div className="relative w-[32px] xs:w-[35px] rotate-0 filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)] drop-shadow-[0_0_6px_rgba(80,217,255,0.45)] brightness-135 contrast-125">
+                  {/* Forward Dual LED Projector Headlight Beams (Pointing Up) */}
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-6 h-8 rounded-full bg-cyan-400/50 blur-sm pointer-events-none" />
+                  <div className="absolute -top-2 left-1.5 w-2 h-3 rounded-full bg-white/70 blur-[1px] pointer-events-none" />
+                  <div className="absolute -top-2 right-1.5 w-2 h-3 rounded-full bg-white/70 blur-[1px] pointer-events-none" />
+                  {/* Rear Red LED Taillight Wing (At bottom) */}
+                  <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-5 h-1.5 rounded-full bg-red-500 blur-[0.5px] shadow-[0_0_8px_#EF4444] pointer-events-none" />
                   <img
                     src="/images/road/top-motorcycle.png"
                     alt="ASKR Thunder Pro"
@@ -151,11 +156,12 @@ export default function MobileBackgroundRoad() {
               }`}
             >
               <div className="flex justify-center items-center w-full">
-                <div className="relative w-[26px] sm:w-[28px] rotate-0 filter drop-shadow-[0_6px_10px_rgba(0,0,0,0.85)] brightness-125 contrast-115">
-                  {/* Forward Headlight Beam (Pointing Up) */}
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 w-5 h-7 rounded-full bg-cyan-400/40 blur-sm pointer-events-none" />
-                  {/* Rear Red Taillight Glow (At bottom) */}
-                  <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full bg-red-500/90 blur-[1px] shadow-[0_0_8px_#EF4444] pointer-events-none" />
+                <div className="relative w-[30px] xs:w-[33px] rotate-0 filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)] drop-shadow-[0_0_6px_rgba(80,217,255,0.45)] brightness-135 contrast-125">
+                  {/* Forward Horizontal LED Lightbar Beam (Pointing Up) */}
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 w-6 h-7 rounded-full bg-cyan-400/50 blur-sm pointer-events-none" />
+                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full bg-white/80 blur-[0.5px] pointer-events-none" />
+                  {/* Rear LED Taillight Bar (At bottom) */}
+                  <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-4.5 h-1.5 rounded-full bg-red-500 blur-[0.5px] shadow-[0_0_8px_#EF4444] pointer-events-none" />
                   <img
                     src="/images/road/top-scooter.png"
                     alt="ASKR S1 Pro"

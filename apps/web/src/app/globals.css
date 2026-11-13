@@ -252,3 +252,65 @@ body {
 .animate-shadow-scale {
   animation: contactShadowPulse 4.5s ease-in-out infinite;
 }
+
+/* =============================================================================
+   MOBILE HEADER WITH SAFE-AREA INSET SUPPORT
+   Adds 10-14px (12px standard) visual breathing room above mobile header,
+   expanding seamlessly for iPhone notch / Dynamic Island safe-area insets.
+   ============================================================================= */
+.site-header {
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+}
+
+@media (min-width: 768px) {
+  .site-header {
+    padding-top: 0px;
+  }
+}
+
+/* =============================================================================
+   INTEGRATED SECTION BACKGROUNDS FOR MOBILE ROAD VISIBILITY
+   On mobile (< 1024px), sections use horizontal gradients with solid dark
+   background on left/center (for text/cards) and transparent/low opacity on the
+   right (to reveal the illuminated animated road track).
+   On desktop (>= 1024px), original full-width radial/linear gradients are retained.
+   ============================================================================= */
+.hero-section-bg {
+  background: linear-gradient(to right, rgba(8, 11, 18, 0.96) 0%, rgba(14, 23, 40, 0.88) 55%, rgba(12, 19, 34, 0.22) 80%, rgba(8, 11, 18, 0.10) 100%);
+}
+
+@media (min-width: 1024px) {
+  .hero-section-bg {
+    background: radial-gradient(ellipse at 75% 35%, rgba(20, 33, 56, 0.88) 0%, rgba(12, 19, 34, 0.92) 45%, rgba(8, 11, 18, 0.94) 100%);
+  }
+}
+
+.catalog-section-bg {
+  background: linear-gradient(to right, rgba(8, 11, 18, 0.96) 0%, rgba(13, 20, 36, 0.86) 55%, rgba(13, 20, 36, 0.25) 80%, rgba(8, 11, 18, 0.12) 100%);
+}
+
+@media (min-width: 1024px) {
+  .catalog-section-bg {
+    background: linear-gradient(180deg, rgba(13, 20, 36, 0.82) 0%, rgba(8, 11, 18, 0.88) 30%, rgba(8, 11, 18, 0.92) 100%);
+  }
+}
+
+.engineering-section-bg {
+  background: linear-gradient(to right, rgba(8, 11, 18, 0.96) 0%, rgba(10, 16, 29, 0.86) 55%, rgba(10, 16, 29, 0.25) 80%, rgba(8, 11, 18, 0.12) 100%);
+}
+
+@media (min-width: 1024px) {
+  .engineering-section-bg {
+    background: linear-gradient(180deg, rgba(10, 16, 29, 0.85) 0%, rgba(8, 11, 18, 0.88) 50%, rgba(16, 24, 39, 0.85) 100%);
+  }
+}
+
+.action-banner-bg {
+  background: linear-gradient(to right, rgba(8, 11, 18, 0.96) 0%, rgba(16, 24, 39, 0.86) 55%, rgba(16, 24, 39, 0.25) 80%, rgba(8, 11, 18, 0.12) 100%);
+}
+
+@media (min-width: 1024px) {
+  .action-banner-bg {
+    background: linear-gradient(180deg, rgba(16, 24, 39, 0.85) 0%, rgba(8, 11, 18, 0.90) 100%);
+  }
+}

@@ -7,7 +7,7 @@ import AskrLogo from './AskrLogo';
 
 export default function Footer() {
   return (
-    <footer className="bg-[#080B12]/90 backdrop-blur-md border-t border-white/10 text-[#AAB7C8] text-sm mt-auto relative z-10">
+    <footer className="bg-gradient-to-r from-[#080B12] via-[#080B12]/95 to-[#080B12]/40 lg:bg-[#080B12]/90 backdrop-blur-md border-t border-white/10 text-[#AAB7C8] text-sm mt-auto relative z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
           {/* Brand Info & Identity */}

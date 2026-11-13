@@ -135,10 +135,7 @@ export default function HomePage() {
             Photorealistic Large Vehicle, Physical Floor Contact, Atmospheric Mist
             ========================================================================= */}
         <section
-          className="relative border-b border-white/10 overflow-hidden pt-4 pb-12 sm:pt-6 sm:pb-16 md:pt-14 md:pb-24"
-          style={{
-            background: 'radial-gradient(ellipse at 75% 35%, rgba(20, 33, 56, 0.88) 0%, rgba(12, 19, 34, 0.92) 45%, rgba(8, 11, 18, 0.94) 100%)',
-          }}
+          className="hero-section-bg relative border-b border-white/10 overflow-hidden pt-2 pb-12 sm:pt-4 sm:pb-16 md:pt-14 md:pb-24"
         >
           {/* Directional Automotive Studio Ambient Backlight Glow */}
           <div
@@ -506,10 +503,7 @@ export default function HomePage() {
             Deep Navy / Midnight Black Gradient Stage
             ========================================================================= */}
         <section
-          className="py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full"
-          style={{
-            background: 'linear-gradient(180deg, rgba(13, 20, 36, 0.82) 0%, rgba(8, 11, 18, 0.88) 30%, rgba(10, 16, 29, 0.85) 100%)',
-          }}
+          className="catalog-section-bg py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full rounded-2xl"
         >
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/10">
             <div>
@@ -597,10 +591,7 @@ export default function HomePage() {
             PMSM Motors, IP67 Lithium-Ion BMS, Smart MoveOS, Fast Wallbox
             ========================================================================= */}
         <section
-          className="py-20 border-y border-white/10"
-          style={{
-            background: 'linear-gradient(180deg, rgba(10, 16, 29, 0.85) 0%, rgba(8, 11, 18, 0.88) 50%, rgba(16, 24, 39, 0.85) 100%)',
-          }}
+          className="engineering-section-bg py-20 border-y border-white/10"
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-2xl mx-auto space-y-3 mb-14">
@@ -664,10 +655,7 @@ export default function HomePage() {
             Midnight Blue Gradient with Electric Spotlight
             ========================================================================= */}
         <section
-          className="py-20"
-          style={{
-            background: 'linear-gradient(180deg, rgba(16, 24, 39, 0.85) 0%, rgba(8, 11, 18, 0.90) 100%)',
-          }}
+          className="action-banner-bg py-20"
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div
