@@ -114,10 +114,14 @@ async function main() {
 
     const pages = [
       { url: `${BASE_URL}/`, name: 'redesign_home' },
-      { url: `${BASE_URL}/bikes`, name: 'redesign_showroom' },
-      { url: `${BASE_URL}/bikes/ASKR-THUNDER-PRO`, name: 'redesign_bike_detail' },
-      { url: `${BASE_URL}/bikes/ASKR-AEROTREK-C1`, name: 'redesign_cycle_detail' },
-      { url: `${BASE_URL}/bikes/ASKR-TERRAMAX-4X4`, name: 'redesign_jeep_detail' },
+      { url: `${BASE_URL}/scooters`, name: 'redesign_scooters' },
+      { url: `${BASE_URL}/bikes`, name: 'redesign_bikes' },
+      { url: `${BASE_URL}/cycles`, name: 'redesign_cycles' },
+      { url: `${BASE_URL}/jeeps`, name: 'redesign_jeeps' },
+      { url: `${BASE_URL}/bikes/thunder-pro`, name: 'redesign_bike_detail' },
+      { url: `${BASE_URL}/bikes/scooter-s1-pro`, name: 'redesign_scooter_detail' },
+      { url: `${BASE_URL}/bikes/aerotrek-c1`, name: 'redesign_cycle_detail' },
+      { url: `${BASE_URL}/bikes/terramax-4x4`, name: 'redesign_jeep_detail' },
       { url: `${BASE_URL}/dashboard`, name: 'redesign_dashboard' },
       { url: `${BASE_URL}/admin`, name: 'redesign_admin' },
     ];

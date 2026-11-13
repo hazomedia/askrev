@@ -71,3 +71,4 @@ To enable the interactive 360-degree rotation module requested in the automotive
 - **Prohibited:** Never use "ASKR EV DRIVE" as the brand name. The domain `askrevdrive.com` is the web address only.
 - **Legal Compliance:** All public imagery must clearly distinguish between Production Models (available for simulated reservation) and Concept Series (development prototype showcase).
 - **Compliance Mode:** Platform operates strictly under `COMPLIANCE_MODE=SIMULATION_ONLY`. No unapproved financial or speed promises are advertised.
+

@@ -12,3 +12,4 @@ export default function robots(): MetadataRoute.Robots {
     sitemap: 'https://www.askrevdrive.com/sitemap.xml',
   };
 }
+

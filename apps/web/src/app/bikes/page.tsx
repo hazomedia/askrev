@@ -1,16 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
-  Filter,
-  Sparkles,
-  Zap,
-  SlidersHorizontal,
-  ChevronRight,
+  ArrowRight,
   ShieldCheck,
-  Search,
-  Check,
+  Zap,
+  BatteryCharging,
+  Gauge,
+  CheckCircle2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
@@ -18,23 +17,13 @@ import BikeCard from '../../components/BikeCard';
 import BookingModal from '../../components/BookingModal';
 import { fetchApi, getStoredUser } from '../../lib/api';
 import {
-  ALL_CATALOG_VEHICLES,
-  VERIFIED_ELECTRIC_BIKES,
+  ELECTRIC_MOTORCYCLES,
   Vehicle,
 } from '../../lib/catalog';
 
-function BikesContent() {
-  const searchParams = useSearchParams();
-  const categoryParam = searchParams.get('category');
-
-  const [vehicles, setVehicles] = useState<Vehicle[]>(ALL_CATALOG_VEHICLES);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [minRange, setMinRange] = useState<number>(0);
-  const [availabilityFilter, setAvailabilityFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+export default function BikesPage() {
+  const [vehicles, setVehicles] = useState<Vehicle[]>(ELECTRIC_MOTORCYCLES);
   const [currentUser, setCurrentUser] = useState<any>(null);
-
-  // Booking Modal
   const [bookingVehicle, setBookingVehicle] = useState<any | null>(null);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
 
@@ -43,34 +32,23 @@ function BikesContent() {
     loadBikesFromApi();
   }, []);
 
-  useEffect(() => {
-    if (categoryParam) {
-      if (['bikes', 'cycles', 'jeeps'].includes(categoryParam.toLowerCase())) {
-        setSelectedCategory(categoryParam.toLowerCase());
-      }
-    }
-  }, [categoryParam]);
-
   const loadBikesFromApi = async () => {
     try {
       const data = await fetchApi<any[]>('/ev-bikes');
       if (Array.isArray(data) && data.length > 0) {
-        // Merge API data for the bikes category with verified concept items
         setVehicles((prev) =>
           prev.map((v) => {
-            if (v.category === 'bikes') {
-              const apiMatch = data.find(
-                (d) => d.modelCode === v.modelCode || d.id === v.id
-              );
-              if (apiMatch) {
-                return {
-                  ...v,
-                  ...apiMatch,
-                  exShowroomPriceINR: apiMatch.exShowroomPriceINR || v.exShowroomPriceINR,
-                  bookingAmountINR: apiMatch.bookingAmountINR || v.bookingAmountINR,
-                  voucherRedeemLimitINR: apiMatch.voucherRedeemLimitINR || v.voucherRedeemLimitINR,
-                };
-              }
+            const apiMatch = data.find(
+              (d) => d.modelCode === v.modelCode || d.id === v.id
+            );
+            if (apiMatch) {
+              return {
+                ...v,
+                ...apiMatch,
+                exShowroomPriceINR: apiMatch.exShowroomPriceINR || v.exShowroomPriceINR,
+                bookingAmountINR: apiMatch.bookingAmountINR || v.bookingAmountINR,
+                voucherRedeemLimitINR: apiMatch.voucherRedeemLimitINR || v.voucherRedeemLimitINR,
+              };
             }
             return v;
           })
@@ -81,217 +59,203 @@ function BikesContent() {
     }
   };
 
-  const filteredVehicles = useMemo(() => {
-    return vehicles.filter((v) => {
-      // Category filter
-      if (selectedCategory !== 'all' && v.category !== selectedCategory) {
-        return false;
-      }
-      // Range filter
-      if (minRange > 0 && v.rangeKm < minRange) {
-        return false;
-      }
-      // Availability filter
-      if (availabilityFilter === 'production' && v.isConcept) {
-        return false;
-      }
-      if (availabilityFilter === 'concept' && !v.isConcept) {
-        return false;
-      }
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesName = v.name.toLowerCase().includes(q);
-        const matchesCode = v.modelCode.toLowerCase().includes(q);
-        const matchesTag = v.tagline.toLowerCase().includes(q);
-        if (!matchesName && !matchesCode && !matchesTag) return false;
-      }
-      return true;
-    });
-  }, [vehicles, selectedCategory, minRange, availabilityFilter, searchQuery]);
-
   const handleOpenBooking = (vehicle: any) => {
     setBookingVehicle(vehicle);
     setBookingModalOpen(true);
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#080A0D] text-white">
+    <div className="flex-1 flex flex-col bg-white text-neutral-900">
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 w-full">
         {/* Header Breadcrumbs & Title */}
-        <div className="pb-8 border-b border-white/10">
-          <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#165DAD] mb-3">
-            <span className="w-2 h-2 rounded-full bg-[#165DAD]" />
-            <span>Showroom Fleet & Prototype Gallery</span>
+        <div className="pb-8 border-b border-neutral-200">
+          <div className="flex items-center gap-2 text-xs text-neutral-500 mb-3">
+            <Link href="/" className="hover:text-black">Home</Link>
+            <span>/</span>
+            <span className="text-black font-semibold">Electric Motorcycles</span>
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white">
-            Electric Vehicles
+
+          <h1 className="text-3xl sm:text-5xl font-black text-neutral-950 tracking-tight">
+            Electric Motorcycles
           </h1>
-          <p className="mt-3 text-base text-[#A7ADB5] max-w-2xl font-light leading-relaxed">
-            Explore the ASKR EV mobility lineup: production-ready electric motorcycles, lightweight urban cycles, and high-torque all-terrain electric adventure vehicles.
+          <p className="mt-2 text-base text-neutral-600 max-w-2xl leading-relaxed">
+            High-torque performance streetfighters and ultra-efficient daily commuters. Built on tubular steel frames with IP67-rated battery packs and cloud-connected telemetry.
           </p>
         </div>
 
-        {/* Filter Navigation & Controls */}
-        <div className="mt-8 space-y-6">
-          {/* Category Tabs */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-4">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-5 py-2.5 rounded-full text-xs font-bold tracking-wider uppercase transition-all ${
-                selectedCategory === 'all'
-                  ? 'bg-white text-[#101318] shadow-md'
-                  : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              All Vehicles ({vehicles.length})
-            </button>
+        {/* Featured Motorcycle Hero Banner (Ola-style Showcase) */}
+        <div className="mt-8 p-8 sm:p-12 rounded-3xl bg-[#F9FAFB] border border-neutral-200 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          <div className="lg:col-span-6 space-y-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#165DAD] bg-blue-50 border border-blue-100">
+              <span className="w-2 h-2 rounded-full bg-[#165DAD] animate-pulse" />
+              <span>Flagship Streetfighter</span>
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-neutral-950 tracking-tight">
+              ASKR Thunder Pro
+            </h2>
+            <p className="text-sm text-neutral-600 leading-relaxed">
+              Certified 135 km range, 95 km/h top speed, and 78 Nm instant wheel torque. Featuring permanent magnet synchronous mid-drive architecture, dual CBS disc brakes, and smart telemetry.
+            </p>
 
-            <button
-              onClick={() => setSelectedCategory('bikes')}
-              className={`px-5 py-2.5 rounded-full text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-                selectedCategory === 'bikes'
-                  ? 'bg-white text-[#101318] shadow-md'
-                  : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <span>Electric Bikes</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400">
-                Production
-              </span>
-            </button>
+            <div className="pt-2 flex items-baseline gap-2">
+              <span className="text-xs text-neutral-500 uppercase font-medium">Starting at</span>
+              <span className="text-2xl font-bold text-neutral-900">₹1,25,000</span>
+              <span className="text-xs text-neutral-400">Ex-showroom</span>
+            </div>
 
-            <button
-              onClick={() => setSelectedCategory('cycles')}
-              className={`px-5 py-2.5 rounded-full text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-                selectedCategory === 'cycles'
-                  ? 'bg-white text-[#101318] shadow-md'
-                  : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <span>Electric Cycles</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#C9FF36]/20 text-[#C9FF36]">
-                Concept
-              </span>
-            </button>
-
-            <button
-              onClick={() => setSelectedCategory('jeeps')}
-              className={`px-5 py-2.5 rounded-full text-xs font-bold tracking-wider uppercase transition-all flex items-center gap-2 ${
-                selectedCategory === 'jeeps'
-                  ? 'bg-white text-[#101318] shadow-md'
-                  : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <span>Electric Jeeps</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400">
-                Concept
-              </span>
-            </button>
+            <div className="pt-2 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => handleOpenBooking(vehicles[0])}
+                className="px-6 py-3 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-semibold tracking-wide transition-all shadow-sm"
+              >
+                Book Thunder Pro
+              </button>
+              <Link
+                href="/bikes/thunder-pro"
+                className="px-6 py-3 rounded-full bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-300 text-xs font-semibold tracking-wide transition-all"
+              >
+                View Specifications
+              </Link>
+            </div>
           </div>
 
-          {/* Secondary Filters Bar */}
-          <div className="p-4 rounded-2xl bg-[#101318] border border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
-            {/* Search Box */}
-            <div className="relative w-full md:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search model or specs..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#080A0D] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#C9FF36]"
-              />
-            </div>
-
-            {/* Quick Filter Controls */}
-            <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
-              {/* Availability Filter */}
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-400 text-[11px] uppercase tracking-wider font-medium">Status:</span>
-                <select
-                  value={availabilityFilter}
-                  onChange={(e) => setAvailabilityFilter(e.target.value)}
-                  className="bg-[#080A0D] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#C9FF36]"
-                >
-                  <option value="all">All Models</option>
-                  <option value="production">Production Ready Only</option>
-                  <option value="concept">Concept Series Only</option>
-                </select>
-              </div>
-
-              {/* Minimum Range Slider */}
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-400 text-[11px] uppercase tracking-wider font-medium">
-                  Min Range: {minRange > 0 ? `${minRange} km` : 'Any'}
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="350"
-                  step="25"
-                  value={minRange}
-                  onChange={(e) => setMinRange(Number(e.target.value))}
-                  className="w-24 accent-[#C9FF36]"
-                />
-              </div>
-
-              {(selectedCategory !== 'all' || minRange > 0 || availabilityFilter !== 'all' || searchQuery) && (
-                <button
-                  onClick={() => {
-                    setSelectedCategory('all');
-                    setMinRange(0);
-                    setAvailabilityFilter('all');
-                    setSearchQuery('');
-                  }}
-                  className="text-xs text-[#C9FF36] hover:underline"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
+          <div className="lg:col-span-6 flex items-center justify-center">
+            <img
+              src="/images/vehicles/thunder-pro.jpg"
+              alt="ASKR Thunder Pro Electric Motorcycle"
+              className="w-full max-h-80 object-contain filter drop-shadow-md"
+            />
           </div>
         </div>
 
         {/* Fleet Grid Display */}
-        <div className="mt-10">
-          {filteredVehicles.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredVehicles.map((vehicle) => (
-                <BikeCard
-                  key={vehicle.id}
-                  vehicle={vehicle}
-                  onBookClick={handleOpenBooking}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="p-16 rounded-3xl bg-[#101318] border border-white/10 text-center space-y-4">
-              <h3 className="text-xl font-bold text-white">No vehicles match your selected filters</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Try resetting your filters or adjusting your minimum range criteria to view our available fleet models.
+        <div className="mt-14">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-neutral-200 gap-2">
+            <div>
+              <h3 className="text-xl font-bold text-neutral-950">
+                Motorcycle Lineup ({vehicles.length})
+              </h3>
+              <p className="text-xs text-neutral-500 mt-1">
+                Verified commercial production models ready for booking
               </p>
-              <button
-                onClick={() => {
-                  setSelectedCategory('all');
-                  setMinRange(0);
-                  setAvailabilityFilter('all');
-                  setSearchQuery('');
-                }}
-                className="px-6 py-2.5 rounded-full bg-white text-[#101318] text-xs font-bold uppercase tracking-wider hover:bg-[#C9FF36] transition-colors"
-              >
-                Reset All Filters
-              </button>
             </div>
-          )}
+            <div className="flex items-center gap-2 text-xs text-neutral-500">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>All models in active booking allocation</span>
+            </div>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {vehicles.map((bike) => (
+              <BikeCard
+                key={bike.id}
+                vehicle={bike}
+                onBookClick={handleOpenBooking}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Engineering Highlights */}
+        <div className="mt-20 pt-12 border-t border-neutral-200">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <span className="text-xs font-bold uppercase tracking-widest text-[#165DAD]">
+              Engineering & Performance
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold text-neutral-950 tracking-tight mt-1">
+              Built For The Real World
+            </h2>
+            <p className="text-xs sm:text-sm text-neutral-600 mt-2">
+              Every ASKR EV motorcycle is precision-engineered to withstand diverse road conditions while maintaining class-leading efficiency.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200">
+              <Zap className="w-6 h-6 text-[#165DAD] mb-3" />
+              <h4 className="text-sm font-bold text-neutral-900">PMSM Mid-Drive</h4>
+              <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
+                Liquid-cooled permanent magnet motor delivering instantaneous wheel torque with 92% peak efficiency.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200">
+              <ShieldCheck className="w-6 h-6 text-emerald-600 mb-3" />
+              <h4 className="text-sm font-bold text-neutral-900">IP67 Battery Shield</h4>
+              <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
+                Extruded aluminium battery casing with pressure release valves and thermal runaway mitigation sensors.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200">
+              <BatteryCharging className="w-6 h-6 text-blue-600 mb-3" />
+              <h4 className="text-sm font-bold text-neutral-900">15A Universal Socket</h4>
+              <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
+                Charge at home or office using any standard 15A three-pin power outlet without requiring special wallboxes.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200">
+              <Gauge className="w-6 h-6 text-indigo-600 mb-3" />
+              <h4 className="text-sm font-bold text-neutral-900">5-Year Warranty</h4>
+              <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
+                Comprehensive 5-year or 60,000 km manufacturer warranty covering the traction battery pack and electric motor.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Motorcycle FAQs */}
+        <div className="mt-20 pt-12 border-t border-neutral-200">
+          <h2 className="text-2xl font-bold text-neutral-950 tracking-tight mb-8">
+            Frequently Asked Questions
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
+              <h3 className="text-sm font-bold text-neutral-900">
+                How do I charge my ASKR EV motorcycle?
+              </h3>
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                All models come with a portable home charging unit that plugs into any standard 15A three-pin household socket. Full charge takes between 2.8 and 4.0 hours depending on the battery size.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
+              <h3 className="text-sm font-bold text-neutral-900">
+                What is the difference between Ex-Showroom and On-Road price?
+              </h3>
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                The ex-showroom price includes the vehicle and GST. Estimated on-road price adds state registration fees, mandatory road tax, and comprehensive 5-year third-party + 1-year own damage insurance.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
+              <h3 className="text-sm font-bold text-neutral-900">
+                What warranty is provided with the motorcycle?
+              </h3>
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                ASKR EV motorcycles come with a 5-year or 60,000 km warranty on the battery pack and PMSM electric motor, along with 3 years of complimentary roadside assistance.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
+              <h3 className="text-sm font-bold text-neutral-900">
+                How does the simulated booking reservation work?
+              </h3>
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                Under COMPLIANCE_MODE=SIMULATION_ONLY, clicking Book Now generates a verified developmental booking order tied to your member account for delivery queue verification without processing live banking transactions.
+              </p>
+            </div>
+          </div>
         </div>
       </main>
 
       <Footer />
 
-      {/* Simulated Booking Modal */}
+      {/* Booking Modal */}
       {bookingVehicle && (
         <BookingModal
           bike={bookingVehicle}
@@ -302,13 +266,5 @@ function BikesContent() {
         />
       )}
     </div>
-  );
-}
-
-export default function BikesPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[#080A0D]" />}>
-      <BikesContent />
-    </Suspense>
   );
 }
