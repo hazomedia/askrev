@@ -79,10 +79,10 @@ export const ELECTRIC_SCOOTERS: Vehicle[] = [
     chargingTimeHours: 6.5,
     motorPowerPeak: '11 kW Peak (Mid-Drive IPM)',
     warranty: '8-Year / 80,000 km Battery Warranty',
-    imageUrl: '/images/vehicles/scooter-s1-pro.jpg',
+    imageUrl: '/images/vehicles/dark/scooter-s1-pro.jpg',
     galleryImages: [
-      '/images/vehicles/scooter-s1-pro.jpg',
-      '/images/vehicles/scooter-hero.jpg',
+      '/images/vehicles/dark/scooter-s1-pro.jpg',
+      '/images/vehicles/dark/hero-scooter-dark.jpg',
     ],
     powertrain: 'Interior Permanent Magnet (IPM) Motor • Mid-Drive Architecture',
     colors: [
@@ -134,10 +134,10 @@ export const ELECTRIC_SCOOTERS: Vehicle[] = [
     chargingTimeHours: 5.0,
     motorPowerPeak: '6.0 kW Peak (Hub Motor)',
     warranty: '8-Year / 80,000 km Battery Warranty',
-    imageUrl: '/images/vehicles/scooter-s1-air.jpg',
+    imageUrl: '/images/vehicles/dark/scooter-s1-air.jpg',
     galleryImages: [
-      '/images/vehicles/scooter-s1-air.jpg',
-      '/images/vehicles/scooter-hero.jpg',
+      '/images/vehicles/dark/scooter-s1-air.jpg',
+      '/images/vehicles/dark/hero-scooter-dark.jpg',
     ],
     powertrain: 'Efficient Hub Motor • 6.0 kW Peak Power',
     colors: [
@@ -189,10 +189,10 @@ export const ELECTRIC_MOTORCYCLES: Vehicle[] = [
     chargingTimeHours: 3.5,
     motorPowerPeak: '6.0 kW Peak (PMSM Mid-Drive)',
     warranty: '5-Year / 60,000 km Motor & Battery Warranty',
-    imageUrl: '/images/vehicles/thunder-pro.jpg',
+    imageUrl: '/images/vehicles/dark/thunder-pro.jpg',
     galleryImages: [
-      '/images/vehicles/thunder-pro.jpg',
-      '/images/vehicles/motorcycle-hero.jpg',
+      '/images/vehicles/dark/thunder-pro.jpg',
+      '/images/vehicles/dark/hero-motorcycle-dark.jpg',
     ],
     powertrain: 'Permanent Magnet Synchronous Motor (PMSM) • 78 Nm Instant Torque',
     colors: [
@@ -237,10 +237,10 @@ export const ELECTRIC_MOTORCYCLES: Vehicle[] = [
     chargingTimeHours: 2.8,
     motorPowerPeak: '3.5 kW Peak (BLDC)',
     warranty: '3-Year / 40,000 km Warranty',
-    imageUrl: '/images/vehicles/city-cruise.jpg',
+    imageUrl: '/images/vehicles/dark/city-cruise.jpg',
     galleryImages: [
-      '/images/vehicles/city-cruise.jpg',
-      '/images/vehicles/motorcycle-hero.jpg',
+      '/images/vehicles/dark/city-cruise.jpg',
+      '/images/vehicles/dark/hero-motorcycle-dark.jpg',
     ],
     powertrain: 'High-Efficiency BLDC Drive • 45 Nm Peak Torque',
     colors: [
@@ -285,10 +285,10 @@ export const ELECTRIC_MOTORCYCLES: Vehicle[] = [
     chargingTimeHours: 4.0,
     motorPowerPeak: '10.5 kW Peak (Liquid-Cooled PMSM)',
     warranty: '5-Year / 75,000 km Warranty',
-    imageUrl: '/images/vehicles/apex-sport.jpg',
+    imageUrl: '/images/vehicles/dark/apex-sport.jpg',
     galleryImages: [
-      '/images/vehicles/apex-sport.jpg',
-      '/images/vehicles/motorcycle-hero.jpg',
+      '/images/vehicles/dark/apex-sport.jpg',
+      '/images/vehicles/dark/hero-motorcycle-dark.jpg',
     ],
     powertrain: 'Liquid-Cooled Mid-Mounted PMSM • 105 Nm Wheel Torque',
     colors: [
@@ -339,10 +339,10 @@ export const ELECTRIC_CYCLES: Vehicle[] = [
     chargingTimeHours: 2.0,
     motorPowerPeak: '250W Nominal / 600W Peak',
     warranty: '2-Year Frame & Electricals Warranty',
-    imageUrl: '/images/vehicles/aerotrek-c1.jpg',
+    imageUrl: '/images/vehicles/dark/aerotrek-c1.jpg',
     galleryImages: [
-      '/images/vehicles/aerotrek-c1.jpg',
-      '/images/vehicles/cycle-hero.jpg',
+      '/images/vehicles/dark/aerotrek-c1.jpg',
+      '/images/vehicles/dark/hero-cycle-dark.jpg',
     ],
     powertrain: 'Integrated Mid-Drive Smart Torque Sensor Motor',
     colors: [
@@ -387,10 +387,10 @@ export const ELECTRIC_CYCLES: Vehicle[] = [
     chargingTimeHours: 2.5,
     motorPowerPeak: '350W Nominal / 750W Peak',
     warranty: '2-Year Warranty',
-    imageUrl: '/images/vehicles/aerotrek-trail.jpg',
+    imageUrl: '/images/vehicles/dark/aerotrek-trail.jpg',
     galleryImages: [
-      '/images/vehicles/aerotrek-trail.jpg',
-      '/images/vehicles/cycle-hero.jpg',
+      '/images/vehicles/dark/aerotrek-trail.jpg',
+      '/images/vehicles/dark/hero-cycle-dark.jpg',
     ],
     powertrain: 'High-Torque Hub Assist • 65 Nm Peak',
     colors: [
@@ -438,10 +438,10 @@ export const ELECTRIC_JEEPS: Vehicle[] = [
     chargingTimeHours: 6.5,
     motorPowerPeak: '180 kW Dual-Motor All-Wheel Drive',
     warranty: '8-Year / 160,000 km High-Voltage Battery Warranty',
-    imageUrl: '/images/vehicles/terramax-4x4.jpg',
+    imageUrl: '/images/vehicles/dark/terramax-4x4.jpg',
     galleryImages: [
-      '/images/vehicles/terramax-4x4.jpg',
-      '/images/vehicles/jeep-hero.jpg',
+      '/images/vehicles/dark/terramax-4x4.jpg',
+      '/images/vehicles/dark/hero-jeep-dark.jpg',
     ],
     powertrain: 'Dual-Motor Electronic All-Wheel Drive with Torque Vectoring',
     colors: [
@@ -487,10 +487,10 @@ export const ELECTRIC_JEEPS: Vehicle[] = [
     chargingTimeHours: 5.5,
     motorPowerPeak: '120 kW Single Motor RWD',
     warranty: '8-Year Battery Warranty',
-    imageUrl: '/images/vehicles/terramax-urban.jpg',
+    imageUrl: '/images/vehicles/dark/terramax-urban.jpg',
     galleryImages: [
-      '/images/vehicles/terramax-urban.jpg',
-      '/images/vehicles/jeep-hero.jpg',
+      '/images/vehicles/dark/terramax-urban.jpg',
+      '/images/vehicles/dark/hero-jeep-dark.jpg',
     ],
     powertrain: 'Permanent Magnet Synchronous Rear-Wheel Drive',
     colors: [

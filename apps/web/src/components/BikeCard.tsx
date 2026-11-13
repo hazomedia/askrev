@@ -19,49 +19,49 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
   const detailLink = `/bikes/${item.modelCode || item.slug}`;
 
   return (
-    <div className="product-card rounded-2xl overflow-hidden flex flex-col justify-between bg-white border border-neutral-200 hover:border-neutral-300 transition-all duration-300">
-      {/* Product Image Stage (Seamless Studio Soft Ice-Blue Gradient) */}
+    <div className="product-card rounded-2xl overflow-hidden flex flex-col justify-between bg-gradient-to-b from-[#111827] to-[#0A0E17] border border-white/10 hover:border-[#267DFF]/50 transition-all duration-300 group">
+      {/* Product Image Stage (Dark Automotive Studio Stage) */}
       <div
-        className="relative p-6 pb-2 flex flex-col items-center justify-center min-h-[240px] border-b border-neutral-100 transition-colors"
+        className="relative p-6 pb-2 flex flex-col items-center justify-center min-h-[250px] sm:min-h-[270px] border-b border-white/10 overflow-hidden"
         style={{
-          background: 'linear-gradient(180deg, #FFFFFF 0%, #F7FAFD 50%, #EDF4FA 100%)',
+          background: 'linear-gradient(180deg, #131C2D 0%, #0F1726 50%, #0A0F1A 100%)',
         }}
       >
-        {/* Subtle Ambient Backlight Glow on Card */}
+        {/* Directional Electric Blue Ambient Spotlight */}
         <div
-          className="absolute inset-x-8 top-12 bottom-6 rounded-full filter blur-xl opacity-0 group-hover:opacity-40 pointer-events-none transition-opacity duration-300"
+          className="absolute inset-x-4 top-8 bottom-4 rounded-full filter blur-2xl opacity-30 group-hover:opacity-60 pointer-events-none transition-opacity duration-500"
           style={{
-            background: 'radial-gradient(circle, rgba(22, 93, 173, 0.25) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(38, 125, 255, 0.45) 0%, rgba(80, 217, 255, 0.15) 50%, transparent 75%)',
           }}
         />
 
         {/* Top Badges */}
         <div className="w-full flex items-center justify-between mb-2 relative z-10">
-          <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
+          <span className="text-[11px] font-bold text-[#50D9FF] uppercase tracking-wider">
             {item.categoryLabel || 'Electric Vehicle'}
           </span>
 
           {isBookable ? (
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>Bookings Open</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-neutral-600 bg-neutral-200/60 px-2.5 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#AAB7C8] bg-white/10 px-2.5 py-0.5 rounded-full border border-white/10">
               <span>{item.statusBadge || 'Showcase'}</span>
             </span>
           )}
         </div>
 
-        {/* Real Vehicle Photography */}
-        <Link href={detailLink} className="w-full flex items-center justify-center my-3 group">
-          <div className="relative w-full h-44 sm:h-48 flex items-center justify-center transition-transform duration-300 group-hover:scale-103">
-            {/* Ground Contact Shadow */}
-            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-3/4 h-3 bg-neutral-900/20 rounded-full filter blur-xs pointer-events-none" />
+        {/* Real Vehicle Photography — Large Prominent Automotive Stance */}
+        <Link href={detailLink} className="w-full flex items-center justify-center my-3 relative z-10">
+          <div className="relative w-full h-48 sm:h-52 flex items-center justify-center transition-transform duration-500 group-hover:scale-105">
+            {/* Realistic Contact Shadow on Dark Floor */}
+            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-4/5 h-4 bg-black/75 rounded-full filter blur-sm pointer-events-none" />
             <img
               src={item.imageUrl}
               alt={item.name}
-              className="relative z-10 w-full h-full object-contain filter drop-shadow-sm"
+              className="relative z-10 w-full h-full object-contain filter drop-shadow-[0_10px_20px_rgba(0,0,0,0.65)] select-none"
               loading="lazy"
             />
           </div>
@@ -69,99 +69,92 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
       </div>
 
       {/* Product Details & Specs */}
-      <div className="p-6 flex-1 flex flex-col justify-between space-y-5">
+      <div className="p-6 flex-1 flex flex-col justify-between space-y-5 bg-[#0C121E]/60">
         <div>
-          <div className="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">
+          <div className="text-[11px] font-semibold text-[#AAB7C8] uppercase tracking-wider">
             {item.manufacturer || 'ASKR EV Mobility'}
           </div>
-          <Link href={detailLink} className="hover:text-[#165DAD] transition-colors">
-            <h3 className="text-xl font-bold text-neutral-900 tracking-tight mt-0.5">
+          <Link href={detailLink} className="hover:text-[#50D9FF] transition-colors">
+            <h3 className="text-xl font-extrabold text-[#F7FAFF] tracking-tight mt-0.5">
               {item.name}
             </h3>
           </Link>
-          <p className="text-xs text-neutral-500 mt-1 line-clamp-1">
+          <p className="text-xs text-[#AAB7C8] mt-1 line-clamp-1">
             {item.tagline}
           </p>
 
-          {/* Clean 3-Metric Specifications Grid (Ola Style) */}
-          <div className="mt-4 grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
+          {/* Clean 3-Metric Specifications Grid in Midnight Pill */}
+          <div className="mt-4 grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl bg-white/5 border border-white/10 text-center">
             <div>
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
+              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                 Range
               </span>
-              <span className="text-sm font-bold text-neutral-900">
-                {item.rangeKm} <span className="text-[10px] font-normal text-neutral-500">km</span>
+              <span className="text-sm font-bold text-[#F7FAFF]">
+                {item.rangeKm} <span className="text-[10px] font-normal text-[#AAB7C8]">km</span>
               </span>
             </div>
 
-            <div className="border-x border-neutral-200">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
+            <div className="border-x border-white/10">
+              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                 Top Speed
               </span>
-              <span className="text-sm font-bold text-neutral-900">
-                {item.topSpeedKmh} <span className="text-[10px] font-normal text-neutral-500">km/h</span>
+              <span className="text-sm font-bold text-[#F7FAFF]">
+                {item.topSpeedKmh} <span className="text-[10px] font-normal text-[#AAB7C8]">km/h</span>
               </span>
             </div>
 
             <div>
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
+              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                 Battery
               </span>
-              <span className="text-sm font-bold text-neutral-900">
-                {item.batteryCapacityKwh} <span className="text-[10px] font-normal text-neutral-500">kWh</span>
+              <span className="text-sm font-bold text-[#F7FAFF]">
+                {item.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#AAB7C8]">kWh</span>
               </span>
             </div>
           </div>
         </div>
 
-        {/* Pricing & Primary Action Buttons */}
-        <div className="pt-3 border-t border-neutral-100">
-          <div className="flex items-baseline justify-between mb-4">
-            <div>
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-medium block">
-                Starting Ex-Showroom
-              </span>
-              <div className="text-lg font-black text-neutral-900">
-                {item.exShowroomPriceINR
-                  ? `₹${item.exShowroomPriceINR.toLocaleString('en-IN')}`
-                  : 'Announcing Soon'}
-              </div>
+        {/* Pricing & Booking Action */}
+        <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+              Ex-Showroom
+            </span>
+            <div className="text-lg font-black text-[#F7FAFF]">
+              {item.exShowroomPriceINR
+                ? `₹${item.exShowroomPriceINR.toLocaleString('en-IN')}`
+                : 'Showcase Preview'}
             </div>
-
-            {isBookable && item.bookingAmountINR && (
-              <div className="text-right">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-medium block">
-                  Token Deposit
-                </span>
-                <span className="text-xs font-bold text-[#165DAD]">
-                  ₹{item.bookingAmountINR.toLocaleString('en-IN')}
-                </span>
-              </div>
+            {item.estimatedOnRoadINR && (
+              <span className="text-[10px] text-[#AAB7C8] block">
+                Est. On-Road ₹{item.estimatedOnRoadINR.toLocaleString('en-IN')}
+              </span>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="flex items-center gap-2">
             <Link
               href={detailLink}
-              className="w-full py-2.5 px-3 rounded-full border border-neutral-300 hover:border-black text-neutral-800 text-center text-xs font-semibold tracking-wide transition-colors flex items-center justify-center gap-1 hover:bg-neutral-50"
+              className="px-3.5 py-2 rounded-full border border-white/20 hover:border-white text-xs font-semibold text-[#F7FAFF] hover:bg-white/10 transition-colors"
             >
-              <span>View Details</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              Specs
             </Link>
 
-            {isBookable ? (
+            {isBookable && onBookClick ? (
               <button
-                onClick={() => (onBookClick ? onBookClick(item) : null)}
-                className="w-full py-2.5 px-3 rounded-full bg-black hover:bg-neutral-800 text-white text-center text-xs font-semibold tracking-wide transition-colors flex items-center justify-center gap-1 shadow-xs"
+                onClick={() => onBookClick(item)}
+                className="px-4 py-2 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(38,125,255,0.4)] hover:shadow-[0_0_20px_rgba(38,125,255,0.6)] flex items-center gap-1"
               >
-                <span>Book Now</span>
+                <span>Book</span>
+                <ArrowRight className="w-3 h-3" />
               </button>
             ) : (
               <Link
                 href={detailLink}
-                className="w-full py-2.5 px-3 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-center text-xs font-medium tracking-wide transition-colors flex items-center justify-center"
+                className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-[#50D9FF] text-xs font-bold transition-colors flex items-center gap-1 border border-white/10"
               >
-                <span>Explore Specs</span>
+                <span>Explore</span>
+                <ArrowRight className="w-3 h-3" />
               </Link>
             )}
           </div>

@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   HelpCircle,
   PhoneCall,
-  CalendarCheck,
   RotateCcw,
 } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
@@ -66,11 +65,11 @@ export default function BikeDetailPage() {
           categoryLabel: staticMatch?.categoryLabel || 'Electric Motorcycle',
           isBookable: true,
           statusBadge: 'Bookings Open',
-          imageUrl: staticMatch?.imageUrl || '/images/vehicles/thunder-pro.jpg',
-          galleryImages: staticMatch?.galleryImages || ['/images/vehicles/thunder-pro.jpg'],
+          imageUrl: staticMatch?.imageUrl || '/images/vehicles/dark/thunder-pro.jpg',
+          galleryImages: staticMatch?.galleryImages || ['/images/vehicles/dark/thunder-pro.jpg'],
           colors: staticMatch?.colors || [
-            { name: 'Sapphire Blue', hex: '#165DAD', description: 'Primary metallic finish' },
-            { name: 'Carbon Black', hex: '#111827', description: 'Matte stealth finish' },
+            { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' },
+            { name: 'Carbon Black', hex: '#0B0F17', description: 'Matte stealth finish' },
           ],
           specs: staticMatch?.specs || [
             { label: 'Certified Range', value: `${apiData.rangeKm} km`, sub: 'IDC Test Cycle' },
@@ -111,16 +110,16 @@ export default function BikeDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col bg-white text-neutral-900">
+      <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
         <Navbar />
         <main className="flex-1 max-w-7xl mx-auto px-4 py-20 w-full animate-pulse">
-          <div className="h-6 bg-neutral-100 rounded w-32 mb-8" />
+          <div className="h-6 bg-white/10 rounded w-32 mb-8" />
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <div className="lg:col-span-7 h-96 bg-neutral-100 rounded-3xl" />
+            <div className="lg:col-span-7 h-96 bg-white/5 rounded-3xl" />
             <div className="lg:col-span-5 space-y-4">
-              <div className="h-10 bg-neutral-100 rounded w-3/4" />
-              <div className="h-5 bg-neutral-100 rounded w-1/2" />
-              <div className="h-40 bg-neutral-100 rounded-2xl" />
+              <div className="h-10 bg-white/10 rounded w-3/4" />
+              <div className="h-5 bg-white/10 rounded w-1/2" />
+              <div className="h-40 bg-white/5 rounded-2xl" />
             </div>
           </div>
         </main>
@@ -131,20 +130,20 @@ export default function BikeDetailPage() {
 
   if (error || !vehicle) {
     return (
-      <div className="flex-1 flex flex-col bg-white text-neutral-900">
+      <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
         <Navbar />
         <main className="flex-1 max-w-xl mx-auto px-4 py-24 text-center space-y-4">
-          <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 mx-auto flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-rose-500/15 text-rose-400 mx-auto flex items-center justify-center">
             <HelpCircle className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold text-neutral-900">Vehicle Not Found</h2>
-          <p className="text-xs text-neutral-600">
+          <h2 className="text-2xl font-bold text-[#F7FAFF]">Vehicle Not Found</h2>
+          <p className="text-xs text-[#AAB7C8]">
             {error || 'The requested model could not be found in our fleet catalog.'}
           </p>
           <div className="pt-4">
             <Link
               href="/bikes"
-              className="px-6 py-2.5 rounded-full bg-black text-white text-xs font-semibold tracking-wider hover:bg-neutral-800 transition-colors"
+              className="px-6 py-2.5 rounded-full bg-[#267DFF] text-white text-xs font-semibold tracking-wider hover:bg-[#1A6EEB] transition-colors"
             >
               Back to Showroom
             </Link>
@@ -158,7 +157,7 @@ export default function BikeDetailPage() {
   const currentColor =
     vehicle.colors && vehicle.colors[selectedColorIndex]
       ? vehicle.colors[selectedColorIndex]
-      : { name: 'Sapphire Blue', hex: '#165DAD', description: 'Primary metallic finish' };
+      : { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' };
 
   // Category breadcrumb link
   const categoryHref =
@@ -176,60 +175,66 @@ export default function BikeDetailPage() {
   ).slice(0, 3);
 
   return (
-    <div className="flex-1 flex flex-col bg-white text-neutral-900">
+    <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
       <Navbar />
 
       <main className="flex-1 w-full">
         {/* =========================================================================
-            CLEAN WHITE AUTOMOTIVE SHOWCASE (OLA-INSPIRED)
+            MIDNIGHT ELECTRIC AUTOMOTIVE SHOWCASE
             ========================================================================= */}
-        <section className="pt-6 pb-16 px-4 sm:px-6 lg:px-8 border-b border-neutral-200">
+        <section className="pt-6 pb-16 px-4 sm:px-6 lg:px-8 border-b border-white/10">
           <div className="max-w-7xl mx-auto">
             {/* Breadcrumb Navigation */}
-            <div className="flex items-center gap-2 text-xs text-neutral-500 mb-6">
-              <Link href="/" className="hover:text-black">Home</Link>
+            <div className="flex items-center gap-2 text-xs text-[#AAB7C8] mb-6">
+              <Link href="/" className="hover:text-white">Home</Link>
               <span>/</span>
-              <Link href={categoryHref} className="hover:text-black capitalize">
+              <Link href={categoryHref} className="hover:text-white capitalize">
                 {vehicle.categoryLabel || vehicle.category}
               </Link>
               <span>/</span>
-              <span className="text-neutral-900 font-semibold">{vehicle.name}</span>
+              <span className="text-[#50D9FF] font-semibold">{vehicle.name}</span>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
               {/* Left Column: Vehicle Photographic Showcase */}
               <div className="lg:col-span-7 flex flex-col items-center">
-                <div className="relative w-full h-80 sm:h-96 md:h-[440px] flex items-center justify-center p-8 rounded-3xl bg-[#F9FAFB] border border-neutral-200 shadow-sm overflow-hidden">
+                <div className="relative w-full h-88 sm:h-100 md:h-[460px] flex items-center justify-center p-6 rounded-3xl bg-[#101827] border border-white/10 shadow-2xl overflow-hidden">
                   {/* Status Badge */}
-                  <div className="absolute top-5 left-5 z-10">
+                  <div className="absolute top-5 left-5 z-20">
                     {vehicle.isBookable ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/15 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         <span>Bookings Open</span>
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#165DAD] bg-blue-50 border border-blue-200">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/15 border border-blue-500/30">
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>Showroom Showcase</span>
                       </span>
                     )}
                   </div>
 
-                  {/* Soft Realistic Contact Shadow */}
-                  <div className="absolute bottom-6 w-3/4 h-8 bg-neutral-900/10 blur-xl rounded-full" />
+                  {/* Ambient Electric Blue Rim Glow */}
+                  <div
+                    className="absolute inset-0 opacity-40 pointer-events-none"
+                    style={{
+                      background: 'radial-gradient(circle at 50% 50%, rgba(38, 125, 255, 0.35) 0%, transparent 70%)',
+                    }}
+                  />
 
+                  {/* Vehicle Image */}
                   <img
-                    src={vehicle.imageUrl || '/images/vehicles/thunder-pro.jpg'}
+                    src={vehicle.imageUrl || '/images/vehicles/dark/thunder-pro.jpg'}
                     alt={vehicle.name}
-                    className="relative z-10 w-full h-full object-contain filter drop-shadow-md transition-all duration-300"
+                    className="relative z-10 w-full h-full object-cover rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)] transition-all duration-300"
                   />
                 </div>
 
                 {/* Color Variants Switcher */}
                 {vehicle.colors && vehicle.colors.length > 0 && (
-                  <div className="mt-6 p-4 rounded-2xl bg-[#F9FAFB] border border-neutral-200 w-full flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="mt-6 p-4 rounded-2xl bg-[#101827] border border-white/10 w-full flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs text-neutral-500 uppercase tracking-wider font-semibold">
+                      <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold">
                         Finish:
                       </span>
                       <div className="flex items-center gap-2">
@@ -239,8 +244,8 @@ export default function BikeDetailPage() {
                             onClick={() => setSelectedColorIndex(idx)}
                             className={`w-7 h-7 rounded-full transition-transform border ${
                               selectedColorIndex === idx
-                                ? 'scale-125 border-neutral-950 ring-2 ring-neutral-400 shadow-sm'
-                                : 'border-neutral-300 hover:scale-110'
+                                ? 'scale-125 border-white ring-2 ring-[#267DFF] shadow-sm'
+                                : 'border-white/20 hover:scale-110'
                             }`}
                             style={{ backgroundColor: c.hex }}
                             title={c.name}
@@ -251,8 +256,8 @@ export default function BikeDetailPage() {
                     </div>
 
                     <div className="text-xs text-right">
-                      <span className="font-bold text-neutral-900">{currentColor.name}</span>
-                      <span className="text-neutral-500 block text-[11px]">{currentColor.description}</span>
+                      <span className="font-bold text-[#F7FAFF]">{currentColor.name}</span>
+                      <span className="text-[#AAB7C8] block text-[11px]">{currentColor.description}</span>
                     </div>
                   </div>
                 )}
@@ -261,64 +266,64 @@ export default function BikeDetailPage() {
               {/* Right Column: Pricing, Specs & Booking Action */}
               <div className="lg:col-span-5 space-y-6">
                 <div>
-                  <div className="text-xs font-bold text-[#165DAD] uppercase tracking-wider mb-1">
+                  <div className="text-xs font-bold text-[#50D9FF] uppercase tracking-wider mb-1">
                     {vehicle.manufacturer || 'ASKR EV Mobility'} • {vehicle.modelCode}
                   </div>
-                  <h1 className="text-3xl sm:text-4xl font-extrabold text-neutral-950 tracking-tight">
+                  <h1 className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
                     {vehicle.name}
                   </h1>
-                  <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
+                  <p className="mt-2 text-sm text-[#AAB7C8] leading-relaxed">
                     {vehicle.tagline}
                   </p>
                 </div>
 
                 {/* Key Metrics Strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#F9FAFB] border border-neutral-200 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#101827] border border-white/10 text-center">
                   <div>
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block font-medium">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                       Range
                     </span>
-                    <span className="text-xl font-black text-neutral-900">
-                      {vehicle.rangeKm} <span className="text-xs font-normal text-neutral-500">km</span>
+                    <span className="text-xl font-black text-[#F7FAFF]">
+                      {vehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block font-medium">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                       Top Speed
                     </span>
-                    <span className="text-xl font-black text-neutral-900">
-                      {vehicle.topSpeedKmh} <span className="text-xs font-normal text-neutral-500">km/h</span>
+                    <span className="text-xl font-black text-[#F7FAFF]">
+                      {vehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block font-medium">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                       Battery
                     </span>
-                    <span className="text-xl font-black text-neutral-900">
-                      {vehicle.batteryCapacityKwh} <span className="text-xs font-normal text-neutral-500">kWh</span>
+                    <span className="text-xl font-black text-[#F7FAFF]">
+                      {vehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block font-medium">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                       Fast Charge
                     </span>
-                    <span className="text-xl font-black text-neutral-900">
-                      {vehicle.chargingTimeHours} <span className="text-xs font-normal text-neutral-500">hrs</span>
+                    <span className="text-xl font-black text-[#F7FAFF]">
+                      {vehicle.chargingTimeHours} <span className="text-xs font-normal text-[#50D9FF]">hrs</span>
                     </span>
                   </div>
                 </div>
 
                 {/* Pricing & Booking Container */}
-                <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-5">
+                <div className="p-6 rounded-2xl bg-[#101827] border border-white/10 space-y-5">
                   <div className="flex items-baseline justify-between">
                     <div>
-                      <span className="text-[11px] text-neutral-500 uppercase tracking-wider block font-medium">
+                      <span className="text-[11px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                         Ex-Showroom Price
                       </span>
-                      <div className="text-3xl font-black text-neutral-950">
+                      <div className="text-3xl font-black text-[#F7FAFF]">
                         {vehicle.exShowroomPriceINR
                           ? `₹${vehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
                           : 'Showroom Showcase'}
@@ -327,10 +332,10 @@ export default function BikeDetailPage() {
 
                     {vehicle.estimatedOnRoadINR && (
                       <div className="text-right">
-                        <span className="text-[11px] text-neutral-500 uppercase tracking-wider block font-medium">
+                        <span className="text-[11px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
                           Est. On-Road
                         </span>
-                        <div className="text-base font-bold text-neutral-700">
+                        <div className="text-base font-bold text-[#50D9FF]">
                           ₹{vehicle.estimatedOnRoadINR.toLocaleString('en-IN')}
                         </div>
                       </div>
@@ -338,9 +343,9 @@ export default function BikeDetailPage() {
                   </div>
 
                   {vehicle.isBookable && vehicle.bookingAmountINR && (
-                    <div className="pt-2 pb-1 border-t border-neutral-200 flex items-center justify-between text-xs">
-                      <span className="text-neutral-600">Simulated Booking Token:</span>
-                      <span className="font-bold text-neutral-900">
+                    <div className="pt-2 pb-1 border-t border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-[#AAB7C8]">Simulated Booking Token:</span>
+                      <span className="font-bold text-[#F7FAFF]">
                         ₹{vehicle.bookingAmountINR.toLocaleString('en-IN')}
                       </span>
                     </div>
@@ -351,32 +356,32 @@ export default function BikeDetailPage() {
                     <div className="space-y-3">
                       <button
                         onClick={() => setModalOpen(true)}
-                        className="w-full py-4 rounded-full bg-black hover:bg-neutral-800 text-white text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2"
+                        className="w-full py-4 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)] flex items-center justify-center gap-2"
                       >
                         <span>Book {vehicle.name}</span>
                         <ArrowRight className="w-4 h-4" />
                       </button>
 
-                      <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-500">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <div className="flex items-center justify-center gap-2 text-[11px] text-[#AAB7C8]">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Instant Simulated Allocation • COMPLIANCE_MODE=SIMULATION_ONLY</span>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {enquirySuccess ? (
-                        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center text-xs text-emerald-800 font-medium">
+                        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-center text-xs text-emerald-400 font-medium">
                           Thank you! Your interest has been recorded in our test queue.
                         </div>
                       ) : (
                         <button
                           onClick={() => setEnquirySuccess(true)}
-                          className="w-full py-3.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold uppercase tracking-wider transition-all"
+                          className="w-full py-3.5 rounded-full bg-white/10 hover:bg-white/20 text-[#50D9FF] text-xs font-semibold uppercase tracking-wider transition-all border border-white/15"
                         >
                           Register Interest For Priority Access
                         </button>
                       )}
-                      <p className="text-[11px] text-neutral-500 text-center">
+                      <p className="text-[11px] text-[#AAB7C8] text-center">
                         This model is part of our upcoming showcase fleet. Specifications are based on certified prototype data.
                       </p>
                     </div>
@@ -385,19 +390,19 @@ export default function BikeDetailPage() {
 
                 {/* Warranty & Delivery Assurance */}
                 <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="p-3 rounded-xl border border-neutral-200 flex items-center gap-2.5">
-                    <ShieldCheck className="w-5 h-5 text-[#165DAD] shrink-0" />
+                  <div className="p-3.5 rounded-xl border border-white/10 bg-[#101827] flex items-center gap-2.5">
+                    <ShieldCheck className="w-5 h-5 text-[#50D9FF] shrink-0" />
                     <div className="text-xs">
-                      <span className="font-bold block text-neutral-900">Warranty</span>
-                      <span className="text-neutral-500 text-[11px]">{vehicle.warranty || '5-Year / 60,000 km'}</span>
+                      <span className="font-bold block text-[#F7FAFF]">Warranty</span>
+                      <span className="text-[#AAB7C8] text-[11px]">{vehicle.warranty || '5-Year / 60,000 km'}</span>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-xl border border-neutral-200 flex items-center gap-2.5">
-                    <RotateCcw className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div className="p-3.5 rounded-xl border border-white/10 bg-[#101827] flex items-center gap-2.5">
+                    <RotateCcw className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div className="text-xs">
-                      <span className="font-bold block text-neutral-900">Cancellation</span>
-                      <span className="text-neutral-500 text-[11px]">100% Refundable</span>
+                      <span className="font-bold block text-[#F7FAFF]">Cancellation</span>
+                      <span className="text-[#AAB7C8] text-[11px]">100% Refundable</span>
                     </div>
                   </div>
                 </div>
@@ -413,8 +418,8 @@ export default function BikeDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
             {/* Technical Specifications */}
             <div className="lg:col-span-7 space-y-6">
-              <h2 className="text-2xl font-bold text-neutral-950 tracking-tight flex items-center gap-2">
-                <Gauge className="w-5 h-5 text-[#165DAD]" />
+              <h2 className="text-2xl font-bold text-[#F7FAFF] tracking-tight flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-[#50D9FF]" />
                 <span>Technical Specifications</span>
               </h2>
 
@@ -423,14 +428,14 @@ export default function BikeDetailPage() {
                   vehicle.specs.map((s: any, idx: number) => (
                     <div
                       key={idx}
-                      className="p-4 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-1"
+                      className="p-4 rounded-2xl bg-[#101827] border border-white/10 space-y-1"
                     >
-                      <span className="text-xs text-neutral-500 uppercase tracking-wider block font-medium">
+                      <span className="text-xs text-[#AAB7C8] uppercase tracking-wider block font-medium">
                         {s.label}
                       </span>
-                      <div className="text-lg font-bold text-neutral-950">{s.value}</div>
+                      <div className="text-lg font-bold text-[#F7FAFF]">{s.value}</div>
                       {s.sub && (
-                        <span className="text-[11px] text-neutral-500 block">{s.sub}</span>
+                        <span className="text-[11px] text-[#AAB7C8] block">{s.sub}</span>
                       )}
                     </div>
                   ))}
@@ -438,11 +443,11 @@ export default function BikeDetailPage() {
 
               {/* Powertrain Architecture */}
               {vehicle.powertrain && (
-                <div className="p-5 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-1.5">
-                  <span className="text-xs text-neutral-500 uppercase tracking-wider font-semibold block">
+                <div className="p-5 rounded-2xl bg-[#101827] border border-white/10 space-y-1.5">
+                  <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold block">
                     Powertrain Architecture
                   </span>
-                  <div className="text-sm font-medium text-neutral-800">
+                  <div className="text-sm font-medium text-[#F7FAFF]">
                     {vehicle.powertrain}
                   </div>
                 </div>
@@ -451,8 +456,8 @@ export default function BikeDetailPage() {
 
             {/* Design & Engineering Highlights */}
             <div className="lg:col-span-5 space-y-6">
-              <h2 className="text-2xl font-bold text-neutral-950 tracking-tight flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-neutral-800" />
+              <h2 className="text-2xl font-bold text-[#F7FAFF] tracking-tight flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#50D9FF]" />
                 <span>Engineering Highlights</span>
               </h2>
 
@@ -461,10 +466,10 @@ export default function BikeDetailPage() {
                   vehicle.highlights.map((h: string, idx: number) => (
                     <div
                       key={idx}
-                      className="p-4 rounded-2xl bg-[#F9FAFB] border border-neutral-200 flex items-start gap-3"
+                      className="p-4 rounded-2xl bg-[#101827] border border-white/10 flex items-start gap-3"
                     >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <span className="text-xs text-neutral-700 leading-relaxed">{h}</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <span className="text-xs text-[#AAB7C8] leading-relaxed">{h}</span>
                     </div>
                   ))}
               </div>
@@ -472,44 +477,44 @@ export default function BikeDetailPage() {
           </div>
 
           {/* Automotive FAQ Section */}
-          <div className="pt-12 border-t border-neutral-200 space-y-8">
-            <h2 className="text-2xl font-bold text-neutral-950 tracking-tight">
+          <div className="pt-12 border-t border-white/10 space-y-8">
+            <h2 className="text-2xl font-bold text-[#F7FAFF] tracking-tight">
               Frequently Asked Questions
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
-                <h3 className="text-sm font-bold text-neutral-900">
+              <div className="p-6 rounded-2xl bg-[#101827] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-[#F7FAFF]">
                   How does home charging work?
                 </h3>
-                <p className="text-xs text-neutral-600 leading-relaxed">
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Every vehicle includes a portable home charging cable compatible with standard 15A household sockets. Full charging completes in 2.8 to 6.5 hours depending on battery size.
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
-                <h3 className="text-sm font-bold text-neutral-900">
+              <div className="p-6 rounded-2xl bg-[#101827] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-[#F7FAFF]">
                   What warranty coverage is included?
                 </h3>
-                <p className="text-xs text-neutral-600 leading-relaxed">
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   The electric motor and high-voltage lithium battery pack are protected by our comprehensive manufacturer warranty against manufacturing defects and capacity degradation.
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
-                <h3 className="text-sm font-bold text-neutral-900">
+              <div className="p-6 rounded-2xl bg-[#101827] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-[#F7FAFF]">
                   Can I cancel my booking reservation?
                 </h3>
-                <p className="text-xs text-neutral-600 leading-relaxed">
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Yes, bookings can be cancelled at any time prior to vehicle dispatch from your account dashboard with full refund of the reservation token.
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-[#F9FAFB] border border-neutral-200 space-y-2">
-                <h3 className="text-sm font-bold text-neutral-900">
+              <div className="p-6 rounded-2xl bg-[#101827] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-[#F7FAFF]">
                   What safety tests have been performed?
                 </h3>
-                <p className="text-xs text-neutral-600 leading-relaxed">
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Battery enclosures are tested to AIS-156 Amendment 3 automotive standards for immersion, drop impact, thermal runaway containment, and vibration durability.
                 </p>
               </div>
@@ -518,14 +523,14 @@ export default function BikeDetailPage() {
 
           {/* Related Models */}
           {relatedVehicles.length > 0 && (
-            <div className="pt-12 border-t border-neutral-200 space-y-8">
+            <div className="pt-12 border-t border-white/10 space-y-8">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-neutral-950 tracking-tight">
+                <h2 className="text-2xl font-bold text-[#F7FAFF] tracking-tight">
                   Explore More Models
                 </h2>
                 <Link
                   href="/bikes"
-                  className="text-xs font-semibold text-[#165DAD] hover:underline"
+                  className="text-xs font-semibold text-[#50D9FF] hover:underline"
                 >
                   View Full Showroom
                 </Link>

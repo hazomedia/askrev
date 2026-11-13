@@ -33,43 +33,47 @@ import {
 export default function HomePage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [selectedCategoryTab, setSelectedCategoryTab] = useState<'all' | 'scooters' | 'bikes' | 'cycles' | 'jeeps'>('scooters');
+  const [selectedCategoryTab, setSelectedCategoryTab] = useState<'all' | 'scooters' | 'bikes' | 'cycles' | 'jeeps'>('bikes');
   const [bookingVehicle, setBookingVehicle] = useState<any | null>(null);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
 
-  // 4 Featured Hero Vehicles across categories (Scooter, Bike, Cycle, Jeep)
+  // 4 Featured Hero Vehicles across categories (Motorcycle, Scooter, Cycle, Jeep)
   const heroSlides = [
-    {
-      vehicle: ELECTRIC_SCOOTERS[0], // ASKR S1 Pro
-      headline: 'The Revolution in Electric Mobility.',
-      subline: 'Hyper-performance electric scooter with 195 km IDC range, 120 km/h top speed, and MoveOS telemetry.',
-      primaryBadge: 'Flagship Electric Scooter',
-      ambientGlow: 'rgba(22, 93, 173, 0.22)',
-      ambientCyan: 'rgba(56, 189, 248, 0.08)',
-    },
     {
       vehicle: ELECTRIC_MOTORCYCLES[0], // ASKR Thunder Pro
       headline: 'Pure Torque. Zero Compromise.',
-      subline: 'High-torque urban electric streetfighter powered by permanent magnet synchronous motor with instant response.',
-      primaryBadge: 'Bookings Open • Live Production Model',
-      ambientGlow: 'rgba(14, 116, 224, 0.25)',
-      ambientCyan: 'rgba(56, 189, 248, 0.10)',
+      subline: 'High-torque urban electric streetfighter powered by permanent magnet synchronous mid-drive motor with instant 78 Nm wheel torque.',
+      primaryBadge: 'Flagship Electric Streetfighter • Bookings Open',
+      image: '/images/vehicles/dark/hero-motorcycle-dark.jpg',
+      ambientGlow: 'rgba(38, 125, 255, 0.35)',
+      ambientCyan: 'rgba(80, 217, 255, 0.18)',
+    },
+    {
+      vehicle: ELECTRIC_SCOOTERS[0], // ASKR S1 Pro
+      headline: 'The Revolution in Electric Mobility.',
+      subline: 'Hyper-performance connected electric scooter with 195 km IDC range, 120 km/h top speed, and MoveOS intelligent telemetry.',
+      primaryBadge: 'Flagship Connected Scooter • Showroom Showcase',
+      image: '/images/vehicles/dark/hero-scooter-dark.jpg',
+      ambientGlow: 'rgba(38, 125, 255, 0.30)',
+      ambientCyan: 'rgba(80, 217, 255, 0.15)',
     },
     {
       vehicle: ELECTRIC_CYCLES[0], // ASKR AeroTrek C1
       headline: 'Ride Light. Go Further.',
-      subline: 'Ultralight hydroformed carbon e-bike with integrated downtube battery and silent Gates carbon belt drive.',
-      primaryBadge: 'Urban E-Bike Prototype',
-      ambientGlow: 'rgba(13, 148, 136, 0.20)',
-      ambientCyan: 'rgba(94, 234, 212, 0.09)',
+      subline: 'Ultralight hydroformed carbon e-bike with integrated downtube battery module and silent high-efficiency torque-assist motor.',
+      primaryBadge: 'Urban E-Bike Prototype • 85 km Assisted Range',
+      image: '/images/vehicles/dark/hero-cycle-dark.jpg',
+      ambientGlow: 'rgba(13, 148, 136, 0.28)',
+      ambientCyan: 'rgba(94, 234, 212, 0.14)',
     },
     {
       vehicle: ELECTRIC_JEEPS[0], // ASKR TerraMax 4x4
       headline: 'Built for the Extraordinary.',
-      subline: 'Dual-motor all-wheel electric drive SUV with 380 km expedition range and structural underbody steel armor.',
-      primaryBadge: 'Overland 4x4 EV Concept',
-      ambientGlow: 'rgba(37, 99, 235, 0.25)',
-      ambientCyan: 'rgba(99, 102, 241, 0.10)',
+      subline: 'Dual-motor all-wheel electric drive adventure vehicle with 380 km expedition range and structural titanium underbody armor.',
+      primaryBadge: 'Overland 4x4 EV Concept • 450 Nm Dual AWD',
+      image: '/images/vehicles/dark/hero-jeep-dark.jpg',
+      ambientGlow: 'rgba(37, 99, 235, 0.35)',
+      ambientCyan: 'rgba(99, 102, 241, 0.18)',
     },
   ];
 
@@ -77,11 +81,11 @@ export default function HomePage() {
     setCurrentUser(getStoredUser());
   }, []);
 
-  // Auto-advance hero slider every 7 seconds
+  // Auto-advance hero slider every 7.5 seconds
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlideIndex((prev) => (prev + 1) % heroSlides.length);
-    }, 7000);
+    }, 7500);
     return () => clearInterval(timer);
   }, [heroSlides.length]);
 
@@ -109,104 +113,104 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-white text-neutral-900 selection:bg-neutral-900 selection:text-white relative overflow-x-hidden">
+    <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] selection:bg-[#267DFF] selection:text-white relative overflow-x-hidden min-h-screen">
       {/* =========================================================================
-          UNIQUE ANIMATED VERTICAL ROAD (RIGHT SIDE OF HOMEPAGE)
-          Smooth top-to-bottom travel with realistic top-view EV vehicles
+          REBUILT VERTICAL ROAD (DESKTOP RIGHT SIDE FEATURE)
+          Photorealistic top-view EV vehicles, dark asphalt, realistic lane markings
           ========================================================================= */}
       <VerticalRoad />
 
       {/* Main Content Wrapper (Leaves reserved track space on desktop for Vertical Road) */}
-      <div className="w-full xl:pr-[100px] 2xl:pr-[114px] transition-all">
+      <div className="w-full xl:pr-[104px] 2xl:pr-[120px] transition-all">
         <Navbar />
 
         {/* =========================================================================
-            HERO SECTION — CINEMATIC AUTOMOTIVE LIGHT SHOWROOM
-            Pearl White to Ice Blue Gradient, Soft Electric Blue Spotlight,
-            Realistic Contact Shadow, Polished Floor Reflection & Ground Mist
+            HERO SECTION — MIDNIGHT ELECTRIC SHOWROOM ADVERTISEMENT
+            Deep Navy / Midnight Black Studio, Directional Rim Lighting,
+            Photorealistic Large Vehicle, Physical Floor Contact, Atmospheric Mist
             ========================================================================= */}
         <section
-          className="relative border-b border-neutral-200/80 overflow-hidden pt-6 pb-16 md:pt-10 md:pb-24"
+          className="relative border-b border-white/10 overflow-hidden pt-8 pb-16 md:pt-14 md:pb-24"
           style={{
-            background: 'linear-gradient(180deg, #FFFFFF 0%, #F5F9FD 45%, #EAF2F9 100%)',
+            background: 'linear-gradient(180deg, #0A101D 0%, #080B12 50%, #0D1424 100%)',
           }}
         >
-          {/* Subtle Ambient Radial Lighting Behind Hero Stage */}
+          {/* Directional Automotive Studio Ambient Backlight Glow */}
           <div
-            className="absolute top-1/4 right-1/6 w-[600px] h-[450px] pointer-events-none rounded-full filter blur-3xl opacity-75 transition-all duration-1000 animate-glow-pulse"
+            className="absolute top-1/4 right-1/6 w-[700px] h-[500px] pointer-events-none rounded-full filter blur-3xl opacity-80 transition-all duration-1000 animate-glow-pulse"
             style={{
               background: `radial-gradient(ellipse 65% 55% at 50% 50%, ${activeSlide.ambientGlow} 0%, ${activeSlide.ambientCyan} 50%, transparent 75%)`,
             }}
           />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
               {/* Left Content Column */}
-              <div className="lg:col-span-6 space-y-6 text-left z-10">
+              <div className="lg:col-span-5 space-y-6 text-left z-10">
                 {/* Category / Status Pill */}
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/90 border border-neutral-200 text-neutral-800 text-xs font-semibold tracking-wide shadow-xs backdrop-blur-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#101827] border border-blue-500/30 text-[#50D9FF] text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(38,125,255,0.15)]">
+                  <span className="w-2 h-2 rounded-full bg-[#50D9FF] animate-pulse" />
                   <span>{activeSlide.primaryBadge}</span>
                 </div>
 
                 {/* Model Name & Main Headline */}
                 <div className="transition-all duration-500">
-                  <h2 className="text-sm font-bold uppercase tracking-widest text-[#165DAD] mb-1">
+                  <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#50D9FF] mb-1.5">
                     {activeVehicle.name}
                   </h2>
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-neutral-950 tracking-tight leading-[1.08]">
+                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#F7FAFF] tracking-tight leading-[1.06]">
                     {activeSlide.headline}
                   </h1>
-                  <p className="mt-3 text-base sm:text-lg text-neutral-600 font-normal leading-relaxed max-w-xl">
+                  <p className="mt-3.5 text-base sm:text-lg text-[#AAB7C8] font-normal leading-relaxed max-w-xl">
                     {activeSlide.subline}
                   </p>
                 </div>
 
                 {/* Starting Price Display */}
-                <div className="pt-1 flex items-baseline gap-2">
-                  <span className="text-xs text-neutral-500 uppercase tracking-wider font-medium">Starting at</span>
-                  <span className="text-3xl sm:text-4xl font-extrabold text-neutral-950 tracking-tight">
+                <div className="pt-1 flex items-baseline gap-2.5">
+                  <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
+                  <span className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
                     {activeVehicle.exShowroomPriceINR
                       ? `₹${activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
-                      : 'Announcing Soon'}
+                      : 'Showcase Preview'}
                   </span>
-                  <span className="text-xs text-neutral-400 font-medium">Ex-showroom</span>
+                  <span className="text-xs text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
                 </div>
 
-                {/* Key 4-Metric Grid (Ola Style) */}
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-white/95 border border-neutral-200/90 shadow-xs max-w-lg backdrop-blur-xs">
+                {/* Key 4-Metric Grid in Midnight Glassmorphic Pill */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-[#101827]/85 border border-white/10 shadow-lg max-w-lg backdrop-blur-md">
                   <div>
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
-                      Certified Range
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
+                      Range
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-neutral-900">
-                      {activeVehicle.rangeKm} <span className="text-xs font-normal text-neutral-500">km</span>
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
+                      {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
                     </span>
                   </div>
 
-                  <div className="border-l border-neutral-200 pl-3">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
+                  <div className="border-l border-white/10 pl-3">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
                       Top Speed
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-neutral-900">
-                      {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-neutral-500">km/h</span>
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
+                      {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
                     </span>
                   </div>
 
-                  <div className="border-l border-neutral-200 pl-3">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
+                  <div className="border-l border-white/10 pl-3">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
                       Battery
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-neutral-900">
-                      {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-neutral-500">kWh</span>
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
+                      {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
                     </span>
                   </div>
 
-                  <div className="hidden sm:block border-l border-neutral-200 pl-3">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-medium">
+                  <div className="hidden sm:block border-l border-white/10 pl-3">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
                       0-40 km/h
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-neutral-900">
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
                       {activeVehicle.acceleration0to40 || '3.2s'}
                     </span>
                   </div>
@@ -216,7 +220,7 @@ export default function HomePage() {
                 <div className="pt-2 flex flex-wrap items-center gap-3.5">
                   <Link
                     href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
-                    className="px-7 py-3.5 rounded-full bg-black hover:bg-neutral-800 text-white text-xs sm:text-sm font-semibold tracking-wide transition-all shadow-sm flex items-center gap-2 group hover:shadow-md"
+                    className="px-7 py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)] hover:shadow-[0_0_35px_rgba(38,125,255,0.6)] flex items-center gap-2 group"
                   >
                     <span>Explore {activeVehicle.name}</span>
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -225,14 +229,14 @@ export default function HomePage() {
                   {activeVehicle.isBookable ? (
                     <button
                       onClick={() => handleOpenBooking(activeVehicle)}
-                      className="px-7 py-3.5 rounded-full border border-neutral-300 hover:border-black text-neutral-900 text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white hover:bg-neutral-50 shadow-2xs"
+                      className="px-7 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10"
                     >
                       Book Now
                     </button>
                   ) : (
                     <Link
                       href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
-                      className="px-7 py-3.5 rounded-full border border-neutral-300 hover:border-black text-neutral-900 text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white hover:bg-neutral-50 shadow-2xs"
+                      className="px-7 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10"
                     >
                       View Specifications
                     </Link>
@@ -240,63 +244,43 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Right Column: Realistic Vehicle Stage with Lighting, Shadow, Reflection & Mist */}
-              <div className="lg:col-span-6 flex flex-col items-center justify-center relative">
-                <div className="relative w-full h-80 sm:h-96 md:h-[430px] flex items-center justify-center">
-                  {/* Studio Ambient Backlight Glow (Dynamic per vehicle) */}
+              {/* Right Column: Large Physically-Grounded Vehicle Stage (Occupies ~60% Visual Area) */}
+              <div className="lg:col-span-7 flex flex-col items-center justify-center relative">
+                <div className="relative w-full h-88 sm:h-104 md:h-[460px] flex items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-[#0A0F1A]/80 shadow-2xl">
+                  {/* Subtle Studio Backdrop Horizon Light */}
                   <div
-                    className="absolute inset-4 rounded-full filter blur-2xl opacity-80 pointer-events-none transition-all duration-700"
+                    className="absolute inset-0 opacity-40 pointer-events-none"
                     style={{
-                      background: `radial-gradient(circle at 50% 50%, ${activeSlide.ambientGlow} 0%, transparent 70%)`,
+                      background: 'radial-gradient(ellipse 80% 50% at 50% 65%, rgba(38, 125, 255, 0.25) 0%, transparent 75%)',
                     }}
                   />
 
-                  {/* Primary Vehicle Photographic Hero with Gentle Floating Depth */}
-                  <div className="relative z-10 w-full h-full flex items-center justify-center animate-vehicle-float">
+                  {/* Primary Large Vehicle Image (Physically Grounded on Studio Floor) */}
+                  <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
                     <img
-                      key={activeVehicle.imageUrl}
-                      src={activeVehicle.imageUrl}
+                      key={activeSlide.image}
+                      src={activeSlide.image}
                       alt={activeVehicle.name}
-                      className="w-full h-full object-contain filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.12)] select-none transition-all duration-500"
+                      className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in"
                     />
                   </div>
 
-                  {/* Realistic Automotive Ground Contact Shadows (Layered Ellipses) */}
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-4/5 h-8 pointer-events-none z-5 animate-shadow-scale">
-                    {/* Tight chassis contact shadow */}
-                    <div className="absolute inset-x-8 top-1 bottom-1 bg-neutral-950/40 rounded-full filter blur-md" />
-                    {/* Broad ambient ground spread shadow */}
-                    <div className="absolute inset-0 bg-neutral-900/20 rounded-full filter blur-xl" />
+                  {/* Realistic Automotive Ground Contact Shadow (Layered Ellipses) */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4/5 h-6 pointer-events-none z-12 animate-shadow-scale">
+                    <div className="absolute inset-x-8 top-1 bottom-1 bg-black/90 rounded-full filter blur-md" />
                   </div>
 
-                  {/* Subtle Polished Floor Reflection */}
-                  <div
-                    aria-hidden="true"
-                    className="absolute -bottom-16 left-0 right-0 h-28 pointer-events-none select-none z-0 overflow-hidden opacity-10 filter blur-[1.5px]"
-                    style={{
-                      transform: 'scaleY(-1)',
-                      maskImage: 'linear-gradient(to top, rgba(0,0,0,0) 40%, rgba(0,0,0,0.8) 100%)',
-                      WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,0) 40%, rgba(0,0,0,0.8) 100%)',
-                    }}
-                  >
-                    <img
-                      src={activeVehicle.imageUrl}
-                      alt=""
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-
-                  {/* Cinematic Cool Ground Mist / Smoke Around Floor */}
+                  {/* Atmospheric Cool Ground Mist Rolling Across Lower Floor */}
                   <GroundMist />
                 </div>
 
                 {/* Slider Navigation Dots & Controls */}
-                <div className="mt-4 flex items-center gap-3 z-10">
+                <div className="mt-5 flex items-center gap-3 z-10">
                   <button
                     onClick={() =>
                       setCurrentSlideIndex((prev) => (prev - 1 + heroSlides.length) % heroSlides.length)
                     }
-                    className="p-2 rounded-full border border-neutral-200/90 hover:bg-white bg-white/70 text-neutral-700 transition-colors shadow-2xs"
+                    className="p-2 rounded-full border border-white/15 hover:border-white/40 bg-[#101827]/80 text-[#F7FAFF] transition-colors"
                     aria-label="Previous Vehicle"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -309,8 +293,8 @@ export default function HomePage() {
                         onClick={() => setCurrentSlideIndex(idx)}
                         className={`h-2 rounded-full transition-all ${
                           currentSlideIndex === idx
-                            ? 'w-8 bg-black'
-                            : 'w-2 bg-neutral-300 hover:bg-neutral-400'
+                            ? 'w-8 bg-[#267DFF] shadow-[0_0_10px_rgba(38,125,255,0.6)]'
+                            : 'w-2 bg-white/20 hover:bg-white/40'
                         }`}
                         aria-label={`Go to slide ${idx + 1}: ${slide.vehicle.name}`}
                       />
@@ -319,7 +303,7 @@ export default function HomePage() {
 
                   <button
                     onClick={() => setCurrentSlideIndex((prev) => (prev + 1) % heroSlides.length)}
-                    className="p-2 rounded-full border border-neutral-200/90 hover:bg-white bg-white/70 text-neutral-700 transition-colors shadow-2xs"
+                    className="p-2 rounded-full border border-white/15 hover:border-white/40 bg-[#101827]/80 text-[#F7FAFF] transition-colors"
                     aria-label="Next Vehicle"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -331,37 +315,37 @@ export default function HomePage() {
         </section>
 
         {/* =========================================================================
-            EXPLORE THE EV LINEUP — CATEGORY TABS & PRODUCT CARDS
-            Gradient Transition: Ice Blue into Pearl White & Subtle Lavender Tint
+            EXPLORE THE EV LINEUP — CATEGORY TABS & DARK PRODUCT CARDS
+            Deep Navy / Midnight Black Gradient Stage
             ========================================================================= */}
         <section
           className="py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full"
           style={{
-            background: 'linear-gradient(180deg, #EAF2F9 0%, #FFFFFF 12%, #F8FAFD 55%, #F3F6FA 100%)',
+            background: 'linear-gradient(180deg, #0D1424 0%, #080B12 30%, #0A101D 100%)',
           }}
         >
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-neutral-200/90">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/10">
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-widest text-[#165DAD] mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#165DAD]" />
+              <h2 className="text-xs font-bold uppercase tracking-widest text-[#50D9FF] mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#267DFF] shadow-[0_0_8px_#267DFF]" />
                 <span>Browse The Lineup</span>
               </h2>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-neutral-950 tracking-tight">
+              <h3 className="text-3xl sm:text-4xl font-extrabold text-[#F7FAFF] tracking-tight">
                 Electric Vehicles for Every Journey.
               </h3>
-              <p className="mt-2 text-sm sm:text-base text-neutral-600 max-w-xl">
+              <p className="mt-2 text-sm sm:text-base text-[#AAB7C8] max-w-xl">
                 From zero-emission urban scooters to high-torque electric motorcycles, lightweight commuter cycles, and 4x4 adventure utility vehicles.
               </p>
             </div>
 
             {/* Category Filter Tabs */}
-            <div className="flex flex-wrap items-center gap-2 bg-neutral-200/60 p-1 rounded-full border border-neutral-200">
+            <div className="flex flex-wrap items-center gap-2 bg-[#101827] p-1.5 rounded-full border border-white/10">
               <button
                 onClick={() => setSelectedCategoryTab('scooters')}
                 className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
                   selectedCategoryTab === 'scooters'
-                    ? 'bg-white text-black shadow-xs font-bold'
-                    : 'text-neutral-600 hover:text-black'
+                    ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
+                    : 'text-[#AAB7C8] hover:text-white'
                 }`}
               >
                 Scooters
@@ -371,8 +355,8 @@ export default function HomePage() {
                 onClick={() => setSelectedCategoryTab('bikes')}
                 className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
                   selectedCategoryTab === 'bikes'
-                    ? 'bg-white text-black shadow-xs font-bold'
-                    : 'text-neutral-600 hover:text-black'
+                    ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
+                    : 'text-[#AAB7C8] hover:text-white'
                 }`}
               >
                 Bikes
@@ -382,8 +366,8 @@ export default function HomePage() {
                 onClick={() => setSelectedCategoryTab('cycles')}
                 className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
                   selectedCategoryTab === 'cycles'
-                    ? 'bg-white text-black shadow-xs font-bold'
-                    : 'text-neutral-600 hover:text-black'
+                    ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
+                    : 'text-[#AAB7C8] hover:text-white'
                 }`}
               >
                 Cycles
@@ -393,8 +377,8 @@ export default function HomePage() {
                 onClick={() => setSelectedCategoryTab('jeeps')}
                 className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
                   selectedCategoryTab === 'jeeps'
-                    ? 'bg-white text-black shadow-xs font-bold'
-                    : 'text-neutral-600 hover:text-black'
+                    ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
+                    : 'text-[#AAB7C8] hover:text-white'
                 }`}
               >
                 Jeeps
@@ -402,7 +386,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Product Cards Grid with Subtle Hover Elevation and Edge Glow */}
+          {/* Product Cards Grid with Dark Graphite Stage & Subtle Electric Glow */}
           <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {getFilteredVehicles().map((veh) => (
               <BikeCard key={veh.id} vehicle={veh} onBookClick={handleOpenBooking} />
@@ -413,7 +397,7 @@ export default function HomePage() {
           <div className="mt-12 text-center">
             <Link
               href={`/${selectedCategoryTab === 'all' ? 'bikes' : selectedCategoryTab}`}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-[#165DAD] hover:underline"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-[#50D9FF] hover:underline"
             >
               <span>View All {selectedCategoryTab.toUpperCase()}</span>
               <ArrowRight className="w-4 h-4" />
@@ -422,66 +406,65 @@ export default function HomePage() {
         </section>
 
         {/* =========================================================================
-            ENGINEERING & TECHNOLOGY (Ola Hyperdrive Benchmark)
+            ENGINEERING & TECHNOLOGY (Midnight Dark Showcase)
             PMSM Motors, IP67 Lithium-Ion BMS, Smart MoveOS, Fast Wallbox
-            Gradient: Soft Silver to Ice Blue
             ========================================================================= */}
         <section
-          className="py-20 border-y border-neutral-200"
+          className="py-20 border-y border-white/10"
           style={{
-            background: 'linear-gradient(180deg, #F3F6FA 0%, #EBF2F9 50%, #F5F8FB 100%)',
+            background: 'linear-gradient(180deg, #0A101D 0%, #080B12 50%, #101827 100%)',
           }}
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-2xl mx-auto space-y-3 mb-14">
-              <span className="text-xs font-bold uppercase tracking-widest text-[#165DAD]">
+              <span className="text-xs font-bold uppercase tracking-widest text-[#50D9FF]">
                 Engineering Excellence
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-neutral-950 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-[#F7FAFF] tracking-tight">
                 Designed For Real-World Performance.
               </h2>
-              <p className="text-sm sm:text-base text-neutral-600">
+              <p className="text-sm sm:text-base text-[#AAB7C8]">
                 Built with precision thermal balancing, high-efficiency motors, and seamless connected telemetry.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="p-7 rounded-2xl bg-white/90 border border-neutral-200 shadow-xs space-y-3 hover:border-blue-300 transition-all hover:shadow-md">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#165DAD] flex items-center justify-center font-bold text-lg">
+              <div className="p-7 rounded-2xl bg-[#101827]/85 border border-white/10 space-y-3 hover:border-[#267DFF]/50 transition-all hover:shadow-[0_0_20px_rgba(38,125,255,0.2)]">
+                <div className="w-12 h-12 rounded-xl bg-blue-500/15 text-[#50D9FF] flex items-center justify-center font-bold text-lg border border-blue-500/20">
                   <Zap className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-neutral-900">PMSM Powertrain</h3>
-                <p className="text-xs text-neutral-500 leading-relaxed">
+                <h3 className="text-lg font-bold text-[#F7FAFF]">PMSM Powertrain</h3>
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Permanent Magnet Synchronous Motors delivering up to 94% system efficiency and instant torque from zero RPM.
                 </p>
               </div>
 
-              <div className="p-7 rounded-2xl bg-white/90 border border-neutral-200 shadow-xs space-y-3 hover:border-emerald-300 transition-all hover:shadow-md">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-lg">
+              <div className="p-7 rounded-2xl bg-[#101827]/85 border border-white/10 space-y-3 hover:border-emerald-400/50 transition-all hover:shadow-[0_0_20px_rgba(52,211,153,0.2)]">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center font-bold text-lg border border-emerald-500/20">
                   <BatteryCharging className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-neutral-900">IP67 Battery Shield</h3>
-                <p className="text-xs text-neutral-500 leading-relaxed">
+                <h3 className="text-lg font-bold text-[#F7FAFF]">IP67 Battery Shield</h3>
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Sealed aluminium battery enclosures with active thermal balancing, water immersion protection, and fire-retardant cells.
                 </p>
               </div>
 
-              <div className="p-7 rounded-2xl bg-white/90 border border-neutral-200 shadow-xs space-y-3 hover:border-purple-300 transition-all hover:shadow-md">
-                <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-lg">
+              <div className="p-7 rounded-2xl bg-[#101827]/85 border border-white/10 space-y-3 hover:border-purple-400/50 transition-all hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <div className="w-12 h-12 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-bold text-lg border border-purple-500/20">
                   <Gauge className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-neutral-900">MoveOS Telemetry</h3>
-                <p className="text-xs text-neutral-500 leading-relaxed">
+                <h3 className="text-lg font-bold text-[#F7FAFF]">MoveOS Telemetry</h3>
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Integrated touch displays with real-time turn-by-turn navigation, proximity keyless phone unlock, and over-the-air updates.
                 </p>
               </div>
 
-              <div className="p-7 rounded-2xl bg-white/90 border border-neutral-200 shadow-xs space-y-3 hover:border-amber-300 transition-all hover:shadow-md">
-                <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-lg">
+              <div className="p-7 rounded-2xl bg-[#101827]/85 border border-white/10 space-y-3 hover:border-amber-400/50 transition-all hover:shadow-[0_0_20px_rgba(251,191,36,0.2)]">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold text-lg border border-amber-500/20">
                   <Clock className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-neutral-900">Everyday Charging</h3>
-                <p className="text-xs text-neutral-500 leading-relaxed">
+                <h3 className="text-lg font-bold text-[#F7FAFF]">Everyday Charging</h3>
+                <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Plug into any standard 15A home socket or fast-charging network for convenient, low-cost overnight recharges.
                 </p>
               </div>
@@ -491,37 +474,37 @@ export default function HomePage() {
 
         {/* =========================================================================
             SHOWROOM ACTION BANNER
-            Rich Graphite Gradient with Ambient Blue Edge Spotlight
+            Midnight Blue Gradient with Electric Spotlight
             ========================================================================= */}
         <section
           className="py-20"
           style={{
-            background: 'linear-gradient(180deg, #F5F8FB 0%, #FFFFFF 100%)',
+            background: 'linear-gradient(180deg, #101827 0%, #080B12 100%)',
           }}
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div
-              className="relative p-8 sm:p-14 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-8 overflow-hidden shadow-xl"
+              className="relative p-8 sm:p-14 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-8 overflow-hidden shadow-2xl border border-white/10"
               style={{
-                background: 'linear-gradient(135deg, #0F172A 0%, #151F32 55%, #0B111E 100%)',
+                background: 'linear-gradient(135deg, #101827 0%, #1A2436 50%, #080B12 100%)',
               }}
             >
-              {/* Subtle Electric Blue Ambient Light In Banner Corner */}
+              {/* Electric Blue Spotlight In Corner */}
               <div
-                className="absolute top-0 right-0 w-80 h-80 pointer-events-none rounded-full filter blur-3xl opacity-40"
+                className="absolute top-0 right-0 w-96 h-96 pointer-events-none rounded-full filter blur-3xl opacity-50"
                 style={{
-                  background: 'radial-gradient(circle, rgba(22, 93, 173, 0.6) 0%, transparent 70%)',
+                  background: 'radial-gradient(circle, rgba(38, 125, 255, 0.6) 0%, transparent 70%)',
                 }}
               />
 
               <div className="space-y-3 max-w-xl relative z-10">
-                <span className="text-xs font-bold uppercase tracking-widest text-[#38BDF8]">
+                <span className="text-xs font-bold uppercase tracking-widest text-[#50D9FF]">
                   The Electric Shift
                 </span>
-                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#F7FAFF]">
                   Ready to Experience ASKR EV?
                 </h2>
-                <p className="text-sm text-neutral-300 leading-relaxed">
+                <p className="text-sm text-[#AAB7C8] leading-relaxed">
                   Explore our full vehicle showroom, inspect certified specifications, and reserve your electric vehicle online today.
                 </p>
               </div>
@@ -529,13 +512,13 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center gap-4 shrink-0 relative z-10">
                 <Link
                   href="/bikes"
-                  className="px-8 py-3.5 rounded-full bg-white text-black hover:bg-neutral-100 text-xs sm:text-sm font-semibold tracking-wide transition-all shadow-md hover:shadow-lg"
+                  className="px-8 py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)]"
                 >
                   Explore Showroom
                 </Link>
                 <Link
                   href="/auth/register"
-                  className="px-8 py-3.5 rounded-full border border-neutral-600 hover:border-white text-white text-xs sm:text-sm font-semibold tracking-wide transition-colors"
+                  className="px-8 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] hover:bg-white/10 text-xs sm:text-sm font-semibold tracking-wide transition-colors"
                 >
                   Create Account
                 </Link>

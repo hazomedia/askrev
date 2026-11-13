@@ -41,20 +41,20 @@ export default function Navbar() {
     ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(currentUser.role);
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-neutral-200 transition-all">
+    <header className="sticky top-0 z-50 bg-[#080B12]/92 backdrop-blur-md border-b border-white/10 transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-18 sm:h-20">
-          {/* Brand Logo - Official ASKR EV */}
-          <AskrLogo theme="light" size="md" href="/" />
+          {/* Brand Logo - Official ASKR EV with Dark Theme */}
+          <AskrLogo theme="dark" size="md" href="/" />
 
-          {/* Desktop Navigation Links — Strictly Vehicle Focused (Ola Electric Style) */}
+          {/* Desktop Navigation Links — High Contrast Midnight Electric */}
           <nav className="hidden md:flex items-center space-x-8" aria-label="Main Navigation">
             <Link
               href="/scooters"
               className={`text-sm tracking-normal transition-colors py-1 ${
                 pathname === '/scooters'
-                  ? 'text-black font-bold border-b-2 border-black'
-                  : 'text-neutral-600 hover:text-black font-medium'
+                  ? 'text-[#50D9FF] font-bold border-b-2 border-[#267DFF]'
+                  : 'text-[#AAB7C8] hover:text-[#F7FAFF] font-medium'
               }`}
             >
               Scooters
@@ -64,8 +64,8 @@ export default function Navbar() {
               href="/bikes"
               className={`text-sm tracking-normal transition-colors py-1 ${
                 pathname === '/bikes'
-                  ? 'text-black font-bold border-b-2 border-black'
-                  : 'text-neutral-600 hover:text-black font-medium'
+                  ? 'text-[#50D9FF] font-bold border-b-2 border-[#267DFF]'
+                  : 'text-[#AAB7C8] hover:text-[#F7FAFF] font-medium'
               }`}
             >
               Bikes
@@ -75,8 +75,8 @@ export default function Navbar() {
               href="/cycles"
               className={`text-sm tracking-normal transition-colors py-1 ${
                 pathname === '/cycles'
-                  ? 'text-black font-bold border-b-2 border-black'
-                  : 'text-neutral-600 hover:text-black font-medium'
+                  ? 'text-[#50D9FF] font-bold border-b-2 border-[#267DFF]'
+                  : 'text-[#AAB7C8] hover:text-[#F7FAFF] font-medium'
               }`}
             >
               Cycles
@@ -86,8 +86,8 @@ export default function Navbar() {
               href="/jeeps"
               className={`text-sm tracking-normal transition-colors py-1 ${
                 pathname === '/jeeps'
-                  ? 'text-black font-bold border-b-2 border-black'
-                  : 'text-neutral-600 hover:text-black font-medium'
+                  ? 'text-[#50D9FF] font-bold border-b-2 border-[#267DFF]'
+                  : 'text-[#AAB7C8] hover:text-[#F7FAFF] font-medium'
               }`}
             >
               Jeeps
@@ -100,91 +100,78 @@ export default function Navbar() {
               <div className="relative">
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-300 bg-neutral-50 transition-colors text-left"
-                  aria-expanded={userDropdownOpen}
+                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#F7FAFF] transition-colors"
                 >
-                  <div className="w-6 h-6 rounded-full bg-[#165DAD] flex items-center justify-center text-white font-bold text-[11px]">
-                    {currentUser.fullName ? currentUser.fullName[0].toUpperCase() : 'M'}
+                  <div className="w-5 h-5 rounded-full bg-[#267DFF] text-white flex items-center justify-center text-[10px]">
+                    <User className="w-3 h-3" />
                   </div>
-                  <div className="text-xs">
-                    <span className="font-semibold text-neutral-900">{currentUser.memberId}</span>
-                  </div>
-                  <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>{currentUser.fullName || currentUser.username || 'Account'}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#AAB7C8]" />
                 </button>
 
                 {userDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-neutral-200 shadow-xl py-2 z-50">
-                    <div className="px-4 py-2 border-b border-neutral-100">
-                      <div className="text-xs font-semibold text-neutral-900 truncate">
-                        {currentUser.fullName || currentUser.email}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 font-mono mt-0.5">
-                        {currentUser.memberId}
-                      </div>
+                  <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#101827] border border-white/10 shadow-2xl py-2 z-50 text-xs text-[#F7FAFF] backdrop-blur-md">
+                    <div className="px-4 py-2 border-b border-white/10">
+                      <p className="font-bold text-[#F7FAFF]">{currentUser.fullName}</p>
+                      <p className="text-[11px] text-[#AAB7C8] truncate">{currentUser.email || currentUser.memberCode}</p>
                     </div>
-                    <div className="py-1 text-xs">
+
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 text-[#F7FAFF] transition-colors"
+                    >
+                      <LayoutDashboard className="w-4 h-4 text-[#50D9FF]" />
+                      <span>Member Dashboard</span>
+                    </Link>
+
+                    {isAdmin && (
                       <Link
-                        href="/dashboard"
+                        href="/admin"
                         onClick={() => setUserDropdownOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-neutral-700 hover:text-black hover:bg-neutral-50 transition-colors font-medium"
+                        className="flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 text-[#50D9FF] font-semibold transition-colors"
                       >
-                        <LayoutDashboard className="w-4 h-4 text-[#165DAD]" />
-                        <span>Member Dashboard</span>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Admin Portal</span>
                       </Link>
-                      {isAdmin && (
-                        <Link
-                          href="/admin"
-                          onClick={() => setUserDropdownOpen(false)}
-                          className="flex items-center gap-2 px-4 py-2 text-neutral-700 hover:text-black hover:bg-neutral-50 transition-colors font-medium"
-                        >
-                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                          <span>Admin Control Center</span>
-                        </Link>
-                      )}
-                    </div>
-                    <div className="border-t border-neutral-100 pt-1">
-                      <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 w-full px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Sign Out</span>
-                      </button>
-                    </div>
+                    )}
+
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-rose-400 hover:bg-rose-500/10 border-t border-white/10 transition-colors mt-1"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Sign Out</span>
+                    </button>
                   </div>
                 )}
               </div>
             ) : (
-              <Link
-                href="/auth/login"
-                className="text-sm font-semibold text-neutral-800 hover:text-black transition-colors px-3 py-2"
-              >
-                Login
-              </Link>
-            )}
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/auth/login"
+                  className="px-4 py-2 rounded-full text-xs font-semibold text-[#F7FAFF] hover:text-white transition-colors border border-white/15 hover:border-white/30 hover:bg-white/5"
+                >
+                  Sign In
+                </Link>
 
-            {/* Book Now Primary Pill Button */}
-            <Link
-              href="/bikes"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-semibold tracking-wide transition-all shadow-xs"
-            >
-              <span>Book Now</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+                <Link
+                  href="/bikes"
+                  className="px-5 py-2.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)] hover:shadow-[0_0_25px_rgba(38,125,255,0.6)] flex items-center gap-1.5"
+                >
+                  <span>Book Now</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
-          <div className="flex items-center gap-3 md:hidden">
-            <Link
-              href="/bikes"
-              className="px-4 py-1.5 rounded-full bg-black text-white text-xs font-semibold"
-            >
-              Book
-            </Link>
+          <div className="md:hidden flex items-center gap-2">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-neutral-700 hover:bg-neutral-100 transition-colors"
-              aria-label="Toggle Navigation Menu"
+              className="p-2 rounded-lg text-[#F7FAFF] hover:bg-white/10 transition-colors"
+              aria-label="Toggle Navigation"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -194,96 +181,94 @@ export default function Navbar() {
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white border-b border-neutral-200 px-4 pt-2 pb-6 space-y-3">
-          <nav className="flex flex-col space-y-1 text-sm">
+        <div className="md:hidden border-t border-white/10 bg-[#080B12]/98 px-4 pt-3 pb-6 space-y-4 shadow-2xl backdrop-blur-lg">
+          <nav className="flex flex-col space-y-2">
             <Link
               href="/scooters"
               onClick={() => setMobileMenuOpen(false)}
-              className={`px-3 py-2.5 rounded-xl font-medium transition-colors ${
-                pathname === '/scooters' ? 'bg-neutral-100 text-black font-semibold' : 'text-neutral-700'
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                pathname === '/scooters' ? 'bg-[#267DFF]/20 text-[#50D9FF]' : 'text-[#AAB7C8] hover:text-white'
               }`}
             >
-              Scooters
+              Electric Scooters
             </Link>
 
             <Link
               href="/bikes"
               onClick={() => setMobileMenuOpen(false)}
-              className={`px-3 py-2.5 rounded-xl font-medium transition-colors ${
-                pathname === '/bikes' ? 'bg-neutral-100 text-black font-semibold' : 'text-neutral-700'
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                pathname === '/bikes' ? 'bg-[#267DFF]/20 text-[#50D9FF]' : 'text-[#AAB7C8] hover:text-white'
               }`}
             >
-              Bikes
+              Electric Motorcycles
             </Link>
 
             <Link
               href="/cycles"
               onClick={() => setMobileMenuOpen(false)}
-              className={`px-3 py-2.5 rounded-xl font-medium transition-colors ${
-                pathname === '/cycles' ? 'bg-neutral-100 text-black font-semibold' : 'text-neutral-700'
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                pathname === '/cycles' ? 'bg-[#267DFF]/20 text-[#50D9FF]' : 'text-[#AAB7C8] hover:text-white'
               }`}
             >
-              Cycles
+              Electric Cycles
             </Link>
 
             <Link
               href="/jeeps"
               onClick={() => setMobileMenuOpen(false)}
-              className={`px-3 py-2.5 rounded-xl font-medium transition-colors ${
-                pathname === '/jeeps' ? 'bg-neutral-100 text-black font-semibold' : 'text-neutral-700'
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                pathname === '/jeeps' ? 'bg-[#267DFF]/20 text-[#50D9FF]' : 'text-[#AAB7C8] hover:text-white'
               }`}
             >
-              Jeeps
+              Electric Jeeps
             </Link>
+          </nav>
 
+          <div className="pt-3 border-t border-white/10 flex flex-col gap-2.5">
             {currentUser ? (
               <>
-                <div className="border-t border-neutral-200 my-2 pt-2" />
                 <Link
                   href="/dashboard"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="px-3 py-2.5 rounded-xl font-semibold text-[#165DAD] hover:bg-blue-50 flex items-center gap-2"
+                  className="w-full py-2.5 rounded-full bg-white/10 text-center text-xs font-semibold text-[#F7FAFF]"
                 >
-                  <LayoutDashboard className="w-4 h-4" />
-                  <span>Member Dashboard ({currentUser.memberId})</span>
+                  Member Dashboard
                 </Link>
                 {isAdmin && (
                   <Link
                     href="/admin"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="px-3 py-2.5 rounded-xl font-semibold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
+                    className="w-full py-2.5 rounded-full bg-[#267DFF]/20 border border-[#267DFF]/40 text-center text-xs font-semibold text-[#50D9FF]"
                   >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Admin Control Center</span>
+                    Admin Control
                   </Link>
                 )}
                 <button
                   onClick={handleLogout}
-                  className="px-3 py-2.5 rounded-xl text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium"
+                  className="w-full py-2 text-center text-xs font-medium text-rose-400"
                 >
-                  <LogOut className="w-4 h-4" />
-                  <span>Sign Out</span>
+                  Sign Out
                 </button>
               </>
             ) : (
-              <div className="pt-3 border-t border-neutral-200 flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <Link
                   href="/auth/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full text-center py-2.5 rounded-full border border-neutral-300 text-neutral-800 text-sm font-semibold hover:bg-neutral-50 transition-colors"
+                  className="w-full py-2.5 rounded-full border border-white/20 text-center text-xs font-semibold text-[#F7FAFF]"
                 >
-                  Login
+                  Sign In
                 </Link>
                 <Link
                   href="/bikes"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full text-center py-2.5 rounded-full bg-black text-white text-sm font-semibold hover:bg-neutral-800 transition-colors"
+                  className="w-full py-2.5 rounded-full bg-[#267DFF] text-center text-xs font-bold text-white shadow-md"
                 >
-                  Book Your EV
+                  Book Now
                 </Link>
               </div>
             )}
-          </nav>
+          </div>
         </div>
       )}
     </header>

@@ -5,27 +5,24 @@
 @tailwind utilities;
 
 :root {
-  --background: #FFFFFF;
-  --secondary-bg: #F8F9FA;
-  --surface-alt: #F3F4F6;
-  --foreground: #111827;
-  --muted: #6B7280;
-  --border: #E5E7EB;
-  --brand-blue: #165DAD;
-  --brand-black: #0A0A0A;
+  /* Midnight Electric Automotive Dark Theme Palette */
+  --background: #080B12;
+  --secondary-bg: #101827;
+  --surface-alt: #1A2230;
+  --foreground: #F7FAFF;
+  --muted: #AAB7C8;
+  --border: rgba(255, 255, 255, 0.10);
   
-  /* Automotive Premium Gradient Tokens */
-  --grad-pearl-ice: linear-gradient(180deg, #FFFFFF 0%, #F5F8FC 45%, #EBF3FA 100%);
-  --grad-pearl-lavender: linear-gradient(135deg, #FBFBFD 0%, #F6F4FA 50%, #F1EEF8 100%);
-  --grad-silver-white: linear-gradient(180deg, #F0F4F8 0%, #F7FAFC 50%, #FFFFFF 100%);
-  --grad-tech-features: linear-gradient(180deg, #F4F8FC 0%, #EBF2F9 50%, #F5F8FB 100%);
-  --grad-cta-graphite: linear-gradient(135deg, #0F172A 0%, #151F32 50%, #0B111E 100%);
+  --brand-blue: #267DFF;
+  --brand-cyan: #50D9FF;
+  --brand-violet: #7768FF;
+  --brand-dark: #080B12;
 }
 
 html {
   scroll-behavior: smooth;
-  background-color: #FFFFFF;
-  color: #111827;
+  background-color: #080B12;
+  color: #F7FAFF;
 }
 
 body {
@@ -37,7 +34,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Reduced motion support */
+/* Reduced motion accessibility */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -50,43 +47,44 @@ body {
   }
 }
 
-/* Refined Ola-style scrollbars */
+/* Midnight automotive dark scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #F3F4F6;
+  background: #080B12;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D1D5DB;
+  background: #1E293B;
   border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9CA3AF;
+  background: #267DFF;
 }
 
 /* =============================================================================
-   PREMIUM PRODUCT CARD ELEVATION & GLOW
+   MIDNIGHT ELECTRIC PRODUCT CARD
    ============================================================================= */
 .product-card {
-  background-color: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background: linear-gradient(180deg, #111827 0%, #0B101A 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
 
 .product-card:hover {
-  border-color: rgba(22, 93, 173, 0.35);
-  box-shadow: 0 16px 36px -8px rgba(22, 93, 173, 0.12), 0 6px 14px -3px rgba(0, 0, 0, 0.04);
-  transform: translateY(-3px);
+  border-color: rgba(38, 125, 255, 0.45);
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.7), 0 0 30px -5px rgba(38, 125, 255, 0.22);
+  transform: translateY(-4px);
 }
 
 /* =============================================================================
-   VERTICAL ROAD & EV VEHICLE ANIMATION KEYFRAMES (TOP TO BOTTOM)
+   VERTICAL ROAD & REALISTIC VEHICLE TRAVEL ANIMATION KEYFRAMES (TOP TO BOTTOM)
    ============================================================================= */
 
 /* Lane Markings Downward Flow */
@@ -95,7 +93,7 @@ body {
     background-position-y: 0px;
   }
   100% {
-    background-position-y: 34px;
+    background-position-y: 36px;
   }
 }
 
@@ -103,13 +101,13 @@ body {
   animation: roadMarkingsMove 0.85s linear infinite;
 }
 
-/* 1. Electric Jeep (Heavy 4x4, steady speed down the road) */
+/* 1. Electric Jeep 4x4 (Muscular heavy vehicle, steady descent) */
 @keyframes travelJeep {
   0% {
-    transform: translate3d(0, -140px, 0);
+    transform: translate3d(0, -160px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 160px), 0);
+    transform: translate3d(0, calc(100vh + 180px), 0);
   }
 }
 
@@ -118,53 +116,38 @@ body {
   animation-delay: 0.5s;
 }
 
-/* 2. Electric Motorcycle (Fast sport streetfighter, zips down) */
+/* 2. Electric Motorcycle (Fast sport streetfighter, zips down right lane) */
 @keyframes travelMotorcycle {
   0% {
-    transform: translate3d(0, -140px, 0);
+    transform: translate3d(0, -160px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 160px), 0);
+    transform: translate3d(0, calc(100vh + 180px), 0);
   }
 }
 
 .animate-vehicle-motorcycle {
-  animation: travelMotorcycle 9s linear infinite;
-  animation-delay: 3.8s;
+  animation: travelMotorcycle 9.5s linear infinite;
+  animation-delay: 4.2s;
 }
 
 /* 3. Electric Scooter (Agile urban commuter, moderate speed) */
 @keyframes travelScooter {
   0% {
-    transform: translate3d(0, -140px, 0);
+    transform: translate3d(0, -160px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 160px), 0);
+    transform: translate3d(0, calc(100vh + 180px), 0);
   }
 }
 
 .animate-vehicle-scooter {
-  animation: travelScooter 11.5s linear infinite;
-  animation-delay: 7.2s;
-}
-
-/* 4. Electric Cycle (Lightweight pedal-assist, leisurely cruise) */
-@keyframes travelCycle {
-  0% {
-    transform: translate3d(0, -140px, 0);
-  }
-  100% {
-    transform: translate3d(0, calc(100vh + 160px), 0);
-  }
-}
-
-.animate-vehicle-cycle {
-  animation: travelCycle 16.5s linear infinite;
-  animation-delay: 11.0s;
+  animation: travelScooter 12s linear infinite;
+  animation-delay: 8.0s;
 }
 
 /* =============================================================================
-   GROUND MIST DRIFT ANIMATIONS
+   ATMOSPHERIC GROUND MIST DRIFT ANIMATIONS
    ============================================================================= */
 @keyframes mistDrift1 {
   0% {
@@ -179,7 +162,7 @@ body {
 }
 
 .animate-mist-drift-1 {
-  animation: mistDrift1 14s ease-in-out infinite;
+  animation: mistDrift1 16s ease-in-out infinite;
 }
 
 @keyframes mistDrift2 {
@@ -195,51 +178,38 @@ body {
 }
 
 .animate-mist-drift-2 {
-  animation: mistDrift2 18s ease-in-out infinite;
+  animation: mistDrift2 20s ease-in-out infinite;
 }
 
 /* =============================================================================
-   HERO VEHICLE FLOATING & LIGHTING DYNAMICS
+   HERO AMBIENT LIGHTING PULSE & CONTACT DEPTH
    ============================================================================= */
-@keyframes vehicleFloat {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
-
-.animate-vehicle-float {
-  animation: vehicleFloat 4.2s ease-in-out infinite;
-}
-
-@keyframes contactShadowScale {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 0.45;
-  }
-  50% {
-    transform: scale(0.95);
-    opacity: 0.35;
-  }
-}
-
-.animate-shadow-scale {
-  animation: contactShadowScale 4.2s ease-in-out infinite;
-}
-
 @keyframes ambientGlowPulse {
   0%, 100% {
-    opacity: 0.75;
+    opacity: 0.65;
     transform: scale(1);
   }
   50% {
-    opacity: 0.95;
-    transform: scale(1.05);
+    opacity: 0.90;
+    transform: scale(1.06);
   }
 }
 
 .animate-glow-pulse {
-  animation: ambientGlowPulse 5.5s ease-in-out infinite;
+  animation: ambientGlowPulse 6s ease-in-out infinite;
+}
+
+@keyframes contactShadowPulse {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.98);
+  }
+}
+
+.animate-shadow-scale {
+  animation: contactShadowPulse 4.5s ease-in-out infinite;
 }
