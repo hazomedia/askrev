@@ -81,10 +81,15 @@ export default function AdminPage() {
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   // Binary Tab State
-  const [binaryTreeMemberId, setBinaryTreeMemberId] = useState('ASKR-100001');
+  const [binaryTreeMemberId, setBinaryTreeMemberId] = useState('ASKR-ADMIN-01');
   const [binaryTreeData, setBinaryTreeData] = useState<any | null>(null);
   const [binaryReport, setBinaryReport] = useState<any | null>(null);
   const [binaryHistory, setBinaryHistory] = useState<any[]>([]);
+  const [placementCandidates, setPlacementCandidates] = useState<any | null>(null);
+  const [placeTargetUserId, setPlaceTargetUserId] = useState('');
+  const [placeParentUserId, setPlaceParentUserId] = useState('');
+  const [placeLeg, setPlaceLeg] = useState<'LEFT' | 'RIGHT'>('LEFT');
+  const [isPlacingBinary, setIsPlacingBinary] = useState(false);
   const [loadingBinary, setLoadingBinary] = useState(false);
   const [settleTargetUserId, setSettleTargetUserId] = useState('');
   const [settleModalOpen, setSettleModalOpen] = useState(false);
@@ -150,7 +155,7 @@ export default function AdminPage() {
         fetchOverview(),
         fetchMembers(1),
         fetchMembershipRequests(),
-        fetchBinaryData('ASKR-100001'),
+        fetchBinaryData('ASKR-ADMIN-01'),
         fetchWallets(),
         fetchLedger(),
         fetchVouchers(),
@@ -234,14 +239,41 @@ export default function AdminPage() {
   const fetchBinaryData = async (targetMemberId: string) => {
     setLoadingBinary(true);
     try {
-      const [tree, report, history] = await Promise.all([
-        fetchApi<any>(`/members/binary-tree?memberId=${targetMemberId}`).catch(() => null),
+      const normalizedMemberId = (targetMemberId || 'ASKR-ADMIN-01').trim();
+      const [tree, report, candidates] = await Promise.all([
+        fetchApi<any>(`/members/binary-tree?memberId=${encodeURIComponent(normalizedMemberId)}`).catch(() => null),
         fetchApi<any>('/members/admin/binary-report').catch(() => null),
-        fetchApi<any[]>('/members/binary/history').catch(() => []),
+        fetchApi<any>('/members/admin/binary-placement-candidates').catch(() => null),
       ]);
+      const history = tree?.node?.userId
+        ? await fetchApi<any[]>(`/members/binary/history?userId=${encodeURIComponent(tree.node.userId)}`).catch(() => [])
+        : [];
       setBinaryTreeData(tree);
       setBinaryReport(report);
+      setPlacementCandidates(candidates);
       setBinaryHistory(Array.isArray(history) ? history : []);
+
+      if (candidates?.unplacedMembers?.length > 0 && !candidates.unplacedMembers.some((m: any) => m.id === placeTargetUserId)) {
+        setPlaceTargetUserId(candidates.unplacedMembers[0].id);
+      } else if (!candidates?.unplacedMembers?.length) {
+        setPlaceTargetUserId('');
+      }
+
+      if (candidates?.availableParents?.length > 0) {
+        const vacantParents = candidates.availableParents.filter((p: any) => p.hasVacantLeg);
+        const preferredParent =
+          vacantParents.find((p: any) => p.id === placeParentUserId) ||
+          vacantParents[0] ||
+          candidates.availableParents[0];
+        if (preferredParent) {
+          setPlaceParentUserId(preferredParent.id);
+          if (!preferredParent.leftVacant && preferredParent.rightVacant) {
+            setPlaceLeg('RIGHT');
+          } else if (preferredParent.leftVacant && !preferredParent.rightVacant) {
+            setPlaceLeg('LEFT');
+          }
+        }
+      }
     } finally {
       setLoadingBinary(false);
     }
@@ -369,6 +401,34 @@ export default function AdminPage() {
       setError(err.message || 'Review action failed.');
     } finally {
       setIsSubmittingReview(false);
+    }
+  };
+
+  // Binary Placement Action (Structure & Volume only; never triggers matching payout)
+  const handlePlaceBinaryNode = async () => {
+    if (!placeTargetUserId || !placeParentUserId || !placeLeg) return;
+    setIsPlacingBinary(true);
+    setError(null);
+    try {
+      const res = await fetchApi<any>('/members/binary/place', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId: placeTargetUserId,
+          parentId: placeParentUserId,
+          leg: placeLeg,
+        }),
+      });
+      setActionSuccess(res.message || 'Member placed in binary tree cleanly.');
+      await Promise.all([
+        fetchBinaryData(binaryTreeMemberId),
+        fetchOverview(),
+        fetchMembers(membersPage),
+      ]);
+      setTimeout(() => setActionSuccess(null), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Binary placement failed.');
+    } finally {
+      setIsPlacingBinary(false);
     }
   };
 
@@ -1285,15 +1345,268 @@ export default function AdminPage() {
             {/* TAB 4: BINARY NETWORK */}
             {activeTab === 'binary' && (
               <div className="space-y-4">
+                {/* Rule & Coverage Summary Strip */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Matching Ratio
+                    </div>
+                    <div className="text-base font-bold text-[#165DAD] mt-1">
+                      {binaryReport?.matchingRules?.ratio || '1:1'} (1 Left : 1 Right)
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      ₹3,000/pair • 15 matches/day max
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Unplaced Activated
+                    </div>
+                    <div className="text-base font-bold text-amber-700 mt-1">
+                      {placementCandidates?.summary?.unplacedCount ?? 0} Members
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      BASIC & FULL ready for placement
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Placed in Tree
+                    </div>
+                    <div className="text-base font-bold text-emerald-700 mt-1">
+                      {placementCandidates?.summary?.placedCount ?? 0} Members
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Of {placementCandidates?.summary?.totalEligibleMembers ?? 0} activated accounts
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Today Settled ({binaryReport?.todayActivity?.matchDate || 'IST'})
+                    </div>
+                    <div className="text-base font-bold text-[#253247] mt-1">
+                      {binaryReport?.todayActivity?.matchesSettledToday ?? 0} Matches
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      ₹{(binaryReport?.todayActivity?.rewardTodayINR ?? 0).toLocaleString('en-IN')} simulated
+                    </div>
+                  </div>
+                </div>
+
+                {/* Admin Manual Binary Placement Workflow */}
+                {(() => {
+                  const selectedParentObj = placementCandidates?.availableParents?.find(
+                    (p: any) => p.id === placeParentUserId
+                  );
+                  const unplacedList = placementCandidates?.unplacedMembers || [];
+                  const parentsList = (placementCandidates?.availableParents || []).filter(
+                    (p: any) => p.id !== placeTargetUserId
+                  );
+
+                  return (
+                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div>
+                          <h3 className="font-bold text-sm text-[#253247] flex items-center gap-2">
+                            <GitBranch className="w-4 h-4 text-[#165DAD]" />
+                            <span>Manual Binary Placement Console</span>
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Assign activated BASIC or FULL members to a vacant LEFT or RIGHT leg. Sponsor relationship remains separate and settlement is never auto-triggered on placement.
+                          </p>
+                        </div>
+                        <span className="self-start text-[11px] font-semibold px-2.5 py-1 rounded bg-blue-50 text-[#165DAD] border border-blue-200">
+                          Atomic Row-Locked Placement
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                        {/* Left Column: Unplaced Activated Members Queue */}
+                        <div className="lg:col-span-6 space-y-2">
+                          <div className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                            <span>Unplaced Activated Members ({unplacedList.length})</span>
+                            {unplacedList.length > 0 && (
+                              <span className="text-[11px] font-medium text-amber-700">
+                                Click Select to place
+                              </span>
+                            )}
+                          </div>
+                          {unplacedList.length === 0 ? (
+                            <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                              All activated BASIC and FULL members currently have binary tree placements.
+                            </div>
+                          ) : (
+                            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                              {unplacedList.map((m: any) => {
+                                const isSelected = placeTargetUserId === m.id;
+                                return (
+                                  <div
+                                    key={m.id}
+                                    className={`p-3 flex items-center justify-between gap-3 text-xs ${
+                                      isSelected ? 'bg-blue-50/80' : 'bg-white hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-[#253247] truncate">
+                                        {m.fullName}{' '}
+                                        <span className="font-mono text-[#165DAD]">({m.memberId})</span>
+                                      </div>
+                                      <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                            m.currentPackage === 'FULL'
+                                              ? 'bg-blue-50 text-[#165DAD] border-blue-200'
+                                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                          }`}
+                                        >
+                                          {m.currentPackage}
+                                        </span>
+                                        <span>•</span>
+                                        <span>
+                                          {m.isFullQualified ? 'Full Qualified (+1 Vol)' : 'Basic (+1 Count, 0 Vol)'}
+                                        </span>
+                                        <span>•</span>
+                                        <span>Sponsor: {m.sponsorMemberId || 'None'}</span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPlaceTargetUserId(m.id)}
+                                      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                                        isSelected
+                                          ? 'bg-[#165DAD] text-white border-[#165DAD]'
+                                          : 'bg-white text-[#165DAD] border-blue-200 hover:bg-blue-50'
+                                      }`}
+                                    >
+                                      {isSelected ? 'Selected' : 'Select'}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right Column: Target, Parent & Leg Selector */}
+                        <div className="lg:col-span-6 bg-[#F7F9FC] rounded-xl border border-slate-200 p-4 space-y-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              1. Member to Place
+                            </label>
+                            <select
+                              value={placeTargetUserId}
+                              onChange={(e) => setPlaceTargetUserId(e.target.value)}
+                              disabled={unplacedList.length === 0}
+                              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-[#165DAD]"
+                            >
+                              {unplacedList.length === 0 ? (
+                                <option value="">No unplaced activated members</option>
+                              ) : (
+                                unplacedList.map((m: any) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.memberId} — {m.fullName} ({m.currentPackage} • {m.isFullQualified ? 'Qualified' : 'Unqualified'})
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              2. Binary Parent Node
+                            </label>
+                            <select
+                              value={placeParentUserId}
+                              onChange={(e) => {
+                                const pid = e.target.value;
+                                setPlaceParentUserId(pid);
+                                const p = parentsList.find((x: any) => x.id === pid);
+                                if (p) {
+                                  if (!p.leftVacant && p.rightVacant) setPlaceLeg('RIGHT');
+                                  else if (p.leftVacant && !p.rightVacant) setPlaceLeg('LEFT');
+                                }
+                              }}
+                              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-[#165DAD]"
+                            >
+                              {parentsList.map((p: any) => (
+                                <option key={p.id} value={p.id} disabled={!p.hasVacantLeg}>
+                                  {p.memberId} — {p.fullName} [L:{p.leftVacant ? 'Vacant' : p.leftChild?.memberId} | R:{p.rightVacant ? 'Vacant' : p.rightChild?.memberId}]
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              3. Target Leg under Parent
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {(['LEFT', 'RIGHT'] as const).map((legOption) => {
+                                const isVacant =
+                                  legOption === 'LEFT'
+                                    ? selectedParentObj?.leftVacant ?? true
+                                    : selectedParentObj?.rightVacant ?? true;
+                                const occupant =
+                                  legOption === 'LEFT'
+                                    ? selectedParentObj?.leftChild
+                                    : selectedParentObj?.rightChild;
+                                const isChosen = placeLeg === legOption;
+                                return (
+                                  <button
+                                    key={legOption}
+                                    type="button"
+                                    disabled={!isVacant}
+                                    onClick={() => setPlaceLeg(legOption)}
+                                    className={`p-2.5 rounded-lg border text-left text-xs transition-colors ${
+                                      !isVacant
+                                        ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                        : isChosen
+                                        ? 'bg-blue-50 border-[#165DAD] text-[#165DAD] font-bold'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:border-[#165DAD]'
+                                    }`}
+                                  >
+                                    <div className="font-bold">{legOption} LEG</div>
+                                    <div className="text-[10px] mt-0.5 truncate">
+                                      {isVacant
+                                        ? 'Vacant slot available'
+                                        : `Occupied by ${occupant?.memberId || 'Member'}`}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handlePlaceBinaryNode}
+                            disabled={
+                              isPlacingBinary ||
+                              !placeTargetUserId ||
+                              !placeParentUserId ||
+                              !selectedParentObj ||
+                              (placeLeg === 'LEFT' && !selectedParentObj.leftVacant) ||
+                              (placeLeg === 'RIGHT' && !selectedParentObj.rightVacant)
+                            }
+                            className="w-full py-2.5 px-4 rounded-lg bg-[#165DAD] hover:bg-[#124b8c] text-white text-xs font-bold disabled:opacity-50 transition-colors"
+                          >
+                            {isPlacingBinary ? 'Placing Member...' : `Place Member on ${placeLeg} Leg`}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Binary Explorer Control Bar */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                     <span className="text-xs font-bold text-slate-600">Inspect Node:</span>
                     <input
                       type="text"
                       value={binaryTreeMemberId}
                       onChange={(e) => setBinaryTreeMemberId(e.target.value)}
-                      placeholder="e.g. ASKR-100001"
+                      placeholder="e.g. ASKR-ADMIN-01"
                       className="px-3 py-1.5 text-xs font-mono font-bold rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] w-40"
                     />
                     <button
@@ -1302,6 +1615,16 @@ export default function AdminPage() {
                       className="px-3.5 py-1.5 rounded-lg bg-[#165DAD] text-white text-xs font-semibold hover:bg-[#124b8c]"
                     >
                       Explore
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBinaryTreeMemberId('ASKR-ADMIN-01');
+                        fetchBinaryData('ASKR-ADMIN-01');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
+                    >
+                      Root (ASKR-ADMIN-01)
                     </button>
                   </div>
 
@@ -1318,30 +1641,33 @@ export default function AdminPage() {
                 </div>
 
                 {/* Binary Network Interactive Tree Visualizer */}
-                {binaryTreeData?.node && (
+                {binaryTreeData?.node ? (
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                       <div>
                         <h3 className="font-bold text-sm text-[#253247]">
                           Binary Placement Tree for {binaryTreeData.node.user.fullName} ({binaryTreeData.node.user.memberId})
                         </h3>
                         <div className="text-[11px] text-slate-500 mt-0.5">
-                          Direct Sponsor: {binaryTreeData.node.sponsor?.memberId || 'Root'} • Parent: {binaryTreeData.node.parent?.memberId || 'None'}
+                          Direct Sponsor: {binaryTreeData.node.sponsor?.memberId || 'Root'} • Parent: {binaryTreeData.node.parent ? `${binaryTreeData.node.parent.memberId} (${binaryTreeData.node.parent.leg})` : 'Root / Unplaced'}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded bg-blue-50 text-[#165DAD] border border-blue-200">
+                          Ratio: 1:1 (₹3,000/match)
+                        </span>
                         <span className="text-xs font-semibold px-2.5 py-1 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                          Daily Cap: 15 matches / ₹45,000
+                          Today: {binaryTreeData.node.todayMatchesSettled ?? 0} / 15 Cap
                         </span>
                       </div>
                     </div>
 
                     {/* ROOT NODE CARD */}
                     <div className="flex justify-center">
-                      <div className="w-72 bg-blue-50 border-2 border-[#165DAD] rounded-xl p-4 shadow-sm text-center">
+                      <div className="w-full max-w-xs bg-blue-50 border-2 border-[#165DAD] rounded-xl p-4 shadow-sm text-center">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#165DAD] text-white uppercase">
-                          Root Node
+                          {binaryTreeData.node.parent ? `Node (${binaryTreeData.node.parent.leg})` : 'Root / Unplaced'}
                         </span>
                         <div className="font-bold text-sm text-[#253247] mt-1.5">
                           {binaryTreeData.node.user.fullName}
@@ -1349,106 +1675,159 @@ export default function AdminPage() {
                         <div className="text-xs font-mono font-bold text-[#165DAD]">
                           {binaryTreeData.node.user.memberId}
                         </div>
+                        <div className="text-[10px] text-slate-600 mt-1">
+                          {binaryTreeData.node.user.currentPackage} • {binaryTreeData.node.user.isFullQualified ? 'Full Qualified' : 'Not Full Qualified'}
+                        </div>
 
                         <div className="mt-2.5 pt-2.5 border-t border-blue-200/60 grid grid-cols-2 text-[11px]">
-                          <div className="border-r border-blue-200">
-                            <div className="text-slate-500">Left Count</div>
-                            <div className="font-bold text-slate-800">{binaryTreeData.node.leftCount}</div>
+                          <div className="border-r border-blue-200 pr-2">
+                            <div className="text-slate-500">Left Count / Vol</div>
+                            <div className="font-bold text-slate-800">
+                              {binaryTreeData.node.leftCount} / {binaryTreeData.node.leftVolumeUnits ?? 0}u
+                            </div>
                             <div className="text-[10px] text-emerald-700 font-bold">
-                              Carry: {binaryTreeData.node.carryLeftUnits ?? binaryTreeData.node.carryLeftINR ?? 0} Units
+                              Carry: {binaryTreeData.node.carryLeftUnits ?? 0} Units
                             </div>
                           </div>
-                          <div>
-                            <div className="text-slate-500">Right Count</div>
-                            <div className="font-bold text-slate-800">{binaryTreeData.node.rightCount}</div>
+                          <div className="pl-2">
+                            <div className="text-slate-500">Right Count / Vol</div>
+                            <div className="font-bold text-slate-800">
+                              {binaryTreeData.node.rightCount} / {binaryTreeData.node.rightVolumeUnits ?? 0}u
+                            </div>
                             <div className="text-[10px] text-emerald-700 font-bold">
-                              Carry: {binaryTreeData.node.carryRightUnits ?? binaryTreeData.node.carryRightINR ?? 0} Units
+                              Carry: {binaryTreeData.node.carryRightUnits ?? 0} Units
                             </div>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* LEFT & RIGHT BRANCHES */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4">
-                      {/* Left Leg */}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold text-[#165DAD]">LEFT LEG</span>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase">Subtree</span>
-                        </div>
-                        {binaryTreeData.leftChild ? (
-                          <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1">
-                            <div className="font-bold text-xs text-[#253247]">
-                              {binaryTreeData.leftChild.fullName}
-                            </div>
-                            <div className="text-[11px] font-mono text-[#165DAD]">
-                              {binaryTreeData.leftChild.memberId}
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              Package: {binaryTreeData.leftChild.currentPackage} •{' '}
-                              {binaryTreeData.leftChild.isFullQualified ? 'Qualified' : 'Unqualified'}
-                            </div>
-                            <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                              <span>Left: {binaryTreeData.leftChild.leftCount}</span>
-                              <span>Right: {binaryTreeData.leftChild.rightCount}</span>
-                              <button
-                                onClick={() => {
-                                  setBinaryTreeMemberId(binaryTreeData.leftChild.memberId);
-                                  fetchBinaryData(binaryTreeData.leftChild.memberId);
-                                }}
-                                className="text-[#165DAD] font-bold hover:underline"
-                              >
-                                Drill Down →
-                              </button>
-                            </div>
+                    {/* LEFT & RIGHT BRANCHES (2 LEVELS) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                      {[
+                        { label: 'LEFT LEG', child: binaryTreeData.leftChild, accent: 'text-[#165DAD]' },
+                        { label: 'RIGHT LEG', child: binaryTreeData.rightChild, accent: 'text-purple-700' },
+                      ].map(({ label, child, accent }) => (
+                        <div key={label} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-bold ${accent}`}>{label}</span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">Subtree</span>
                           </div>
-                        ) : (
-                          <div className="p-4 rounded-lg bg-white border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                            Left leg node vacant
-                          </div>
-                        )}
-                      </div>
+                          {child ? (
+                            <div className="space-y-3">
+                              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="font-bold text-xs text-[#253247]">{child.fullName}</div>
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                                    {child.currentPackage}
+                                  </span>
+                                </div>
+                                <div className={`text-[11px] font-mono ${accent}`}>{child.memberId}</div>
+                                <div className="text-[10px] text-slate-500">
+                                  {child.isFullQualified ? 'Full Qualified' : 'Unqualified (BASIC)'} • Vol: {child.leftVolumeUnits}L / {child.rightVolumeUnits}R
+                                </div>
+                                <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                                  <span>Left: {child.leftCount}</span>
+                                  <span>Right: {child.rightCount}</span>
+                                  <button
+                                    onClick={() => {
+                                      setBinaryTreeMemberId(child.memberId);
+                                      fetchBinaryData(child.memberId);
+                                    }}
+                                    className={`${accent} font-bold hover:underline`}
+                                  >
+                                    Drill Down →
+                                  </button>
+                                </div>
+                              </div>
 
-                      {/* Right Leg */}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold text-purple-700">RIGHT LEG</span>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase">Subtree</span>
+                              {/* Level-2 Descendants */}
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  { subLabel: 'LEFT', subChild: child.leftChild },
+                                  { subLabel: 'RIGHT', subChild: child.rightChild },
+                                ].map(({ subLabel, subChild }) =>
+                                  subChild ? (
+                                    <button
+                                      key={subLabel}
+                                      type="button"
+                                      onClick={() => {
+                                        setBinaryTreeMemberId(subChild.memberId);
+                                        fetchBinaryData(subChild.memberId);
+                                      }}
+                                      className="p-2.5 rounded-lg bg-white border border-slate-200 hover:border-[#165DAD] text-left transition-colors"
+                                    >
+                                      <div className="text-[9px] font-bold uppercase text-slate-400">{subLabel}</div>
+                                      <div className="font-bold text-[11px] text-[#253247] truncate">{subChild.fullName}</div>
+                                      <div className="text-[10px] font-mono text-[#165DAD]">{subChild.memberId}</div>
+                                      <div className="text-[9px] text-slate-500 mt-0.5">
+                                        {subChild.currentPackage} • {subChild.isFullQualified ? 'Qual' : 'Basic'}
+                                      </div>
+                                    </button>
+                                  ) : (
+                                    <div
+                                      key={subLabel}
+                                      className="p-2.5 rounded-lg bg-white/70 border border-dashed border-slate-200 text-center text-[10px] text-slate-400 flex items-center justify-center"
+                                    >
+                                      Vacant {subLabel}
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-4 rounded-lg bg-white border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                              {label === 'LEFT LEG' ? 'Left leg node vacant' : 'Right leg node vacant'}
+                            </div>
+                          )}
                         </div>
-                        {binaryTreeData.rightChild ? (
-                          <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1">
-                            <div className="font-bold text-xs text-[#253247]">
-                              {binaryTreeData.rightChild.fullName}
-                            </div>
-                            <div className="text-[11px] font-mono text-purple-700">
-                              {binaryTreeData.rightChild.memberId}
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              Package: {binaryTreeData.rightChild.currentPackage} •{' '}
-                              {binaryTreeData.rightChild.isFullQualified ? 'Qualified' : 'Unqualified'}
-                            </div>
-                            <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                              <span>Left: {binaryTreeData.rightChild.leftCount}</span>
-                              <span>Right: {binaryTreeData.rightChild.rightCount}</span>
-                              <button
-                                onClick={() => {
-                                  setBinaryTreeMemberId(binaryTreeData.rightChild.memberId);
-                                  fetchBinaryData(binaryTreeData.rightChild.memberId);
-                                }}
-                                className="text-purple-700 font-bold hover:underline"
-                              >
-                                Drill Down →
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-4 rounded-lg bg-white border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                            Right leg node vacant
-                          </div>
-                        )}
-                      </div>
+                      ))}
                     </div>
+
+                    {/* Settlement History for Inspected Node */}
+                    <div className="pt-4 border-t border-slate-100 space-y-2">
+                      <h4 className="text-xs font-bold text-[#253247]">
+                        Match Settlement History ({binaryTreeData.node.user.memberId})
+                      </h4>
+                      {binaryHistory.length === 0 ? (
+                        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                          No binary matching settlements recorded for this member.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                          <table className="w-full text-left text-xs whitespace-nowrap">
+                            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                              <tr>
+                                <th className="p-2.5">Date (IST)</th>
+                                <th className="p-2.5">Evaluated</th>
+                                <th className="p-2.5">Settled</th>
+                                <th className="p-2.5">Capped</th>
+                                <th className="p-2.5">Used (L:R)</th>
+                                <th className="p-2.5">New Carry (L:R)</th>
+                                <th className="p-2.5 text-right">Reward (₹)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {binaryHistory.map((ev: any) => (
+                                <tr key={ev.id}>
+                                  <td className="p-2.5 font-mono">{ev.matchDate}</td>
+                                  <td className="p-2.5">{ev.matchesEvaluated}</td>
+                                  <td className="p-2.5 font-bold text-[#15803D]">{ev.matchesSettled}</td>
+                                  <td className="p-2.5 text-amber-700">{ev.cappedOutMatches}</td>
+                                  <td className="p-2.5">{ev.leftUnitsUsed} : {ev.rightUnitsUsed}</td>
+                                  <td className="p-2.5">{ev.newCarryLeft} : {ev.newCarryRight}</td>
+                                  <td className="p-2.5 text-right font-bold">₹{(ev.rewardINR ?? 0).toLocaleString('en-IN')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-500">
+                    {loadingBinary ? 'Loading binary tree...' : `No binary tree node found for "${binaryTreeMemberId}". Click "Root (ASKR-ADMIN-01)" to inspect the root node.`}
                   </div>
                 )}
               </div>

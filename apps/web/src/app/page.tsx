@@ -4,72 +4,40 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
-  Check,
-  ShieldCheck,
-  BatteryCharging,
-  Gauge,
-  Headphones,
   ChevronRight,
-  Bike,
+  ShieldCheck,
+  Gauge,
+  BatteryCharging,
+  Zap,
+  Sparkles,
+  Layers,
+  Cpu,
+  Compass,
+  CheckCircle2,
+  ChevronDown,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import BikeCard from '../components/BikeCard';
-import { fetchApi } from '../lib/api';
-
-const DEFAULT_VERIFIED_BIKES = [
-  {
-    id: 'e08078e1-47f8-4073-81f5-5b670f59198e',
-    modelCode: 'ASKR-THUNDER-PRO',
-    name: 'ASKR Thunder Pro',
-    tagline: 'High-Torque Performance Urban Commuter',
-    batteryCapacityKwh: 3.8,
-    rangeKm: 135,
-    topSpeedKmh: 95,
-    chargingTimeHours: 3.5,
-    exShowroomPriceINR: 125000,
-    bookingAmountINR: 5000,
-    voucherRedeemLimitINR: 15000,
-    imageUrl: '/images/bikes/thunder-pro.svg',
-    isAvailable: true,
-  },
-  {
-    id: '2b290c86-749d-480e-8f82-6f7122936e97',
-    modelCode: 'ASKR-CITY-CRUISE',
-    name: 'ASKR City Cruise',
-    tagline: 'Ultra-Efficient Daily City Rider',
-    batteryCapacityKwh: 2.5,
-    rangeKm: 90,
-    topSpeedKmh: 70,
-    chargingTimeHours: 2.8,
-    exShowroomPriceINR: 89000,
-    bookingAmountINR: 3000,
-    voucherRedeemLimitINR: 10000,
-    imageUrl: '/images/bikes/city-cruise.svg',
-    isAvailable: true,
-  },
-  {
-    id: '22c9999e-5f97-449f-bf26-e2169dd74d7f',
-    modelCode: 'ASKR-APEX-SPORT',
-    name: 'ASKR Apex Sport',
-    tagline: 'Track-Inspired Speed & Smart Telemetry',
-    batteryCapacityKwh: 5.2,
-    rangeKm: 175,
-    topSpeedKmh: 120,
-    chargingTimeHours: 4.0,
-    exShowroomPriceINR: 165000,
-    bookingAmountINR: 10000,
-    voucherRedeemLimitINR: 30000,
-    imageUrl: '/images/bikes/apex-sport.svg',
-    isAvailable: true,
-  },
-];
+import BookingModal from '../components/BookingModal';
+import { fetchApi, getStoredUser } from '../lib/api';
+import {
+  VERIFIED_ELECTRIC_BIKES,
+  CONCEPT_ELECTRIC_CYCLES,
+  CONCEPT_ELECTRIC_JEEPS,
+  Vehicle,
+} from '../lib/catalog';
 
 export default function HomePage() {
-  const [bikes, setBikes] = useState<any[]>(DEFAULT_VERIFIED_BIKES);
-  const [loading, setLoading] = useState(false);
+  const [bikes, setBikes] = useState<Vehicle[]>(VERIFIED_ELECTRIC_BIKES);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [selectedHeroIndex, setSelectedHeroIndex] = useState(0);
+  const [selectedColorIndex, setSelectedColorIndex] = useState(0);
+  const [bookingVehicle, setBookingVehicle] = useState<any | null>(null);
+  const [bookingModalOpen, setBookingModalOpen] = useState(false);
 
   useEffect(() => {
+    setCurrentUser(getStoredUser());
     loadBikes();
   }, []);
 
@@ -77,373 +45,641 @@ export default function HomePage() {
     try {
       const data = await fetchApi<any[]>('/ev-bikes');
       if (Array.isArray(data) && data.length > 0) {
-        setBikes(data);
+        // Merge API data with verified specs
+        const merged = VERIFIED_ELECTRIC_BIKES.map((base) => {
+          const apiMatch = data.find(
+            (d) => d.modelCode === base.modelCode || d.id === base.id
+          );
+          if (apiMatch) {
+            return {
+              ...base,
+              ...apiMatch,
+              exShowroomPriceINR: apiMatch.exShowroomPriceINR || base.exShowroomPriceINR,
+              bookingAmountINR: apiMatch.bookingAmountINR || base.bookingAmountINR,
+              voucherRedeemLimitINR: apiMatch.voucherRedeemLimitINR || base.voucherRedeemLimitINR,
+            };
+          }
+          return base;
+        });
+        setBikes(merged);
       }
     } catch (err) {
-      console.warn('Note: loaded default verified product models', err);
-    } finally {
-      setLoading(false);
+      console.warn('Note: utilizing verified model defaults', err);
     }
   };
 
+  const heroVehicle = bikes[selectedHeroIndex] || bikes[0];
+  const activeColor =
+    heroVehicle.colors && heroVehicle.colors[selectedColorIndex]
+      ? heroVehicle.colors[selectedColorIndex]
+      : { name: 'Sapphire Blue', hex: '#165DAD', description: 'Primary metallic finish' };
+
+  const handleOpenBooking = (vehicle: any) => {
+    setBookingVehicle(vehicle);
+    setBookingModalOpen(true);
+  };
+
   return (
-    <div className="flex-1 flex flex-col bg-white">
+    <div className="flex-1 flex flex-col bg-[#080A0D] text-white selection:bg-[#C9FF36] selection:text-[#080A0D]">
       <Navbar />
 
       {/* =========================================================================
-          TASK 1 — HERO SECTION
-          Approved Classic Corporate Light Theme
-          Headline: "Ride Electric. Drive the Future."
+          HERO SECTION — CINEMATIC AUTOMOTIVE COMPOSITION
+          Benchmark: Tesla / Porsche / Ather / BMW Motorrad luxury editorial design
+          Headline: "THE FUTURE MOVES ELECTRIC."
+          Subheadline: "Discover a new generation of electric mobility."
           ========================================================================= */}
-      <section className="bg-[#F7F9FC] border-b border-slate-200 py-16 md:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
-            {/* Left Content */}
-            <div className="lg:col-span-7 space-y-6">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#253247] leading-tight">
-                Ride Electric. Drive the Future.
-              </h1>
+      <section className="relative min-h-[92vh] flex flex-col justify-between pt-10 pb-16 px-4 sm:px-6 lg:px-8 overflow-hidden bg-radial-gradient">
+        {/* Subtle Ambient Radial Lighting */}
+        <div
+          className="absolute -top-40 left-1/2 -translate-x-1/2 w-[1100px] h-[550px] rounded-full pointer-events-none opacity-20 blur-3xl"
+          style={{
+            background: `radial-gradient(circle, ${activeColor.hex} 0%, rgba(201, 255, 54, 0.15) 50%, transparent 80%)`,
+          }}
+        />
 
-              <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-                Discover smart electric motorcycles designed for everyday journeys. Explore our EV collection and enjoy a simpler way to ride.
-              </p>
+        {/* Ambient Grid Lines */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,#000_70%,transparent_100%)] pointer-events-none" />
 
-              {/* Action Buttons: Primary + Secondary */}
-              <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
-                <Link
-                  href="/bikes"
-                  className="min-h-[48px] px-7 py-3 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-base font-semibold transition-colors shadow-sm inline-flex items-center justify-center gap-2"
-                >
-                  <span>Explore EV Bikes</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-
-                <Link
-                  href="#membership"
-                  className="min-h-[48px] text-base font-semibold text-slate-700 hover:text-[#165DAD] transition-colors inline-flex items-center justify-center gap-1.5"
-                >
-                  <span>Learn More</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Right Hero Motorcycle Visual */}
-            <div className="lg:col-span-5">
-              <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-7 shadow-sm relative overflow-hidden">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wider">
-                    Featured Concept Model
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase bg-[#F7F9FC] px-2 py-0.5 rounded border border-slate-200">
-                    Pre-Production
-                  </span>
-                </div>
-                <div className="py-4">
-                  <img
-                    src="/images/bikes/thunder-pro.svg"
-                    alt="ASKR Thunder Pro Electric Motorcycle Concept"
-                    className="w-full h-auto max-h-[260px] object-contain"
-                  />
-                </div>
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                  <span className="font-semibold text-sm text-[#253247]">ASKR Thunder Pro</span>
-                  <span className="text-xs font-medium">135 km Range • 95 km/h Top Speed</span>
-                </div>
-              </div>
-            </div>
+        {/* Hero Top Content */}
+        <div className="relative z-10 max-w-7xl mx-auto w-full text-center pt-8 md:pt-14">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-[#A7ADB5] mb-6 backdrop-blur-md">
+            <span className="w-2 h-2 rounded-full bg-[#C9FF36] animate-pulse" />
+            <span className="tracking-widest uppercase font-semibold text-[11px] text-white">
+              Official ASKR EV Mobility
+            </span>
           </div>
-        </div>
-      </section>
 
-      {/* =========================================================================
-          TASK 3 — FEATURED EV MOTORCYCLES
-          Clean product cards + fallback / coming soon state
-          ========================================================================= */}
-      <section className="py-16 md:py-20 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#253247]">
-                Featured EV Motorcycles
-              </h2>
-              <p className="text-base text-slate-500 mt-2 max-w-lg leading-relaxed">
-                Explore our collection of electric motorcycles designed for daily commuting and high-efficiency performance.
-              </p>
-            </div>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black tracking-tighter uppercase text-white leading-none">
+            The Future <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">Moves</span>{' '}
+            <span className="text-[#C9FF36]">Electric.</span>
+          </h1>
+
+          <p className="mt-5 text-base sm:text-lg md:text-xl text-[#A7ADB5] max-w-2xl mx-auto font-light tracking-wide leading-relaxed">
+            Discover a new generation of electric mobility. Engineered for high-torque performance, zero-emission urban flow, and long-range intelligence.
+          </p>
+
+          {/* Primary & Secondary Call to Actions */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <Link
               href="/bikes"
-              className="text-sm font-semibold text-[#165DAD] hover:text-[#124B8D] flex items-center gap-1 self-start md:self-auto min-h-[44px]"
+              className="px-8 py-4 rounded-full bg-white text-[#101318] hover:bg-[#C9FF36] text-xs sm:text-sm font-extrabold uppercase tracking-widest transition-all duration-300 shadow-xl hover:shadow-lime/25 flex items-center gap-2 group"
             >
-              <span>View All Models</span>
-              <ChevronRight className="w-4 h-4" />
+              <span>Explore Vehicles</span>
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </Link>
+
+            <a
+              href="#technology"
+              className="px-7 py-4 rounded-full bg-white/5 hover:bg-white/10 text-white text-xs sm:text-sm font-semibold tracking-wider uppercase transition-colors border border-white/10 backdrop-blur-sm"
+            >
+              Discover ASKR EV
+            </a>
+          </div>
+        </div>
+
+        {/* Hero Featured Vehicle Showcase */}
+        <div className="relative z-10 max-w-6xl mx-auto w-full mt-8 md:mt-12 flex flex-col items-center">
+          {/* Main Vehicle Image Presentation */}
+          <div className="relative w-full max-w-4xl h-64 sm:h-80 md:h-96 flex items-center justify-center">
+            {/* Ground Contact Shadow */}
+            <div className="absolute bottom-6 w-3/4 h-8 bg-black/80 blur-xl rounded-full" />
+
+            <img
+              src={heroVehicle.imageUrl.replace('.webp', '.svg')}
+              alt={heroVehicle.name}
+              className="relative z-10 w-full h-full object-contain filter drop-shadow-[0_20px_40px_rgba(0,0,0,0.8)] transition-all duration-700"
+            />
           </div>
 
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-white rounded-xl border border-slate-200 h-96 p-6 animate-pulse space-y-4">
-                  <div className="h-44 bg-slate-100 rounded-lg" />
-                  <div className="h-5 bg-slate-100 rounded w-2/3" />
-                  <div className="h-4 bg-slate-100 rounded w-1/2" />
-                  <div className="h-9 bg-slate-100 rounded" />
-                </div>
+          {/* Vehicle Selector Tabs & Interactive Color Switcher */}
+          <div className="w-full max-w-3xl mt-4 p-4 rounded-2xl bg-[#101318]/90 border border-white/10 backdrop-blur-xl shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Model Switcher */}
+            <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+              {bikes.map((b, idx) => (
+                <button
+                  key={b.id}
+                  onClick={() => {
+                    setSelectedHeroIndex(idx);
+                    setSelectedColorIndex(0);
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wider uppercase transition-all whitespace-nowrap ${
+                    selectedHeroIndex === idx
+                      ? 'bg-white text-[#101318] shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {b.name.replace('ASKR ', '')}
+                </button>
               ))}
             </div>
-          ) : bikes && bikes.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {bikes.map((bike) => (
-                <BikeCard key={bike.id} bike={bike} />
-              ))}
+
+            {/* Color Finish Picker */}
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                Finish:
+              </span>
+              <div className="flex items-center gap-2">
+                {heroVehicle.colors.map((c, cIdx) => (
+                  <button
+                    key={c.name}
+                    onClick={() => setSelectedColorIndex(cIdx)}
+                    className={`w-6 h-6 rounded-full transition-transform border ${
+                      selectedColorIndex === cIdx
+                        ? 'scale-125 border-white ring-2 ring-[#C9FF36]/50'
+                        : 'border-white/30 hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                    title={c.name}
+                    aria-label={`Select color ${c.name}`}
+                  />
+                ))}
+              </div>
+              <span className="text-xs text-white font-medium tracking-wide">
+                {activeColor.name}
+              </span>
             </div>
-          ) : (
-            <div className="text-center py-16 px-4 bg-[#F7F9FC] rounded-xl border border-slate-200">
-              <Bike className="w-12 h-12 text-[#165DAD] mx-auto mb-3" />
-              <h3 className="text-xl font-bold text-[#253247]">Models Coming Soon</h3>
-              <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
-                Our engineering team is finalizing production specifications for new electric motorcycle models. Check back soon.
-              </p>
+          </div>
+
+          {/* Quick Specifications Strip */}
+          <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8 text-center w-full max-w-4xl border-t border-white/10 pt-6">
+            <div>
+              <span className="text-[11px] text-[#A7ADB5] uppercase tracking-wider block">Certified Range</span>
+              <span className="text-2xl sm:text-3xl font-black text-white">{heroVehicle.rangeKm} <span className="text-sm font-normal text-slate-400">km</span></span>
             </div>
-          )}
+            <div>
+              <span className="text-[11px] text-[#A7ADB5] uppercase tracking-wider block">Top Speed</span>
+              <span className="text-2xl sm:text-3xl font-black text-white">{heroVehicle.topSpeedKmh} <span className="text-sm font-normal text-slate-400">km/h</span></span>
+            </div>
+            <div>
+              <span className="text-[11px] text-[#A7ADB5] uppercase tracking-wider block">Battery Module</span>
+              <span className="text-2xl sm:text-3xl font-black text-white">{heroVehicle.batteryCapacityKwh} <span className="text-sm font-normal text-slate-400">kWh</span></span>
+            </div>
+            <div>
+              <span className="text-[11px] text-[#A7ADB5] uppercase tracking-wider block">Fast Charge</span>
+              <span className="text-2xl sm:text-3xl font-black text-white">{heroVehicle.chargingTimeHours} <span className="text-sm font-normal text-slate-400">hrs</span></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Refined Scroll Down Indicator */}
+        <div className="relative z-10 w-full flex justify-center mt-10">
+          <a
+            href="#categories"
+            className="flex flex-col items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors group"
+            aria-label="Scroll to vehicle categories"
+          >
+            <span className="text-[10px] uppercase font-bold tracking-widest text-[#A7ADB5] group-hover:text-[#C9FF36]">
+              Scroll to Explore
+            </span>
+            <ChevronDown className="w-4 h-4 animate-bounce text-slate-400 group-hover:text-white" />
+          </a>
         </div>
       </section>
 
       {/* =========================================================================
-          TASK 5 — MEMBERSHIP CARDS
-          Three clear plans: Free (₹0), Basic (₹3,000), Full (₹33,000 with ₹30,000 voucher)
-          Simple descriptions and benefits, no exaggerated financial claims.
+          THREE PREMIUM AUTOMOTIVE CATEGORIES
+          1. Electric Bikes — "POWER MEETS PRECISION."
+          2. Electric Cycles — "RIDE LIGHT. GO FURTHER."
+          3. Electric Jeeps — "BUILT FOR THE EXTRAORDINARY."
           ========================================================================= */}
-      <section id="membership" className="py-16 md:py-20 bg-[#F7F9FC] border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#253247]">
-              Customer Membership Plans
+      <section id="categories" className="py-24 bg-[#080A0D] border-t border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-32">
+
+          {/* CATEGORY 1: ELECTRIC BIKES */}
+          <div id="bikes" className="space-y-12">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/10 pb-8">
+              <div>
+                <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#165DAD] mb-2">
+                  <span className="w-2 h-2 rounded-full bg-[#165DAD]" />
+                  <span>Category 01 • Production Fleet</span>
+                </div>
+                <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white">
+                  Power Meets <span className="text-[#165DAD]">Precision.</span>
+                </h2>
+                <p className="mt-2 text-base text-[#A7ADB5] max-w-xl font-light">
+                  High-performance electric motorcycles with permanent magnet synchronous motors, intelligent CBS braking, and connected telemetry.
+                </p>
+              </div>
+
+              <Link
+                href="/bikes?category=bikes"
+                className="inline-flex items-center gap-2 text-xs font-bold tracking-widest uppercase text-white hover:text-[#C9FF36] transition-colors"
+              >
+                <span>Explore All Electric Bikes</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+
+            {/* Bikes Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {bikes.map((b) => (
+                <BikeCard key={b.id} vehicle={b} onBookClick={handleOpenBooking} />
+              ))}
+            </div>
+          </div>
+
+          {/* CATEGORY 2: ELECTRIC CYCLES */}
+          <div id="cycles" className="relative p-8 sm:p-12 lg:p-16 rounded-3xl bg-[#101318] border border-white/10 overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-0 right-0 w-96 h-96 bg-[#C9FF36]/5 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              <div className="lg:col-span-6 space-y-6">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#C9FF36]/10 border border-[#C9FF36]/30 text-xs font-bold uppercase tracking-widest text-[#C9FF36]">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Category 02 • Prototype Series</span>
+                </div>
+
+                <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white leading-tight">
+                  Ride Light. <br />
+                  <span className="text-[#C9FF36]">Go Further.</span>
+                </h2>
+
+                <p className="text-base text-[#A7ADB5] leading-relaxed font-light">
+                  Introducing the ASKR AeroTrek C1 Concept Series. Ultralight carbon-alloy frame, integrated 750Wh concealed battery pack, and Gates Carbon Drive belt for silent, frictionless urban freedom.
+                </p>
+
+                {/* Concept Highlights */}
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                    <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Assisted Range</span>
+                    <span className="text-xl font-bold text-white">85 km</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Pedal Assist Mode</span>
+                  </div>
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                    <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Chassis Weight</span>
+                    <span className="text-xl font-bold text-white">14.8 kg</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Aerospace Carbon Alloy</span>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex flex-wrap items-center gap-4">
+                  <Link
+                    href="/bikes/ASKR-AEROTREK-C1"
+                    className="px-6 py-3 rounded-full bg-white text-[#101318] hover:bg-[#C9FF36] text-xs font-bold tracking-wider uppercase transition-colors"
+                  >
+                    Explore Electric Cycles
+                  </Link>
+
+                  <span className="text-xs text-slate-400 font-mono">
+                    Model: ASKR-AEROTREK-C1 (Concept Phase)
+                  </span>
+                </div>
+              </div>
+
+              {/* Vehicle Art / Render */}
+              <div className="lg:col-span-6 flex items-center justify-center">
+                <div className="relative w-full max-w-lg h-72 sm:h-96">
+                  <img
+                    src="/images/vehicles/electric-cycle.svg"
+                    alt="ASKR AeroTrek Electric Cycle"
+                    className="w-full h-full object-contain filter drop-shadow-[0_15px_30px_rgba(0,0,0,0.7)]"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* CATEGORY 3: ELECTRIC JEEPS */}
+          <div id="jeeps" className="relative p-8 sm:p-12 lg:p-16 rounded-3xl bg-[#101318] border border-white/10 overflow-hidden">
+            {/* Ambient Glow */}
+            <div className="absolute bottom-0 left-0 w-96 h-96 bg-[#165DAD]/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              {/* Vehicle Art / Render */}
+              <div className="lg:col-span-6 order-2 lg:order-1 flex items-center justify-center">
+                <div className="relative w-full max-w-lg h-72 sm:h-96">
+                  <img
+                    src="/images/vehicles/electric-jeep.svg"
+                    alt="ASKR TerraMax 4x4 Electric Jeep"
+                    className="w-full h-full object-contain filter drop-shadow-[0_20px_40px_rgba(0,0,0,0.8)]"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+
+              <div className="lg:col-span-6 order-1 lg:order-2 space-y-6">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/30 text-xs font-bold uppercase tracking-widest text-[#38BDF8]">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Category 03 • Prototype Series</span>
+                </div>
+
+                <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white leading-tight">
+                  Built for the <br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">Extraordinary.</span>
+                </h2>
+
+                <p className="text-base text-[#A7ADB5] leading-relaxed font-light">
+                  Meet the ASKR TerraMax 4x4 Concept. Dual-motor all-wheel electric drive, 380 km expedition range, heavy-duty underbody skid armor, and instant all-terrain torque vectoring for untamed adventures.
+                </p>
+
+                {/* Specs */}
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                    <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Adventure Range</span>
+                    <span className="text-xl font-bold text-white">380 km</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">48 kWh Armored Battery</span>
+                  </div>
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                    <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Drivetrain</span>
+                    <span className="text-xl font-bold text-white">Dual AWD</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Independent Electronic Motors</span>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex flex-wrap items-center gap-4">
+                  <Link
+                    href="/bikes/ASKR-TERRAMAX-4X4"
+                    className="px-6 py-3 rounded-full bg-white text-[#101318] hover:bg-[#C9FF36] text-xs font-bold tracking-wider uppercase transition-colors"
+                  >
+                    Explore Electric Jeeps
+                  </Link>
+
+                  <span className="text-xs text-slate-400 font-mono">
+                    Model: ASKR-TERRAMAX-4X4 (Concept Phase)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* =========================================================================
+          TECHNOLOGY & ENGINEERING BENCHMARK
+          PMSM, Lithium-Ion BMS, Cloud Telemetry, Dual CBS
+          ========================================================================= */}
+      <section id="technology" className="py-24 bg-[#080A0D] border-t border-white/10 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
+          <div className="text-center max-w-3xl mx-auto space-y-4">
+            <span className="text-xs font-bold uppercase tracking-widest text-[#C9FF36]">
+              Architectural Refinement
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white">
+              Engineering <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">Pure Mobility.</span>
             </h2>
-            <p className="text-base text-slate-500 mt-2 leading-relaxed">
-              Transparent platform participation options. Free registration allows you to explore models, while active membership provides verified community referral benefits.
+            <p className="text-base text-[#A7ADB5] font-light leading-relaxed">
+              Every ASKR EV vehicle is designed with aerospace rigor, precision thermal management, and intelligent vehicle-to-cloud telemetry.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 hover:border-white/25 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-[#165DAD]/20 flex items-center justify-center text-[#165DAD] mb-6">
+                <Cpu className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">PMSM Powertrain</h3>
+              <p className="mt-2 text-xs text-[#A7ADB5] leading-relaxed">
+                Permanent Magnet Synchronous Motors delivering up to 94% system efficiency and instant torque curve from 0 RPM.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 hover:border-white/25 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-6">
+                <BatteryCharging className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Smart BMS Architecture</h3>
+              <p className="mt-2 text-xs text-[#A7ADB5] leading-relaxed">
+                Multi-cell thermal balancing, overcharge protection, IP67 waterproof encapsulation, and fast wallbox charging support.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 hover:border-white/25 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-[#C9FF36]/20 flex items-center justify-center text-[#C9FF36] mb-6">
+                <Zap className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Combined Braking (CBS)</h3>
+              <p className="mt-2 text-xs text-[#A7ADB5] leading-relaxed">
+                Regenerative electronic deceleration coupled with hydraulic disc rotors for dependable stopping distance in all weather.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 hover:border-white/25 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-sky-500/20 flex items-center justify-center text-sky-400 mb-6">
+                <Compass className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-white">Connected Telemetry</h3>
+              <p className="mt-2 text-xs text-[#A7ADB5] leading-relaxed">
+                Integrated GPS tracking, remote diagnostics, tamper alerts, and automatic over-the-air firmware upgrades.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================================
+          COMMUNITY & MEMBERSHIP BENEFITS SECTION
+          Preserves the approved platform business model:
+          - Free Membership
+          - Basic Membership (₹3,000 fee)
+          - Full Membership (₹33,000 with ₹30,000 shopping voucher)
+          - Shopping voucher redemption towards EV reservations
+          ========================================================================= */}
+      <section id="membership" className="py-24 bg-[#101318] border-t border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
+          <div className="text-center max-w-3xl mx-auto space-y-4">
+            <span className="text-xs font-bold uppercase tracking-widest text-[#165DAD]">
+              Verified Ecosystem
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white">
+              Join the <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">ASKR EV Community.</span>
+            </h2>
+            <p className="text-base text-[#A7ADB5] font-light leading-relaxed">
+              Transparent platform membership options with vehicle shopping voucher entitlements that can be redeemed towards electric vehicle booking tokens.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* 1. Free Account */}
-            <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-8 flex flex-col justify-between shadow-sm">
+            {/* Plan 1: Free */}
+            <div className="p-8 rounded-3xl bg-[#080A0D] border border-white/10 flex flex-col justify-between">
               <div className="space-y-4">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Registration
-                </div>
-                <h3 className="text-2xl font-bold text-[#253247]">Free Account</h3>
-                <div className="text-3xl sm:text-4xl font-bold text-[#253247]">₹0</div>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  Join the platform with zero enrollment fee. Generate your unique Member ID and explore the vehicle catalog.
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Tier 01
+                </span>
+                <h3 className="text-2xl font-black text-white">Free User</h3>
+                <div className="text-3xl font-extrabold text-white">₹0</div>
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  Basic access to view public fleet specifications and explore concept prototype vehicles.
                 </p>
-
-                <ul className="space-y-3 pt-3 text-sm text-slate-600 border-t border-slate-100">
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Unique ASKR Member ID</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Personal dashboard access</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Explore vehicle collection & specs</span>
-                  </li>
-                </ul>
+                <div className="border-t border-white/10 pt-4 space-y-2.5 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-slate-500" />
+                    <span>Browse EV catalog & specifications</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-slate-500" />
+                    <span>Access public vehicle showrooms</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-400">
+                    <span>No sponsor commissions or voucher credits</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-8">
                 <Link
                   href="/auth/register"
-                  className="w-full min-h-[46px] py-3 rounded-lg border border-slate-300 hover:border-slate-400 text-slate-700 text-center text-sm font-semibold transition-colors flex items-center justify-center"
+                  className="w-full py-3 rounded-full bg-white/10 hover:bg-white/15 text-white text-center text-xs font-bold tracking-wider uppercase transition-colors block"
                 >
-                  Register Free
+                  Create Free Account
                 </Link>
               </div>
             </div>
 
-            {/* 2. Basic Membership */}
-            <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-8 flex flex-col justify-between shadow-sm">
+            {/* Plan 2: Basic */}
+            <div className="p-8 rounded-3xl bg-[#080A0D] border border-white/10 flex flex-col justify-between">
               <div className="space-y-4">
-                <div className="text-xs font-semibold text-[#165DAD] uppercase tracking-wider">
-                  Community Active
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#165DAD]">
+                  Tier 02
+                </span>
+                <h3 className="text-2xl font-black text-white">Basic Membership</h3>
+                <div className="text-3xl font-extrabold text-white">
+                  ₹3,000 <span className="text-xs font-normal text-slate-400">platform fee</span>
                 </div>
-                <h3 className="text-2xl font-bold text-[#253247]">Basic Membership</h3>
-                <div className="text-3xl sm:text-4xl font-bold text-[#253247]">₹3,000</div>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  Platform membership activation for community members participating in direct referral sponsorship.
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  Active membership qualifying for direct sponsor commissions on direct referrals.
                 </p>
-
-                <ul className="space-y-3 pt-3 text-sm text-slate-600 border-t border-slate-100">
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Active community membership status</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Direct referral commission eligibility</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Upgrade to Full Membership anytime</span>
-                  </li>
-                </ul>
+                <div className="border-t border-white/10 pt-4 space-y-2.5 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#165DAD]" />
+                    <span>Eligible for direct referral commissions</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#165DAD]" />
+                    <span>Unique sponsor referral link</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#165DAD]" />
+                    <span>Reserve EV bookings with cash deposit</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-8">
                 <Link
                   href="/auth/register"
-                  className="w-full min-h-[46px] py-3 rounded-lg border border-[#165DAD] text-[#165DAD] hover:bg-blue-50 text-center text-sm font-semibold transition-colors flex items-center justify-center"
+                  className="w-full py-3 rounded-full bg-white/10 hover:bg-white/15 text-white text-center text-xs font-bold tracking-wider uppercase transition-colors block"
                 >
-                  Join Basic
+                  Activate Basic
                 </Link>
               </div>
             </div>
 
-            {/* 3. Full Membership */}
-            <div className="bg-white rounded-xl border-2 border-[#165DAD] p-6 sm:p-8 flex flex-col justify-between shadow-md relative">
-              <div className="space-y-4">
-                <div className="text-xs font-bold text-[#165DAD] uppercase tracking-wider">
-                  Full Qualified
-                </div>
-                <h3 className="text-2xl font-bold text-[#253247]">Full Membership</h3>
-                <div className="text-3xl sm:text-4xl font-bold text-[#253247]">₹33,000</div>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  Complete membership tier providing a ₹30,000 vehicle shopping voucher credit alongside full platform benefits.
-                </p>
+            {/* Plan 3: Full (Featured) */}
+            <div className="relative p-8 rounded-3xl bg-gradient-to-b from-[#101318] to-[#080A0D] border-2 border-[#C9FF36]/60 flex flex-col justify-between shadow-2xl shadow-lime/5">
+              <span className="absolute -top-3 right-6 text-[10px] font-black tracking-widest uppercase bg-[#C9FF36] text-[#080A0D] px-3 py-1 rounded-full shadow-md">
+                Recommended
+              </span>
 
-                <ul className="space-y-3 pt-3 text-sm text-slate-700 border-t border-slate-100 font-medium">
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>₹30,000 Shopping Voucher credit included</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Immediate Full Qualified status</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-[#15803D] shrink-0" />
-                    <span>Eligible for binary matching rewards</span>
-                  </li>
-                </ul>
+              <div className="space-y-4">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#C9FF36]">
+                  Tier 03 • Complete
+                </span>
+                <h3 className="text-2xl font-black text-white">Full Membership</h3>
+                <div className="text-3xl font-extrabold text-white">
+                  ₹33,000 <span className="text-xs font-normal text-slate-400">total</span>
+                </div>
+                <div className="p-3 rounded-xl bg-[#C9FF36]/10 border border-[#C9FF36]/30 text-xs font-bold text-[#C9FF36]">
+                  Includes ₹30,000 Shopping Voucher Entitlement!
+                </div>
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  Full qualification granting ₹30,000 in non-expiring shopping vouchers, 1:1 binary matching reward eligibility, and maximum platform rewards.
+                </p>
+                <div className="border-t border-white/10 pt-4 space-y-2.5 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#C9FF36]" />
+                    <span>₹30,000 Vehicle Shopping Voucher</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#C9FF36]" />
+                    <span>Redeemable towards EV booking token deposits</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#C9FF36]" />
+                    <span>1:1 Binary Matching Income eligibility</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#C9FF36]" />
+                    <span>Full sponsor commissions & team rewards</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-8">
                 <Link
                   href="/auth/register"
-                  className="w-full min-h-[46px] py-3 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-center text-sm font-semibold transition-colors flex items-center justify-center shadow-sm"
+                  className="w-full py-3.5 rounded-full bg-white text-[#101318] hover:bg-[#C9FF36] text-center text-xs font-black tracking-wider uppercase transition-colors shadow-lg block"
                 >
-                  Join Full Membership
+                  Join as Full Member
                 </Link>
               </div>
             </div>
+          </div>
+
+          {/* Compliance & Simulation Disclaimer */}
+          <div className="p-6 rounded-2xl bg-[#080A0D] border border-white/5 text-center text-xs text-slate-400 max-w-2xl mx-auto space-y-1">
+            <div className="flex items-center justify-center gap-2 text-slate-300 font-semibold">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Financial Compliance & Simulation Mode Notice</span>
+            </div>
+            <p>
+              Operating in COMPLIANCE_MODE=SIMULATION_ONLY. No live financial payouts, wire settlements, or cash withdrawals are performed. All vehicle reservations and voucher redemptions represent developmental testing models.
+            </p>
           </div>
         </div>
       </section>
 
       {/* =========================================================================
-          TASK 6 — WHY ASKR EV (AUDITED HONEST CLAIMS)
-          Removed unverified warranty/network claims.
-          Focused on verified engineering highlights and compliance.
+          FINAL CINEMATIC CALL TO ACTION
+          "Ready to Move Electric?"
           ========================================================================= */}
-      <section id="why-askr" className="py-16 md:py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#253247]">
-              Why Choose ASKR EV
-            </h2>
-            <p className="text-base text-slate-500 mt-2 leading-relaxed">
-              Thoughtful electric motorcycle engineering backed by transparent platform standards.
-            </p>
-          </div>
+      <section className="py-24 bg-[#080A0D] border-t border-white/10 text-center relative overflow-hidden">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 relative z-10">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#C9FF36]">
+            Start Your Journey
+          </span>
+          <h2 className="text-4xl sm:text-6xl font-black uppercase tracking-tight text-white leading-tight">
+            Ready to Move <span className="text-[#C9FF36]">Electric?</span>
+          </h2>
+          <p className="text-base sm:text-lg text-[#A7ADB5] max-w-xl mx-auto font-light leading-relaxed">
+            Reserve your electric vehicle today, join our growing community of clean mobility advocates, and experience pure electric momentum.
+          </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="p-6 rounded-xl bg-[#F7F9FC] border border-slate-200 space-y-3">
-              <Gauge className="w-6 h-6 text-[#165DAD]" />
-              <h3 className="text-lg font-bold text-[#253247]">PMSM Powertrain</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Permanent Magnet Synchronous Motors deliver immediate torque response with high electrical efficiency.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+            <Link
+              href="/bikes"
+              className="px-9 py-4 rounded-full bg-white text-[#101318] hover:bg-[#C9FF36] text-xs sm:text-sm font-black uppercase tracking-widest transition-all shadow-xl hover:shadow-lime/25"
+            >
+              Book Your Electric Vehicle
+            </Link>
 
-            <div className="p-6 rounded-xl bg-[#F7F9FC] border border-slate-200 space-y-3">
-              <BatteryCharging className="w-6 h-6 text-[#165DAD]" />
-              <h3 className="text-lg font-bold text-[#253247]">Lithium Battery Architecture</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                High-density cell engineering paired with an intelligent battery management system (BMS) for safety and thermal monitoring.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl bg-[#F7F9FC] border border-slate-200 space-y-3">
-              <ShieldCheck className="w-6 h-6 text-[#165DAD]" />
-              <h3 className="text-lg font-bold text-[#253247]">Regulatory Compliance</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Strict adherence to Indian direct selling guidelines with zero compulsory vehicle purchase requirements.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl bg-[#F7F9FC] border border-slate-200 space-y-3">
-              <Headphones className="w-6 h-6 text-[#165DAD]" />
-              <h3 className="text-lg font-bold text-[#253247]">Platform Support</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Dedicated digital customer service for vehicle reservations, voucher balance inquiries, and membership assistance.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* =========================================================================
-          5. HOW EV BOOKING WORKS
-          ========================================================================= */}
-      <section className="py-16 md:py-20 bg-[#F7F9FC] border-t border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#253247]">
-              How EV Booking Works
-            </h2>
-            <p className="text-base text-slate-500 mt-2 leading-relaxed">
-              Three straightforward steps from selecting your electric motorcycle to confirmed vehicle order.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-6 sm:p-7 rounded-xl border border-slate-200 space-y-2.5">
-              <div className="w-9 h-9 rounded-full bg-blue-50 text-[#165DAD] font-bold text-base flex items-center justify-center">
-                1
-              </div>
-              <h3 className="text-lg font-bold text-[#253247]">Select Your Motorcycle</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Browse our EV fleet, review full engineering specifications, and select the motorcycle suited to your daily commute.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 sm:p-7 rounded-xl border border-slate-200 space-y-2.5">
-              <div className="w-9 h-9 rounded-full bg-blue-50 text-[#165DAD] font-bold text-base flex items-center justify-center">
-                2
-              </div>
-              <h3 className="text-lg font-bold text-[#253247]">Reserve with Booking Token</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Pay the token reservation deposit. Active members can apply shopping vouchers towards eligible booking token deductions.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 sm:p-7 rounded-xl border border-slate-200 space-y-2.5">
-              <div className="w-9 h-9 rounded-full bg-blue-50 text-[#165DAD] font-bold text-base flex items-center justify-center">
-                3
-              </div>
-              <h3 className="text-lg font-bold text-[#253247]">Verification & Order Confirmation</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Our operations team verifies your booking reference and issues a formal confirmation receipt for vehicle delivery coordination.
-              </p>
-            </div>
+            <Link
+              href="/auth/register"
+              className="px-8 py-4 rounded-full bg-white/5 hover:bg-white/10 text-white text-xs sm:text-sm font-bold uppercase tracking-widest transition-colors border border-white/10"
+            >
+              Register Account
+            </Link>
           </div>
         </div>
       </section>
 
       <Footer />
+
+      {/* Booking Modal Integration for Instant Reservations */}
+      {bookingVehicle && (
+        <BookingModal
+          bike={bookingVehicle}
+          isOpen={bookingModalOpen}
+          onClose={() => setBookingModalOpen(false)}
+          user={currentUser}
+          onSuccess={() => {
+            setBookingModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

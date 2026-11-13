@@ -429,13 +429,18 @@ async function runSuite() {
     }
     recordPass('T13', 'RBAC Permits SUPER_ADMIN, ADMIN_OPERATIONS, FINANCE_MANAGER (200)');
 
-    // Cross-user isolation: non-admin binary-tree ignores ?userId= target & cannot redeem/cancel other user assets
+    // Cross-user isolation: non-admin binary-tree allows self (200) and blocks out-of-subtree ?userId= target (403)
+    const selfTreeRes = await timedFetch('self-tree', `${API_URL}/members/binary-tree`, {
+      headers: stdMember.headers,
+    });
+    assert(selfTreeRes.status === 200, `Expected 200 on self binary tree, got ${selfTreeRes.status}`);
+    const selfTree = await selfTreeRes.json();
+    assert(selfTree.node?.userId === stdMember.user.id, 'Self binary tree returned wrong node');
+
     const spoofTreeRes = await timedFetch('spoof-tree', `${API_URL}/members/binary-tree?userId=${adminAuth.user.id}`, {
       headers: stdMember.headers,
     });
-    assert(spoofTreeRes.status === 200, `Expected 200 on self binary tree`);
-    const spoofTree = await spoofTreeRes.json();
-    assert(spoofTree.node?.userId === stdMember.user.id, 'Non-admin ?userId override leaked another member tree!');
+    assert(spoofTreeRes.status === 403, `Expected 403 Forbidden on out-of-subtree ?userId target, got ${spoofTreeRes.status}`);
 
     // Create voucher + booking under isolated user F3_ISO1, attempt redeem & cancel from stdMember
     const iso1 = await registerApiUser({
@@ -699,8 +704,8 @@ async function runSuite() {
 
     await enrollAndApproveBasic('B', '11');
     let wA = await getWalletINR(sponA.user.id);
-    assert(wA.held === 1000 && wA.avail === 0, `After B Basic expected Held=1000, Avail=0, got ${JSON.stringify(wA)}`);
-    recordPass('T22', 'Canonical Spon A after Direct B Basic', 'Held=₹1,000, Avail=₹0');
+    assert(wA.held === 0 && wA.avail === 1000, `After B Basic expected Held=0, Avail=1000, got ${JSON.stringify(wA)}`);
+    recordPass('T22', 'Canonical Spon A after Direct B Basic', 'Avail=₹1,000, Held=₹0');
 
     await enrollAndApproveBasic('C', '12');
     wA = await getWalletINR(sponA.user.id);
@@ -783,7 +788,7 @@ async function runSuite() {
     // -------------------------------------------------------------------------
     // BINARY MATCHING ENGINE, CONCURRENCY & DAILY CAP (T27 - T31)
     // -------------------------------------------------------------------------
-    // Test concurrent placement into SAME (parentId, LEFT) slot + standard 1:2 matching on Sponsor A
+    // Test concurrent placement into SAME (parentId, LEFT) slot + standard 1:1 matching
     const binRaceU1 = await createRoleUser('MEMBER', 'FULL', true);
     const binRaceU2 = await createRoleUser('MEMBER', 'FULL', true);
     const placeRace = await Promise.all([
@@ -803,7 +808,7 @@ async function runSuite() {
     assert(placeOk === 1 && placeFail === 1, `Binary LEFT slot race expected 1 ok + 1 fail, got ok=${placeOk}, fail=${placeFail}`);
     recordPass('T27', 'Binary Placement Slot Lock Prevents Concurrent Same-Leg Overwrite');
 
-    // Place 2 RIGHT children (via binR1 + child under binR1.RIGHT) + 1 more LEFT child under placed LEFT node => 2L : 2R, wait let's do 3L + 2R under isolated node!
+    // Place 2 LEFT children (l1 + l2 under l1) and 1 RIGHT child (r1) => 2L : 1R (1:1 yields 1 match + 1L carried)
     const binRoot = await createRoleUser('MEMBER', 'FULL', true);
     const l1 = await createRoleUser('MEMBER', 'FULL', true);
     const l2 = await createRoleUser('MEMBER', 'FULL', true);
@@ -826,14 +831,14 @@ async function runSuite() {
     const matchRes1 = await timedFetch('bin-match-1', `${API_URL}/members/binary/run-matching`, {
       method: 'POST',
       headers: adminHeaders,
-      body: JSON.stringify({ userId: binRoot.user.id, idempotencyKey: `BIN-21-${short}` }),
+      body: JSON.stringify({ userId: binRoot.user.id, idempotencyKey: `BIN-11-${short}` }),
     });
     const matchData1 = await matchRes1.json();
     assert(
-      matchData1.matchesSettled === 1 && matchData1.rewardINR === 3000 && matchData1.carryLeft === 0 && matchData1.carryRight === 0,
-      `2:1 Binary match mismatch: ${JSON.stringify(matchData1)}`
+      matchData1.matchesSettled === 1 && matchData1.rewardINR === 3000 && matchData1.carryLeft === 1 && matchData1.carryRight === 0,
+      `1:1 Binary match mismatch: ${JSON.stringify(matchData1)}`
     );
-    recordPass('T28', 'Binary 2:1 Match Settled (₹3,000, Zero Leftover Carry)');
+    recordPass('T28', 'Binary 1:1 Match Settled (₹3,000, Leftover 1L Carried Forward)');
 
     // Unqualified member cannot earn binary matching rewards
     const basicBin = await createRoleUser('MEMBER', 'BASIC', false);
@@ -847,10 +852,11 @@ async function runSuite() {
     recordPass('T29', 'Unqualified Member Blocked From Receiving Binary Matching Payout');
 
     // Daily Cap: 15 matches / ₹45,000 max per calendar day (Asia/Kolkata)
+    // 16L : 17R -> 16 matches under 1:1 -> 15 settled, 1 capped -> carry (1L : 2R) preserved!
     const capUser = await createRoleUser('MEMBER', 'FULL', true);
     await prisma.binaryPlacement.update({
       where: { userId: capUser.user.id },
-      data: { carryLeftPaise: 24n, carryRightPaise: 24n, leftCount: 24, rightCount: 24 },
+      data: { carryLeftPaise: 16n, carryRightPaise: 17n, leftCount: 16, rightCount: 17 },
     });
     const capRun1 = await (
       await timedFetch('bin-cap-1', `${API_URL}/members/binary/run-matching`, {
@@ -881,12 +887,12 @@ async function runSuite() {
     );
     recordPass('T30', 'Binary Daily Cap Enforced: 15 Matches / ₹45,000 Max, 1 Capped, Carry (1L:2R) Preserved');
 
-    // Idempotent replay of BIN-21 returns same event without second credit
+    // Idempotent replay of BIN-11 returns same event without second credit
     const replayMatch = await (
       await fetch(`${API_URL}/members/binary/run-matching`, {
         method: 'POST',
         headers: adminHeaders,
-        body: JSON.stringify({ userId: binRoot.user.id, idempotencyKey: `BIN-21-${short}` }),
+        body: JSON.stringify({ userId: binRoot.user.id, idempotencyKey: `BIN-11-${short}` }),
       })
     ).json();
     assert(replayMatch.matchesSettled === 1 && replayMatch.event?.id === matchData1.event?.id, 'Binary matching idempotency replay failed');

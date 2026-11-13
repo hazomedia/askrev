@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="100%" height="100%">
+  <defs>
+    <!-- Studio Ambient Lighting Floor -->
+    <radialGradient id="jeepStudioFloor" cx="50%" cy="80%" r="65%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="60%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </radialGradient>
+
+    <!-- Heavy Dual-Axle Tire Shadows -->
+    <radialGradient id="jeepTireShadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.45" />
+      <stop offset="60%" stop-color="#334155" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Deep Graphite Metallic Body Paint -->
+    <linearGradient id="graphiteMetallic" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="25%" stop-color="#1E293B" />
+      <stop offset="70%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <!-- Matte Cladding & Rock Sliders -->
+    <linearGradient id="matteCharcoal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <!-- Cyber Glass Gradient -->
+    <linearGradient id="cyberGlass" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.85" />
+      <stop offset="50%" stop-color="#1E293B" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#020617" stop-opacity="0.98" />
+    </linearGradient>
+
+    <!-- Electric Lime Brand Accent -->
+    <linearGradient id="limeGlow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C9FF36" />
+      <stop offset="100%" stop-color="#A3E635" />
+    </linearGradient>
+
+    <!-- Beadlock Wheel Gradient -->
+    <radialGradient id="wheelMetal" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#64748B" />
+      <stop offset="70%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </radialGradient>
+
+    <filter id="jeepShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Ground Shadows -->
+  <ellipse cx="230" cy="385" rx="100" ry="18" fill="url(#jeepTireShadow)" />
+  <ellipse cx="580" cy="385" rx="100" ry="18" fill="url(#jeepTireShadow)" />
+  <ellipse cx="405" cy="392" rx="270" ry="16" fill="#0F172A" opacity="0.14" />
+
+  <!-- Underbody Structural Battery Skid Plate -->
+  <rect x="290" y="340" width="230" height="18" rx="4" fill="#0F172A" stroke="#334155" stroke-width="2" />
+  <line x1="310" y1="349" x2="500" y2="349" stroke="#1E293B" stroke-width="4" stroke-dasharray="8,6" />
+
+  <!-- ==================== REAR WHEEL ASSEMBLY ==================== -->
+  <g id="rear-wheel">
+    <!-- Big 33" All-Terrain Outer Tire with Knobby Tread -->
+    <circle cx="230" cy="315" r="82" fill="#0F172A" stroke="#1E293B" stroke-width="14" />
+    <circle cx="230" cy="315" r="74" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="6,4" />
+    <!-- Beadlock Rim Ring (Electric Lime Accent Screws) -->
+    <circle cx="230" cy="315" r="62" fill="url(#wheelMetal)" stroke="#334155" stroke-width="4" />
+    <circle cx="230" cy="315" r="54" fill="none" stroke="#C9FF36" stroke-width="2" stroke-dasharray="3,10" />
+    <!-- Heavy 6-Spoke Cyber Alloy Center -->
+    <circle cx="230" cy="315" r="32" fill="#020617" stroke="#475569" stroke-width="2" />
+    <circle cx="230" cy="315" r="14" fill="#1E293B" />
+    <circle cx="230" cy="315" r="6" fill="#C9FF36" />
+  </g>
+
+  <!-- ==================== FRONT WHEEL ASSEMBLY ==================== -->
+  <g id="front-wheel">
+    <circle cx="580" cy="315" r="82" fill="#0F172A" stroke="#1E293B" stroke-width="14" />
+    <circle cx="580" cy="315" r="74" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="6,4" />
+    <circle cx="580" cy="315" r="62" fill="url(#wheelMetal)" stroke="#334155" stroke-width="4" />
+    <circle cx="580" cy="315" r="54" fill="none" stroke="#C9FF36" stroke-width="2" stroke-dasharray="3,10" />
+    <circle cx="580" cy="315" r="32" fill="#020617" stroke="#475569" stroke-width="2" />
+    <circle cx="580" cy="315" r="14" fill="#1E293B" />
+    <circle cx="580" cy="315" r="6" fill="#C9FF36" />
+  </g>
+
+  <!-- ==================== VEHICLE MAIN BODYWORK ==================== -->
+  <g id="body" filter="url(#jeepShadow)">
+    <!-- Angular Wheel Arches / Flared Fenders -->
+    <!-- Rear Fender Arch -->
+    <path d="M 130,320 L 150,250 L 230,230 L 310,250 L 325,320 Z" fill="url(#matteCharcoal)" stroke="#334155" stroke-width="2" />
+    <!-- Front Fender Arch -->
+    <path d="M 485,320 L 500,250 L 580,230 L 660,250 L 675,320 Z" fill="url(#matteCharcoal)" stroke="#334155" stroke-width="2" />
+
+    <!-- Rock Slider Side Step (Between Axles) -->
+    <rect x="315" y="325" width="180" height="12" rx="3" fill="#0F172A" stroke="#334155" stroke-width="1.5" />
+    <line x1="325" y1="331" x2="485" y2="331" stroke="#C9FF36" stroke-width="2" stroke-dasharray="12,12" />
+
+    <!-- Main Cabin & Rear Cargo Silhouette -->
+    <path d="
+      M 130,290
+      L 130,190
+      L 180,185
+      L 240,110
+      L 510,110
+      L 580,185
+      L 690,195
+      L 700,240
+      L 700,300
+      L 670,305
+      L 655,245
+      L 580,225
+      L 505,245
+      L 485,305
+      L 325,305
+      L 310,245
+      L 230,225
+      L 155,245
+      L 135,300
+      Z
+    " fill="url(#graphiteMetallic)" stroke="#334155" stroke-width="2" />
+
+    <!-- Front Cyber Hood Character Lines -->
+    <path d="M 520,185 L 685,195 L 675,230 L 515,220 Z" fill="#1E293B" opacity="0.6" />
+    <line x1="530" y1="187" x2="670" y2="197" stroke="#475569" stroke-width="1.5" />
+
+    <!-- Full-Width Horizontal Cyber LED Matrix Lightbar (Front) -->
+    <path d="M 685,210 L 702,212 L 700,225 L 683,222 Z" fill="#38BDF8" filter="drop-shadow(0 0 6px #38BDF8)" />
+    <!-- Recovery Hook (Electric Lime) -->
+    <rect x="688" y="275" width="12" height="16" rx="3" fill="none" stroke="#C9FF36" stroke-width="3" />
+    <!-- Rear Recovery Hook -->
+    <rect x="120" y="275" width="12" height="16" rx="3" fill="none" stroke="#C9FF36" stroke-width="3" />
+
+    <!-- Tinted Glass Cabin Windows (Aero Flush) -->
+    <!-- Windshield -->
+    <path d="M 505,118 L 565,180 L 515,180 L 465,118 Z" fill="url(#cyberGlass)" stroke="#334155" stroke-width="1.5" />
+    <!-- Side Front Window -->
+    <path d="M 455,118 L 505,180 L 375,180 L 375,118 Z" fill="url(#cyberGlass)" stroke="#334155" stroke-width="1.5" />
+    <!-- Side Rear Window -->
+    <path d="M 365,118 L 365,180 L 250,180 L 250,118 Z" fill="url(#cyberGlass)" stroke="#334155" stroke-width="1.5" />
+    <!-- B-Pillar & C-Pillar -->
+    <rect x="367" y="115" width="6" height="68" fill="#0F172A" />
+    <rect x="247" y="115" width="6" height="68" fill="#0F172A" />
+
+    <!-- Overland Modular Roof Rack with Auxiliary Pods -->
+    <line x1="220" y1="102" x2="520" y2="102" stroke="#0F172A" stroke-width="6" stroke-linecap="round" />
+    <line x1="250" y1="102" x2="250" y2="110" stroke="#334155" stroke-width="4" />
+    <line x1="380" y1="102" x2="380" y2="110" stroke="#334155" stroke-width="4" />
+    <line x1="500" y1="102" x2="500" y2="110" stroke="#334155" stroke-width="4" />
+    <!-- Quad Roof LED Search Pods -->
+    <rect x="440" y="93" width="14" height="7" rx="2" fill="#F8FAFC" stroke="#0F172A" stroke-width="1" />
+    <rect x="460" y="93" width="14" height="7" rx="2" fill="#F8FAFC" stroke="#0F172A" stroke-width="1" />
+    <rect x="480" y="93" width="14" height="7" rx="2" fill="#F8FAFC" stroke="#0F172A" stroke-width="1" />
+    <rect x="500" y="93" width="14" height="7" rx="2" fill="#F8FAFC" stroke="#0F172A" stroke-width="1" />
+  </g>
+
+  <!-- Door Cutlines & Flush Aero Handles -->
+  <line x1="370" y1="180" x2="370" y2="305" stroke="#0F172A" stroke-width="2" />
+  <rect x="430" y="200" width="22" height="6" rx="2" fill="#0F172A" stroke="#475569" stroke-width="1" />
+  <rect x="320" y="200" width="22" height="6" rx="2" fill="#0F172A" stroke="#475569" stroke-width="1" />
+
+  <!-- ASKR EV Official Brand Badge on Front Quarter Panel -->
+  <g transform="translate(605, 206)">
+    <rect x="0" y="0" width="16" height="16" rx="3" fill="#165DAD" />
+    <text x="3.5" y="12" fill="#FFFFFF" font-size="10" font-weight="900" font-family="Inter, sans-serif">A</text>
+    <text x="20" y="12" fill="#FFFFFF" font-size="10" font-weight="800" letter-spacing="1" font-family="Inter, sans-serif">ASKR <tspan fill="#C9FF36">EV</tspan></text>
+  </g>
+</svg>

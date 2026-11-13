@@ -18,6 +18,17 @@ describe('CommissionSimulatorService', () => {
       expect(result.totalActivatedDirects).toBe(4);
       expect(result.totalFullQualifiedDirects).toBe(2);
 
+      // Step-by-step Basic direct sequence:
+      // 1st Basic (B): ₹1,000 released, 2nd Basic (C): ₹1,000 held, 3rd+ (D, E): ₹1,000 released
+      expect(result.events[0].resultingWalletState.availableEarningsINR).toBe(1000);
+      expect(result.events[0].resultingWalletState.heldCommissionsINR).toBe(0);
+      expect(result.events[1].resultingWalletState.availableEarningsINR).toBe(1000);
+      expect(result.events[1].resultingWalletState.heldCommissionsINR).toBe(1000);
+      expect(result.events[2].resultingWalletState.availableEarningsINR).toBe(2000);
+      expect(result.events[2].resultingWalletState.heldCommissionsINR).toBe(1000);
+      expect(result.events[3].resultingWalletState.availableEarningsINR).toBe(3000);
+      expect(result.events[3].resultingWalletState.heldCommissionsINR).toBe(1000);
+
       // Final wallet state verification:
       // Available earnings: ₹12,000 (₹3,000 initial released + ₹9,000 from D's upgrade + net ₹0 from E's upgrade)
       expect(result.finalWalletState.availableEarningsINR).toBe(12000);
@@ -90,8 +101,8 @@ describe('CommissionSimulatorService', () => {
       expect(match.rejectionReason).toContain('Beneficiary member is not Full Qualified');
     });
 
-    it('should calculate 1:2 and 2:1 matching, consume units and enforce daily cap of 15 matches (₹45,000)', () => {
-      // 20 Left units, 40 Right units (Ratio 1:2 -> 20 potential matches)
+    it('should calculate 1:1 matching, consume 1 unit per side, enforce daily cap of 15 matches (₹45,000), and preserve capped carry-forward', () => {
+      // 20 Left units, 40 Right units (Ratio 1:1 -> 20 potential matches)
       const match = service.simulateBinaryMatching({
         leftUnits: 20,
         rightUnits: 40,
@@ -105,8 +116,32 @@ describe('CommissionSimulatorService', () => {
       // Max matches per day is 15
       expect(match.matchesConsumed).toBe(15);
       expect(match.cappedOutMatches).toBe(5);
+      // Only payable units are consumed; capped-out & unmatched units remain carried forward
+      expect(match.leftUnitsUsed).toBe(15);
+      expect(match.rightUnitsUsed).toBe(15);
+      expect(match.newCarryLeft).toBe(5);
+      expect(match.newCarryRight).toBe(25);
       // 15 matches * ₹3,000 = ₹45,000
       expect(match.proposedRewardINR).toBe(45000);
+    });
+
+    it('should match 1:1 strictly without 2:1 or 1:2 consumption and carry over leftover weak/strong side units', () => {
+      const match = service.simulateBinaryMatching({
+        leftUnits: 2,
+        rightUnits: 1,
+        previousCarryLeft: 0,
+        previousCarryRight: 0,
+        isBeneficiaryQualified: true,
+        todayMatchesAlreadySettled: 0,
+      });
+
+      expect(match.isQualified).toBe(true);
+      expect(match.matchesConsumed).toBe(1);
+      expect(match.leftUnitsUsed).toBe(1);
+      expect(match.rightUnitsUsed).toBe(1);
+      expect(match.newCarryLeft).toBe(1);
+      expect(match.newCarryRight).toBe(0);
+      expect(match.proposedRewardINR).toBe(3000);
     });
   });
 });

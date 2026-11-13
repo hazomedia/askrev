@@ -183,17 +183,17 @@ async function runTest() {
       return data;
     };
 
-    // Approve B: Should HOLD ₹1,000 (target hold reserve = ₹1,000 prior to 2nd full direct)
+    // Approve B (1st Basic Direct): Should RELEASE ₹1,000 to Available
     const approveB = await approveReq(reqB.request.id);
     console.log('  Approve B result:', approveB.sponsorSettlement.action, `₹${approveB.sponsorSettlement.amountINR}`);
 
     let walletA = await prisma.walletAccount.findUnique({ where: { userId: sponsorA.id } });
-    if (walletA.heldCommissionsPaise !== 100000n || walletA.availableEarningsPaise !== 0n) {
-      throw new Error(`Sponsor A wallet mismatch after B. Expected Held 1000, Avail 0. Got: Held ${walletA.heldCommissionsPaise}, Avail ${walletA.availableEarningsPaise}`);
+    if (walletA.heldCommissionsPaise !== 0n || walletA.availableEarningsPaise !== 100000n) {
+      throw new Error(`Sponsor A wallet mismatch after B. Expected Held 0, Avail 1000. Got: Held ${walletA.heldCommissionsPaise}, Avail ${walletA.availableEarningsPaise}`);
     }
-    console.log('✓ Member B approved: ₹1,000 held in Sponsor A reserve (Available: ₹0, Held: ₹1,000)');
+    console.log('✓ Member B approved: ₹1,000 released to Sponsor A wallet (Available: ₹1,000, Held: ₹0)');
 
-    // Approve C: Hold reserve target already satisfied -> Release ₹1,000 to Available
+    // Approve C (2nd Basic Direct): Should HOLD ₹1,000 in Reserve
     const approveC = await approveReq(reqC.request.id);
     console.log('  Approve C result:', approveC.sponsorSettlement.action, `₹${approveC.sponsorSettlement.amountINR}`);
 
@@ -201,7 +201,7 @@ async function runTest() {
     if (walletA.heldCommissionsPaise !== 100000n || walletA.availableEarningsPaise !== 100000n) {
       throw new Error(`Sponsor A wallet mismatch after C. Expected Held 1000, Avail 1000. Got: Held ${walletA.heldCommissionsPaise}, Avail ${walletA.availableEarningsPaise}`);
     }
-    console.log('✓ Member C approved: ₹1,000 released to Sponsor A wallet (Available: ₹1,000, Held: ₹1,000)');
+    console.log('✓ Member C approved: ₹1,000 held in Sponsor A reserve (Available: ₹1,000, Held: ₹1,000)');
 
     // Approve D and E
     await approveReq(reqD.request.id);

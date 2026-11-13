@@ -3,35 +3,90 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ChevronLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import {
+  ChevronLeft,
+  ArrowRight,
+  ShieldCheck,
+  BatteryCharging,
+  Gauge,
+  Zap,
+  Sparkles,
+  Layers,
+  Cpu,
+  Clock,
+  Compass,
+  CheckCircle2,
+  HelpCircle,
+} from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
 import BookingModal from '../../../components/BookingModal';
+import BikeCard from '../../../components/BikeCard';
 import { fetchApi, getStoredUser } from '../../../lib/api';
+import {
+  ALL_CATALOG_VEHICLES,
+  getVehicleByCode,
+  Vehicle,
+} from '../../../lib/catalog';
 
 export default function BikeDetailPage() {
   const params = useParams();
-  const [bike, setBike] = useState<any | null>(null);
+  const idOrCode = (params.id as string) || '';
+
+  const [vehicle, setVehicle] = useState<Vehicle | any | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
+  const [selectedColorIndex, setSelectedColorIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
-    if (params.id) {
-      loadBike(params.id as string);
+    if (idOrCode) {
+      loadVehicleData(idOrCode);
       loadProfile();
     }
-  }, [params.id]);
+  }, [idOrCode]);
 
-  const loadBike = async (idOrCode: string) => {
+  const loadVehicleData = async (target: string) => {
     setLoading(true);
     setError(null);
+
+    // First check catalog static definition
+    const staticMatch = getVehicleByCode(target);
+
     try {
-      const data = await fetchApi<any>(`/ev-bikes/${idOrCode}`);
-      setBike(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load EV bike specifications');
+      // Attempt API fetch for live DB bikes
+      const apiData = await fetchApi<any>(`/ev-bikes/${target}`);
+      if (apiData && apiData.id) {
+        setVehicle({
+          ...(staticMatch || {}),
+          ...apiData,
+          category: staticMatch?.category || 'bikes',
+          colors: staticMatch?.colors || [
+            { name: 'Sapphire Blue', hex: '#165DAD', description: 'Primary metallic finish' },
+            { name: 'Carbon Black', hex: '#0F172A', description: 'Matte stealth finish' },
+          ],
+          specs: staticMatch?.specs || [
+            { label: 'Certified Range', value: `${apiData.rangeKm} km` },
+            { label: 'Top Speed', value: `${apiData.topSpeedKmh} km/h` },
+            { label: 'Battery Capacity', value: `${apiData.batteryCapacityKwh} kWh` },
+            { label: 'Fast Charge', value: `${apiData.chargingTimeHours} hrs` },
+          ],
+          highlights: staticMatch?.highlights || [
+            'Permanent Magnet Synchronous Motor (PMSM)',
+            'Advanced Battery Management System with IP67 protection',
+            'Full digital instrumentation and cloud telemetry',
+          ],
+        });
+        return;
+      }
+    } catch (err) {
+      // If API fails or vehicle is a concept series model, use static catalog entry
+      if (staticMatch) {
+        setVehicle(staticMatch);
+        return;
+      }
+      setError('Requested vehicle specifications could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -44,22 +99,22 @@ export default function BikeDetailPage() {
       const profile = await fetchApi<any>('/auth/me');
       setUserProfile(profile);
     } catch (err) {
-      console.error(err);
+      console.warn('Profile session lookup', err);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-[#080A0D] text-white">
         <Navbar />
-        <main className="flex-1 max-w-7xl mx-auto px-4 py-16 w-full animate-pulse">
-          <div className="h-6 bg-slate-100 rounded w-32 mb-6" />
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-20 w-full animate-pulse">
+          <div className="h-6 bg-white/5 rounded w-32 mb-8" />
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <div className="lg:col-span-7 h-96 bg-slate-100 rounded-xl" />
+            <div className="lg:col-span-7 h-96 bg-white/5 rounded-2xl" />
             <div className="lg:col-span-5 space-y-4">
-              <div className="h-8 bg-slate-100 rounded w-2/3" />
-              <div className="h-4 bg-slate-100 rounded w-1/2" />
-              <div className="h-24 bg-slate-100 rounded" />
+              <div className="h-10 bg-white/5 rounded w-3/4" />
+              <div className="h-5 bg-white/5 rounded w-1/2" />
+              <div className="h-32 bg-white/5 rounded-xl" />
             </div>
           </div>
         </main>
@@ -68,17 +123,22 @@ export default function BikeDetailPage() {
     );
   }
 
-  if (error || !bike) {
+  if (error || !vehicle) {
     return (
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-[#080A0D] text-white">
         <Navbar />
-        <main className="flex-1 max-w-2xl mx-auto px-4 py-20 text-center">
-          <h2 className="text-2xl font-bold text-[#253247]">Model Not Found</h2>
-          <p className="text-xs text-slate-500 mt-2">{error || 'Requested motorcycle does not exist.'}</p>
-          <div className="mt-6">
+        <main className="flex-1 max-w-xl mx-auto px-4 py-24 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 mx-auto flex items-center justify-center">
+            <HelpCircle className="w-6 h-6" />
+          </div>
+          <h2 className="text-2xl font-bold text-white">Vehicle Not Found</h2>
+          <p className="text-xs text-slate-400">
+            {error || 'The requested model could not be found in our fleet catalog.'}
+          </p>
+          <div className="pt-4">
             <Link
               href="/bikes"
-              className="px-5 py-2.5 rounded-lg bg-[#165DAD] text-white text-xs font-medium hover:bg-[#124B8D]"
+              className="px-6 py-2.5 rounded-full bg-white text-[#101318] text-xs font-bold uppercase tracking-wider hover:bg-[#C9FF36] transition-colors"
             >
               Back to Fleet Catalog
             </Link>
@@ -89,162 +149,375 @@ export default function BikeDetailPage() {
     );
   }
 
-  const imgSource = bike.imageUrl
-    ? bike.imageUrl.replace('.webp', '.svg')
+  const isConcept = vehicle.isConcept || vehicle.category === 'cycles' || vehicle.category === 'jeeps';
+  const imgSource = vehicle.imageUrl
+    ? vehicle.imageUrl.replace('.webp', '.svg')
     : '/images/bikes/thunder-pro.svg';
 
+  const currentColor =
+    vehicle.colors && vehicle.colors[selectedColorIndex]
+      ? vehicle.colors[selectedColorIndex]
+      : { name: 'Sapphire Blue', hex: '#165DAD', description: 'Primary metallic finish' };
+
+  // Related models
+  const relatedVehicles = ALL_CATALOG_VEHICLES.filter(
+    (v) => v.modelCode !== vehicle.modelCode
+  ).slice(0, 3);
+
   return (
-    <div className="flex-1 flex flex-col bg-white">
+    <div className="flex-1 flex flex-col bg-[#080A0D] text-white selection:bg-[#C9FF36] selection:text-[#080A0D]">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-16 w-full">
-        {/* Back navigation link */}
-        <Link
-          href="/bikes"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-[#165DAD] transition-colors mb-8"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          <span>Back to EV Bikes</span>
-        </Link>
+      <main className="flex-1 w-full">
+        {/* =========================================================================
+            CINEMATIC VEHICLE HERO HEADER
+            Full-width automotive showcase
+            ========================================================================= */}
+        <section className="relative pt-8 pb-16 px-4 sm:px-6 lg:px-8 border-b border-white/10 bg-radial-gradient overflow-hidden">
+          {/* Ambient Lighting */}
+          <div
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[400px] rounded-full pointer-events-none opacity-20 blur-3xl"
+            style={{
+              background: `radial-gradient(circle, ${currentColor.hex} 0%, transparent 70%)`,
+            }}
+          />
 
-        {/* 2-Column Overview */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-          {/* Left: Product Image */}
-          <div className="lg:col-span-7 bg-[#F7F9FC] rounded-xl border border-slate-200 p-8 flex flex-col items-center justify-center relative">
-            <span className="absolute top-4 right-4 text-xs font-semibold tracking-wider uppercase text-slate-500 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs">
-              Concept Prototype
-            </span>
-            <img
-              src={imgSource}
-              alt={bike.name}
-              className="w-full max-h-96 object-contain py-4"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/images/bikes/thunder-pro.svg';
-              }}
-            />
-          </div>
-
-          {/* Right: Pricing, Summary & Single Primary Action */}
-          <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-sm">
-            <div>
-              <span className="text-xs font-semibold text-[#165DAD] uppercase tracking-wider">
-                {bike.modelCode}
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-bold text-[#253247] mt-1.5">
-                {bike.name}
-              </h1>
-              <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-                {bike.tagline}
-              </p>
+          <div className="max-w-7xl mx-auto">
+            {/* Breadcrumb Navigation */}
+            <div className="flex items-center gap-2 text-xs text-slate-400 mb-8">
+              <Link href="/bikes" className="hover:text-white transition-colors flex items-center gap-1">
+                <ChevronLeft className="w-4 h-4" />
+                <span>Showroom</span>
+              </Link>
+              <span>/</span>
+              <span className="capitalize">{vehicle.categoryLabel || vehicle.category}</span>
+              <span>/</span>
+              <span className="text-white font-medium">{vehicle.name}</span>
             </div>
 
-            {/* Price Box */}
-            <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-2.5 text-sm">
-              <div className="flex justify-between items-baseline">
-                <span className="text-slate-500">Indicative Price:</span>
-                <span className="text-xl font-bold text-[#253247]">
-                  ₹{bike.exShowroomPriceINR.toLocaleString('en-IN')}
-                </span>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              {/* Left Column: Big Vehicle Imagery */}
+              <div className="lg:col-span-7 flex flex-col items-center">
+                <div className="relative w-full h-72 sm:h-96 md:h-[420px] flex items-center justify-center p-6 rounded-3xl bg-[#101318] border border-white/10 shadow-2xl">
+                  {/* Status Tag */}
+                  <div className="absolute top-5 left-5 z-20">
+                    {isConcept ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#C9FF36] bg-[#C9FF36]/10 border border-[#C9FF36]/30">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Concept Prototype</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Production Model</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Ground Contact Shadow */}
+                  <div className="absolute bottom-6 w-3/4 h-8 bg-black/90 blur-xl rounded-full" />
+
+                  <img
+                    src={imgSource}
+                    alt={vehicle.name}
+                    className="relative z-10 w-full h-full object-contain filter drop-shadow-[0_20px_35px_rgba(0,0,0,0.85)] transition-all duration-500"
+                  />
+                </div>
+
+                {/* Color Variants Switcher */}
+                {vehicle.colors && vehicle.colors.length > 0 && (
+                  <div className="mt-6 p-3.5 rounded-2xl bg-[#101318] border border-white/10 flex items-center gap-4">
+                    <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">
+                      Finish:
+                    </span>
+                    <div className="flex items-center gap-2.5">
+                      {vehicle.colors.map((c: any, idx: number) => (
+                        <button
+                          key={c.name}
+                          onClick={() => setSelectedColorIndex(idx)}
+                          className={`w-7 h-7 rounded-full transition-transform border ${
+                            selectedColorIndex === idx
+                              ? 'scale-125 border-white ring-2 ring-[#C9FF36]/60 shadow-lg'
+                              : 'border-white/30 hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: c.hex }}
+                          title={c.name}
+                          aria-label={`Select ${c.name}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-white font-semibold">
+                      {currentColor.name}
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
-                <span className="text-slate-500">Booking Token Deposit:</span>
-                <span className="text-base font-bold text-[#165DAD]">
-                  ₹{bike.bookingAmountINR.toLocaleString('en-IN')}
-                </span>
+
+              {/* Right Column: Model Specs & Reservation Action */}
+              <div className="lg:col-span-5 space-y-6">
+                <div>
+                  <div className="text-xs font-mono font-bold text-[#165DAD] uppercase tracking-wider mb-1">
+                    {vehicle.modelCode}
+                  </div>
+                  <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight">
+                    {vehicle.name}
+                  </h1>
+                  <p className="mt-2 text-sm sm:text-base text-[#A7ADB5] font-light leading-relaxed">
+                    {vehicle.tagline}
+                  </p>
+                </div>
+
+                {/* Quick Performance Strip */}
+                <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-[#101318] border border-white/10">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                      {vehicle.category === 'cycles' ? 'Assisted Range' : 'Certified Range'}
+                    </span>
+                    <span className="text-2xl font-black text-white">
+                      {vehicle.rangeKm} <span className="text-xs font-normal text-slate-400">km</span>
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                      Top Speed
+                    </span>
+                    <span className="text-2xl font-black text-white">
+                      {vehicle.topSpeedKmh} <span className="text-xs font-normal text-slate-400">km/h</span>
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                      Battery Module
+                    </span>
+                    <span className="text-xl font-extrabold text-white">
+                      {vehicle.batteryCapacityKwh} <span className="text-xs font-normal text-slate-400">kWh</span>
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                      Fast Charge
+                    </span>
+                    <span className="text-xl font-extrabold text-white">
+                      {vehicle.chargingTimeHours} <span className="text-xs font-normal text-slate-400">hrs</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pricing & Reservation Box */}
+                <div className="p-6 rounded-2xl bg-gradient-to-b from-[#101318] to-[#080A0D] border border-white/10 space-y-4">
+                  <div className="flex items-baseline justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                        {isConcept ? 'Development Status' : 'Indicative Showroom Price'}
+                      </span>
+                      <div className="text-2xl sm:text-3xl font-black text-white">
+                        {vehicle.exShowroomPriceINR
+                          ? `₹${vehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
+                          : 'Concept Showcase'}
+                      </div>
+                    </div>
+
+                    {!isConcept && vehicle.bookingAmountINR && (
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                          Token Deposit
+                        </span>
+                        <div className="text-lg font-bold text-[#C9FF36]">
+                          ₹{vehicle.bookingAmountINR.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Shopping Voucher Redemption Notice */}
+                  {!isConcept && vehicle.voucherRedeemLimitINR && (
+                    <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-300 flex items-start gap-2">
+                      <Sparkles className="w-4 h-4 text-[#C9FF36] shrink-0 mt-0.5" />
+                      <span>
+                        Full Members can redeem up to{' '}
+                        <strong className="text-white">
+                          ₹{vehicle.voucherRedeemLimitINR.toLocaleString('en-IN')}
+                        </strong>{' '}
+                        from their Shopping Voucher balance against this reservation!
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Booking CTA Button */}
+                  {!isConcept && vehicle.isAvailable ? (
+                    <button
+                      onClick={() => setModalOpen(true)}
+                      className="w-full py-4 rounded-full bg-white text-[#101318] hover:bg-[#C9FF36] text-xs sm:text-sm font-black uppercase tracking-widest transition-all duration-300 shadow-xl hover:shadow-lime/20 flex items-center justify-center gap-2"
+                    >
+                      <span>Reserve {vehicle.name}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-white/5 text-center text-xs text-slate-400">
+                      This model is part of our upcoming concept series. Production reservations will open in Phase 4.
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400 pt-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Instant Simulated Confirmation • COMPLIANCE_MODE=SIMULATION_ONLY</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between items-baseline text-slate-500">
-                <span>Voucher Redemption Limit:</span>
-                <span className="text-green-700 font-semibold">
-                  Up to ₹{bike.voucherRedeemLimitINR.toLocaleString('en-IN')}
-                </span>
+            </div>
+          </div>
+        </section>
+
+        {/* =========================================================================
+            DETAILED ARCHITECTURE & SPECIFICATIONS
+            ========================================================================= */}
+        <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-16">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+            {/* Specifications Grid */}
+            <div className="lg:col-span-7 space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-[#C9FF36]" />
+                <span>Technical Specifications</span>
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {vehicle.specs &&
+                  vehicle.specs.map((s: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-xl bg-[#101318] border border-white/10 space-y-1"
+                    >
+                      <span className="text-xs text-slate-400 uppercase tracking-wider block font-medium">
+                        {s.label}
+                      </span>
+                      <div className="text-lg font-bold text-white">{s.value}</div>
+                      {s.sub && (
+                        <span className="text-[11px] text-slate-400 block">{s.sub}</span>
+                      )}
+                    </div>
+                  ))}
+              </div>
+
+              {/* Powertrain Detail */}
+              {vehicle.powertrain && (
+                <div className="p-5 rounded-xl bg-[#101318] border border-white/10 space-y-1.5">
+                  <span className="text-xs text-slate-400 uppercase tracking-wider font-medium block">
+                    Powertrain Architecture
+                  </span>
+                  <div className="text-sm font-semibold text-white">
+                    {vehicle.powertrain}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Design Highlights */}
+            <div className="lg:col-span-5 space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
+                <Layers className="w-5 h-5 text-[#165DAD]" />
+                <span>Design Highlights</span>
+              </h2>
+
+              <div className="space-y-3">
+                {vehicle.highlights &&
+                  vehicle.highlights.map((h: string, idx: number) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-xl bg-[#101318] border border-white/10 flex items-start gap-3"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-[#C9FF36] shrink-0 mt-0.5" />
+                      <span className="text-xs text-slate-300 leading-relaxed">{h}</span>
+                    </div>
+                  ))}
               </div>
             </div>
-
-            {/* One Clear Book Now Action */}
-            <button
-              onClick={() => setModalOpen(true)}
-              className="w-full min-h-[48px] py-3.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-base font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
-            >
-              <span>Book Now</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <div className="text-xs text-slate-500 text-center flex items-center justify-center gap-1.5 leading-relaxed">
-              <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>Full compliance with verified booking receipts</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Clean Engineering Specifications Table */}
-        <div className="mt-16 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-          <div className="px-6 py-4 bg-[#F7F9FC] border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-bold text-[#253247]">Indicative Concept Specifications</h2>
-              <p className="text-xs text-slate-500">Preliminary technical design parameters for {bike.name}</p>
-            </div>
-            <span className="text-xs text-slate-500 bg-white px-2.5 py-1 rounded border border-slate-200 self-start sm:self-auto">
-              Pre-Production
-            </span>
           </div>
 
-          <div className="divide-y divide-slate-100 text-sm">
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Battery Pack Architecture</span>
-              <span className="text-[#253247] font-semibold">{bike.batteryCapacityKwh} kWh Lithium Battery</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Estimated Riding Range</span>
-              <span className="text-[#253247] font-semibold">{bike.rangeKm} km per charge</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Top Velocity</span>
-              <span className="text-[#253247] font-semibold">{bike.topSpeedKmh} km/h</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Estimated Charging Duration</span>
-              <span className="text-[#253247] font-semibold">{bike.chargingTimeHours} hours</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Powertrain Motor</span>
-              <span className="text-[#253247] font-semibold">{bike.specs?.motorType || 'PMSM Electric Drive'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Peak Power Output</span>
-              <span className="text-[#253247] font-semibold">{bike.specs?.peakPowerKw || 8.5} kW</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Peak Torque</span>
-              <span className="text-[#253247] font-semibold">{bike.specs?.peakTorqueNm || 52} Nm</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Braking Architecture</span>
-              <span className="text-[#253247] font-semibold">{bike.specs?.brakes || 'Dual Disc with CBS & Regenerative'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Instrument Display</span>
-              <span className="text-[#253247] font-semibold">{bike.specs?.display || 'Digital TFT Telemetry Display'}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 p-4">
-              <span className="text-slate-500 font-medium">Status</span>
-              <span className="text-[#165DAD] font-semibold">Pre-Production Concept Design</span>
+          {/* Frequently Asked Questions */}
+          <div className="pt-12 border-t border-white/10 space-y-8">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">
+              Frequently Asked Questions
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-white">
+                  How does the shopping voucher discount work on reservations?
+                </h3>
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  Full Members receive a ₹30,000 shopping voucher upon activation. When booking eligible models, you can apply your voucher balance up to the model's redemption limit to offset token deposits.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-white">
+                  Are these vehicle booking payments live or simulated?
+                </h3>
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  The ASKR EV platform currently runs under COMPLIANCE_MODE=SIMULATION_ONLY. All bookings are developmental reservations created in your dashboard without live bank deductions.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-white">
+                  Can I cancel my vehicle booking reservation?
+                </h3>
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  Yes, reservations can be managed and cancelled directly from your Member Dashboard under the EV Bookings tab. Applied shopping vouchers are automatically restored.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-[#101318] border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-white">
+                  What is the difference between Production and Concept models?
+                </h3>
+                <p className="text-xs text-[#A7ADB5] leading-relaxed">
+                  Production models (Electric Bikes) have verified technical data and active booking workflows. Concept models (Electric Cycles and Electric Jeeps) represent upcoming prototypes.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Booking Dialog Modal */}
-        <BookingModal
-          bike={bike}
-          isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
-          user={userProfile}
-          onSuccess={() => {
-            loadProfile();
-          }}
-        />
+          {/* Related Models Showcase */}
+          {relatedVehicles.length > 0 && (
+            <div className="pt-12 border-t border-white/10 space-y-8">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-black uppercase tracking-tight text-white">
+                  Explore More Vehicles
+                </h2>
+                <Link
+                  href="/bikes"
+                  className="text-xs font-bold uppercase tracking-wider text-[#C9FF36] hover:underline"
+                >
+                  View Full Fleet
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {relatedVehicles.map((rel) => (
+                  <BikeCard key={rel.id} vehicle={rel} />
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       </main>
 
       <Footer />
+
+      {/* Simulated Booking Modal */}
+      {modalOpen && (
+        <BookingModal
+          bike={vehicle}
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          user={userProfile}
+          onSuccess={() => setModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

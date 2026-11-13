@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -33,12 +33,26 @@ export class MembersController {
       user.role === UserRole.FINANCE_MANAGER;
 
     let targetUserId = user.id;
-    if (isAdmin) {
-      if (queryUserId) {
-        targetUserId = queryUserId;
-      } else if (queryMemberId) {
-        const found = await this.membersService.findUserByMemberId(queryMemberId);
-        if (found) targetUserId = found.id;
+    if (queryUserId) {
+      const found = await this.membersService.findUserById(queryUserId);
+      if (!found) {
+        throw new NotFoundException('Requested member was not found.');
+      }
+      targetUserId = found.id;
+    } else if (queryMemberId) {
+      const found = await this.membersService.findUserByMemberId(queryMemberId);
+      if (!found) {
+        throw new NotFoundException(`Member ${queryMemberId} was not found.`);
+      }
+      targetUserId = found.id;
+    }
+
+    if (!isAdmin && targetUserId !== user.id) {
+      const inSubtree = await this.membersService.isUserInBinarySubtree(user.id, targetUserId);
+      if (!inSubtree) {
+        throw new ForbiddenException(
+          'Access denied: You may only view your own binary tree and downline subtree.'
+        );
       }
     }
 
@@ -92,6 +106,13 @@ export class MembersController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
   async getAdminBinaryReport() {
     return this.membersService.getAdminBinaryReport();
+  }
+
+  @Get('admin/binary-placement-candidates')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getBinaryPlacementCandidates() {
+    return this.membersService.getBinaryPlacementCandidates();
   }
 
   // =========================================================================

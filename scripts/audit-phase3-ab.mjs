@@ -314,12 +314,26 @@ async function runAudit() {
       recordResult('EDGE-5', 'Sponsor with No Prior Basic Referrals (Direct Full)', 'FAIL', `Available: ${walletDF.availableEarningsPaise}`);
     }
 
-    // Edge Case 7: Upgrade when Basic Commission is Held
+    // Edge Case 7: Upgrade of 2nd Basic referral when Basic Commission is Held
     const sponsorHoldUpg = await createTestUser('MEMBER', 'FULL', true);
+    const mbrHold0 = await createTestUser('FREE_USER', 'FREE', false, sponsorHoldUpg.id);
+    const authHold0 = await login(mbrHold0.email, password);
     const mbrHold1 = await createTestUser('FREE_USER', 'FREE', false, sponsorHoldUpg.id);
     const authHold1 = await login(mbrHold1.email, password);
 
-    // 1st referral joining Basic -> commission ₹1,000 is HELD
+    // 1st referral joining Basic -> commission ₹1,000 is RELEASED
+    const reqHoldBasic0 = await (await fetch(`${API_URL}/packages/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authHold0.tokens.accessToken}` },
+      body: JSON.stringify({ requestType: 'BASIC_ACTIVATION' }),
+    })).json();
+    await fetch(`${API_URL}/packages/admin/requests/${reqHoldBasic0.request.id}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminAuth.tokens.accessToken}` },
+      body: JSON.stringify({ adminNotes: 'Release 1st Basic' }),
+    });
+
+    // 2nd referral joining Basic -> commission ₹1,000 is HELD
     const reqHoldBasic = await (await fetch(`${API_URL}/packages/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authHold1.tokens.accessToken}` },
@@ -328,13 +342,13 @@ async function runAudit() {
     await fetch(`${API_URL}/packages/admin/requests/${reqHoldBasic.request.id}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminAuth.tokens.accessToken}` },
-      body: JSON.stringify({ adminNotes: 'Hold Basic' }),
+      body: JSON.stringify({ adminNotes: 'Hold 2nd Basic' }),
     });
 
     let walletHold = await prisma.walletAccount.findUnique({ where: { userId: sponsorHoldUpg.id } });
     const holdBeforeUpg = walletHold.heldCommissionsPaise; // 100,000
 
-    // Now mbrHold1 upgrades to Full!
+    // Now mbrHold1 upgrades to Full (1st Qualified)!
     const reqHoldUpg = await (await fetch(`${API_URL}/packages/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authHold1.tokens.accessToken}` },
@@ -347,12 +361,11 @@ async function runAudit() {
     })).json();
 
     walletHold = await prisma.walletAccount.findUnique({ where: { userId: sponsorHoldUpg.id } });
-    // Total entitlement is ₹10,000. Prior was ₹1,000, so net wallet credit is ₹9,000.
-    // Available = ₹9,000. Held = ₹1,000. Total = ₹10,000.
-    if (walletHold.availableEarningsPaise === 900000n && walletHold.heldCommissionsPaise === 100000n) {
-      recordResult('EDGE-7', 'Upgrade when Basic Commission is Held', 'PASS', 'Available: ₹9,000, Held: ₹1,000 (Total ₹10,000 entitlement)');
+    // Available = ₹1,000 (from mbrHold0) + ₹9,000 (mbrHold1 net upgrade) = ₹10,000. Held = ₹1,000.
+    if (walletHold.availableEarningsPaise === 1000000n && walletHold.heldCommissionsPaise === 100000n && holdBeforeUpg === 100000n) {
+      recordResult('EDGE-7', 'Upgrade when 2nd Basic Commission is Held', 'PASS', 'Available: ₹10,000, Held: ₹1,000');
     } else {
-      recordResult('EDGE-7', 'Upgrade when Basic Commission is Held', 'FAIL', `Avail: ${walletHold.availableEarningsPaise}, Held: ${walletHold.heldCommissionsPaise}`);
+      recordResult('EDGE-7', 'Upgrade when 2nd Basic Commission is Held', 'FAIL', `Avail: ${walletHold.availableEarningsPaise}, Held: ${walletHold.heldCommissionsPaise}`);
     }
 
     // Edge Case 9: Recovery when Available Balance is Insufficient (Insolvency Protection)

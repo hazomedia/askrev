@@ -45,7 +45,7 @@ The proposed reward matrix creates significant financial obligations:
    - 2nd Full Qualified Direct: ₹30,000 Shopping Voucher liability + ₹1,000 hold release - ₹1,000 recovery.
    - 3rd+ Full Qualified Direct: ₹10,000 cash entitlement each.
 3. **Binary Matching Reward:**
-   - ₹3,000 per match (1:2 or 2:1 ratio).
+   - ₹3,000 per match (1:1 ratio).
    - Daily cap of 15 matches = ₹45,000 maximum daily liability per qualifying distributor.
 
 ### 3.2 Vulnerability to System Insolvency

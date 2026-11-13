@@ -227,7 +227,7 @@ export default function SimulatorPage() {
               </h2>
             </div>
             <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-              Ratio: 1:2 or 2:1
+              Ratio: 1:1
             </span>
           </div>
 

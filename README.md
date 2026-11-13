@@ -103,7 +103,7 @@ D:\Projects\AskrEV
 
 ## 5. Binary Matching Engine
 
-- **Ratio:** 1:2 OR 2:1
+- **Ratio:** 1:1
 - **Match Reward:** ₹3,000 per match
 - **Daily Cap:** 15 matches / ₹45,000 maximum daily liability per distributor
 - **Carry Forward:** Unused leg volume carries forward

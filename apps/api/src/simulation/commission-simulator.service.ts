@@ -58,6 +58,7 @@ export class CommissionSimulatorService {
     let shoppingVoucher = 0n;
 
     let totalActivatedDirects = 0;
+    let basicActivatedDirects = 0;
     let totalFullQualifiedDirects = 0;
 
     const directRecords = new Map<string, InternalDirectRecord>();
@@ -135,6 +136,7 @@ export class CommissionSimulatorService {
 
       if (ref.initialPackage === MembershipPackage.BASIC) {
         totalActivatedDirects++;
+        basicActivatedDirects++;
         const record: InternalDirectRecord = {
           memberId: ref.memberId,
           name: ref.name,
@@ -147,9 +149,12 @@ export class CommissionSimulatorService {
         };
         directRecords.set(ref.memberId, record);
 
-        // Commission Hold Reserve Rule:
-        // Before 2nd Full Qualified direct, maintain one ₹1,000 hold reserve when sufficient basic commissions are available.
-        const shouldHold = totalFullQualifiedDirects < 2 && heldCommissions < FINANCIAL_RULES.BASIC_HOLD_RESERVE_TARGET_PAISE;
+        // Approved Basic Direct Reserve Rule:
+        // 1st Basic direct: ₹1,000 released; 2nd Basic direct: ₹1,000 held reserve prior to 2nd Full direct; 3rd+ Basic direct: ₹1,000 released.
+        const shouldHold =
+          basicActivatedDirects === 2 &&
+          totalFullQualifiedDirects < 2 &&
+          heldCommissions < FINANCIAL_RULES.BASIC_HOLD_RESERVE_TARGET_PAISE;
 
         if (shouldHold) {
           recordEvent(
@@ -527,10 +532,11 @@ export class CommissionSimulatorService {
 
   /**
    * Binary Matching Simulation:
-   * Ratio: 1:2 OR 2:1
+   * Ratio: 1:1 (1 Left qualified unit : 1 Right qualified unit)
    * Proposed match reward: ₹3,000
    * Daily cap: 15 matches (₹45,000 max daily)
    * Beneficiary must be Full Qualified.
+   * Unmatched and capped-out units are preserved in carry-forward.
    */
   public simulateBinaryMatching(input: BinaryMatchInput): BinaryMatchResult {
     if (!input.isBeneficiaryQualified) {
@@ -548,50 +554,29 @@ export class CommissionSimulatorService {
       };
     }
 
-    let totalLeft = input.leftUnits + input.previousCarryLeft;
-    let totalRight = input.rightUnits + input.previousCarryRight;
+    const totalLeft = Math.max(0, input.leftUnits + input.previousCarryLeft);
+    const totalRight = Math.max(0, input.rightUnits + input.previousCarryRight);
 
-    let matchesFound = 0;
-    let leftUsed = 0;
-    let rightUsed = 0;
-
-    // Evaluate matching using 1:2 or 2:1 ratio greedy matching
-    while (true) {
-      const remainingLeft = totalLeft - leftUsed;
-      const remainingRight = totalRight - rightUsed;
-
-      // Try 2 Left : 1 Right
-      if (remainingLeft >= 2 && remainingRight >= 1 && remainingLeft >= remainingRight) {
-        matchesFound++;
-        leftUsed += 2;
-        rightUsed += 1;
-        continue;
-      }
-
-      // Try 1 Left : 2 Right
-      if (remainingLeft >= 1 && remainingRight >= 2) {
-        matchesFound++;
-        leftUsed += 1;
-        rightUsed += 2;
-        continue;
-      }
-
-      break;
-    }
+    // Evaluate matching using approved 1:1 ratio (1 Left : 1 Right)
+    const matchesFound = Math.min(totalLeft, totalRight);
 
     // Daily Capping calculation
     const remainingCapSlots = Math.max(0, FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES - input.todayMatchesAlreadySettled);
     const payableMatches = Math.min(matchesFound, remainingCapSlots);
     const cappedOutMatches = matchesFound - payableMatches;
 
+    // Consume 1 Left and 1 Right unit strictly for payable matches only
+    const payableLeftUsed = payableMatches;
+    const payableRightUsed = payableMatches;
+
     const proposedRewardPaise = BigInt(payableMatches) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE;
 
     return {
       matchesConsumed: payableMatches,
-      leftUnitsUsed: leftUsed,
-      rightUnitsUsed: rightUsed,
-      newCarryLeft: totalLeft - leftUsed,
-      newCarryRight: totalRight - rightUsed,
+      leftUnitsUsed: payableLeftUsed,
+      rightUnitsUsed: payableRightUsed,
+      newCarryLeft: totalLeft - payableLeftUsed,
+      newCarryRight: totalRight - payableRightUsed,
       cappedOutMatches,
       proposedRewardPaise,
       proposedRewardINR: paiseToRupees(proposedRewardPaise),

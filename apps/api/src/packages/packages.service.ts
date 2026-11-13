@@ -69,7 +69,7 @@ export class PackagesService {
           '₹30,000 Shopping Voucher included (promotional shopping liability)',
           'Immediate Full Qualification status',
           'Eligible for ₹10,000 Full Direct Sponsor Income',
-          'Eligible for Binary Matching Income (1:2 / 2:1 ratio, ₹3,000/match)',
+          'Eligible for Binary Matching Income (1:1 ratio, ₹3,000/match)',
           'Access to high-tier EV booking voucher redemptions',
         ],
         directSponsorEligibility: true,
@@ -318,11 +318,19 @@ export class PackagesService {
         throw new BadRequestException('Associated member record was not found');
       }
 
-      // If user has a sponsor, lock the sponsor to serialize concurrent qualifications
-      if (user.sponsor) {
-        await tx.$queryRaw`
-          SELECT id FROM "User" WHERE id = ${user.sponsor.id} FOR UPDATE
+      // Lock member and sponsor User rows in deterministic order to serialize concurrent
+      // membership qualifications with binary placements and avoid deadlocks.
+      const lockUserIds = Array.from(
+        new Set([user.id, ...(user.sponsor ? [user.sponsor.id] : [])])
+      ).sort();
+      let previouslyFullQualified = user.isFullQualified;
+      for (const uid of lockUserIds) {
+        const rows = await tx.$queryRaw<Array<{ id: string; isFullQualified: boolean }>>`
+          SELECT id, "isFullQualified" FROM "User" WHERE id = ${uid} FOR UPDATE
         `;
+        if (uid === user.id && rows.length > 0) {
+          previouslyFullQualified = Boolean(rows[0].isFullQualified);
+        }
       }
 
       // 1. Mark request as APPROVED
@@ -527,11 +535,12 @@ export class PackagesService {
       }
 
       // 3b. PHASE 3C: BINARY VOLUME PROPAGATION ON FULL QUALIFICATION
-      // If the member is already placed in the binary tree, their full qualification confers
-      // +1 unit of qualified volume to ancestors up their placement branch.
+      // If the member is already placed in the binary tree and wasn't previously Full Qualified,
+      // their full qualification confers +1 unit of qualified volume to ancestors up their placement branch.
       if (
-        req.requestType === MembershipRequestType.FULL_ACTIVATION ||
-        req.requestType === MembershipRequestType.BASIC_TO_FULL_UPGRADE
+        (req.requestType === MembershipRequestType.FULL_ACTIVATION ||
+          req.requestType === MembershipRequestType.BASIC_TO_FULL_UPGRADE) &&
+        !previouslyFullQualified
       ) {
         await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
       }
@@ -651,8 +660,10 @@ export class PackagesService {
       feePaise: bigint;
     }
   ) {
-    // Ensure sponsor wallet exists
-    let sponsorWallet = params.sponsor.wallet;
+    // Refresh sponsor wallet inside the transaction after acquiring the User FOR UPDATE lock
+    let sponsorWallet = await tx.walletAccount.findUnique({
+      where: { userId: params.sponsor.id },
+    });
     if (!sponsorWallet) {
       sponsorWallet = await tx.walletAccount.create({
         data: { userId: params.sponsor.id },
@@ -663,15 +674,58 @@ export class PackagesService {
     // SCENARIO 1: BASIC ACTIVATION
     // -----------------------------------------------------------------------
     if (params.requestType === MembershipRequestType.BASIC_ACTIVATION) {
+      // Idempotency guard: never settle Basic commission twice for the same requestId
+      const existingBasicJournal = await tx.journalEntry.findFirst({
+        where: {
+          referenceId: {
+            in: [`JNL-HOLD-${params.requestId}`, `JNL-REL-${params.requestId}`],
+          },
+        },
+        select: { id: true, referenceId: true, eventType: true },
+      });
+      if (existingBasicJournal) {
+        return {
+          sponsorMemberId: params.sponsor.memberId,
+          action:
+            existingBasicJournal.eventType === 'BASIC_SPONSOR_COMMISSION_HELD'
+              ? 'COMMISSION_HELD'
+              : 'COMMISSION_RELEASED_TO_WALLET',
+          amountINR: paiseToRupees(FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE),
+          idempotentReplay: true,
+        };
+      }
+
       const fullDirectsCount = await tx.user.count({
         where: {
           sponsorId: params.sponsor.id,
           isFullQualified: true,
+          id: { not: params.referredUser.id },
         },
       });
 
-      // Maintain ₹1,000 hold reserve prior to 2nd Full Qualified direct
+      // Count prior approved ₹3,000 Basic direct activations for this sponsor,
+      // preserving historical order even if an earlier Basic direct later upgraded to Full.
+      const priorBasicActivations = await tx.membershipRequest.findMany({
+        where: {
+          requestType: MembershipRequestType.BASIC_ACTIVATION,
+          status: MembershipRequestStatus.APPROVED,
+          id: { not: params.requestId },
+          userId: { not: params.referredUser.id },
+          user: {
+            sponsorId: params.sponsor.id,
+          },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+      const basicActivationOrder = priorBasicActivations.length + 1;
+
+      // Approved Basic Direct Reserve Rule:
+      // - 1st Basic Direct (order === 1): ₹1,000 RELEASED immediately
+      // - 2nd Basic Direct (order === 2): ₹1,000 HELD prior to 2nd Full Qualified direct
+      // - 3rd+ Basic Direct (order >= 3): ₹1,000 RELEASED
       const shouldHold =
+        basicActivationOrder === 2 &&
         fullDirectsCount < 2 &&
         sponsorWallet.heldCommissionsPaise < FINANCIAL_RULES.BASIC_HOLD_RESERVE_TARGET_PAISE;
 
@@ -697,7 +751,7 @@ export class PackagesService {
           data: {
             referenceId: `JNL-HOLD-${params.requestId}`,
             eventType: 'BASIC_SPONSOR_COMMISSION_HELD',
-            narration: `Simulated ₹1,000 hold reserve for sponsor ${params.sponsor.memberId} from ${params.referredUser.fullName}'s Basic activation`,
+            narration: `Simulated ₹1,000 hold reserve for sponsor ${params.sponsor.memberId} from ${params.referredUser.fullName}'s 2nd Basic direct activation`,
             lines: {
               create: [
                 {
@@ -721,9 +775,10 @@ export class PackagesService {
 
         return {
           sponsorMemberId: params.sponsor.memberId,
+          basicActivationOrder,
           action: 'COMMISSION_HELD',
           amountINR: paiseToRupees(FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE),
-          reason: 'Hold reserve target of ₹1,000 maintained prior to 2nd Full Qualified direct',
+          reason: 'Hold reserve target of ₹1,000 maintained on 2nd Basic direct prior to 2nd Full Qualified direct',
         };
       } else {
         await tx.walletAccount.update({
@@ -739,7 +794,7 @@ export class PackagesService {
           data: {
             referenceId: `JNL-REL-${params.requestId}`,
             eventType: 'BASIC_SPONSOR_COMMISSION_RELEASED',
-            narration: `Simulated ₹1,000 commission credited to sponsor ${params.sponsor.memberId} from ${params.referredUser.fullName}'s Basic activation`,
+            narration: `Simulated ₹1,000 commission credited to sponsor ${params.sponsor.memberId} from ${params.referredUser.fullName}'s Basic activation (#${basicActivationOrder})`,
             lines: {
               create: [
                 {
@@ -763,6 +818,7 @@ export class PackagesService {
 
         return {
           sponsorMemberId: params.sponsor.memberId,
+          basicActivationOrder,
           action: 'COMMISSION_RELEASED_TO_WALLET',
           amountINR: paiseToRupees(FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE),
         };
@@ -1114,8 +1170,20 @@ export class PackagesService {
 
     let currParentId: string | null = placement.parentId;
     let currLeg: BinaryLeg | null = placement.leg;
+    const visited = new Set<string>();
 
     while (currParentId && currLeg) {
+      if (visited.has(currParentId)) {
+        throw new BadRequestException('Cycle detected in binary placement ancestor chain.');
+      }
+      visited.add(currParentId);
+
+      const parentPlacement = await tx.binaryPlacement.findUnique({
+        where: { userId: currParentId },
+        select: { parentId: true, leg: true },
+      });
+      if (!parentPlacement) break;
+
       const updateData: any = {};
       if (currLeg === BinaryLeg.LEFT) {
         updateData.leftVolumePaise = { increment: 1n };
@@ -1130,14 +1198,9 @@ export class PackagesService {
         data: updateData,
       });
 
-      const parentNode: { parentId: string | null; leg: BinaryLeg | null } | null = await tx.binaryPlacement.findUnique({
-        where: { userId: currParentId },
-        select: { parentId: true, leg: true },
-      });
-
-      if (!parentNode || !parentNode.parentId || !parentNode.leg) break;
-      currLeg = parentNode.leg;
-      currParentId = parentNode.parentId;
+      if (!parentPlacement.parentId || !parentPlacement.leg) break;
+      currLeg = parentPlacement.leg;
+      currParentId = parentPlacement.parentId;
     }
   }
 }

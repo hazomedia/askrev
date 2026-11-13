@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="100%" height="100%">
+  <defs>
+    <!-- Studio Ambient Lighting -->
+    <radialGradient id="cycleStudioFloor" cx="50%" cy="80%" r="65%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="60%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </radialGradient>
+
+    <!-- Ground Contact Shadows -->
+    <radialGradient id="cycleTireShadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.32" />
+      <stop offset="60%" stop-color="#334155" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Frame Paint: Stealth Matte Carbon & Titanium -->
+    <linearGradient id="carbonFrame" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="35%" stop-color="#1E293B" />
+      <stop offset="80%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <!-- Electric Lime Brand Accent -->
+    <linearGradient id="limeAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C9FF36" />
+      <stop offset="100%" stop-color="#A3E635" />
+    </linearGradient>
+
+    <!-- Aero Wheel Rim Gradient -->
+    <linearGradient id="aeroRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="50%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <!-- Disc Brake Metal -->
+    <radialGradient id="cycleDiscMetal" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#E2E8F0" />
+      <stop offset="60%" stop-color="#94A3B8" />
+      <stop offset="100%" stop-color="#475569" />
+    </radialGradient>
+
+    <filter id="cycleShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <!-- Ground Shadows -->
+  <ellipse cx="210" cy="385" rx="85" ry="14" fill="url(#cycleTireShadow)" />
+  <ellipse cx="590" cy="385" rx="85" ry="14" fill="url(#cycleTireShadow)" />
+  <ellipse cx="400" cy="390" rx="230" ry="12" fill="#334155" opacity="0.10" />
+
+  <!-- ==================== REAR WHEEL ASSEMBLY ==================== -->
+  <g id="rear-wheel">
+    <circle cx="210" cy="315" r="78" fill="none" stroke="#0F172A" stroke-width="12" />
+    <circle cx="210" cy="315" r="70" fill="none" stroke="#334155" stroke-width="2" />
+    <circle cx="210" cy="315" r="62" fill="none" stroke="url(#aeroRim)" stroke-width="6" />
+    <!-- Spokes -->
+    <g stroke="#94A3B8" stroke-width="1.5" opacity="0.7">
+      <line x1="210" y1="315" x2="210" y2="245" />
+      <line x1="210" y1="315" x2="210" y2="385" />
+      <line x1="210" y1="315" x2="140" y2="315" />
+      <line x1="210" y1="315" x2="280" y2="315" />
+      <line x1="210" y1="315" x2="160" y2="265" />
+      <line x1="210" y1="315" x2="260" y2="365" />
+      <line x1="210" y1="315" x2="160" y2="365" />
+      <line x1="210" y1="315" x2="260" y2="265" />
+    </g>
+    <!-- Rear Hub & Disc Rotor -->
+    <circle cx="210" cy="315" r="26" fill="url(#cycleDiscMetal)" stroke="#334155" stroke-width="1.5" />
+    <circle cx="210" cy="315" r="14" fill="#0F172A" />
+    <circle cx="210" cy="315" r="5" fill="#C9FF36" />
+  </g>
+
+  <!-- ==================== FRONT WHEEL ASSEMBLY ==================== -->
+  <g id="front-wheel">
+    <circle cx="590" cy="315" r="78" fill="none" stroke="#0F172A" stroke-width="12" />
+    <circle cx="590" cy="315" r="70" fill="none" stroke="#334155" stroke-width="2" />
+    <circle cx="590" cy="315" r="62" fill="none" stroke="url(#aeroRim)" stroke-width="6" />
+    <!-- Spokes -->
+    <g stroke="#94A3B8" stroke-width="1.5" opacity="0.7">
+      <line x1="590" y1="315" x2="590" y2="245" />
+      <line x1="590" y1="315" x2="590" y2="385" />
+      <line x1="590" y1="315" x2="520" y2="315" />
+      <line x1="590" y1="315" x2="660" y2="315" />
+      <line x1="590" y1="315" x2="540" y2="265" />
+      <line x1="590" y1="315" x2="640" y2="365" />
+      <line x1="590" y1="315" x2="540" y2="365" />
+      <line x1="590" y1="315" x2="640" y2="265" />
+    </g>
+    <!-- Front Disc Rotor -->
+    <circle cx="590" cy="315" r="24" fill="url(#cycleDiscMetal)" stroke="#334155" stroke-width="1.5" />
+    <circle cx="590" cy="315" r="12" fill="#0F172A" />
+  </g>
+
+  <!-- ==================== DRIVETRAIN & BOTTOM BRACKET ==================== -->
+  <g id="drivetrain">
+    <!-- Chainstay -->
+    <line x1="210" y1="315" x2="380" y2="320" stroke="url(#carbonFrame)" stroke-width="14" stroke-linecap="round" />
+    <!-- Seatstay -->
+    <line x1="210" y1="315" x2="350" y2="200" stroke="url(#carbonFrame)" stroke-width="11" stroke-linecap="round" />
+    <!-- Mid-Drive Motor Enclosure -->
+    <ellipse cx="380" cy="320" rx="30" ry="26" fill="#0F172A" stroke="#334155" stroke-width="2" />
+    <circle cx="380" cy="320" r="18" fill="#1E293B" stroke="url(#limeAccent)" stroke-width="2" />
+    <circle cx="380" cy="320" r="7" fill="#CBD5E1" />
+    <!-- Cranks & Pedals -->
+    <line x1="380" y1="320" x2="350" y2="365" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+    <rect x="338" y="360" width="18" height="8" rx="2" fill="#0F172A" />
+    <!-- Belt Drive / Carbon Chain -->
+    <path d="M 210,310 L 380,310 Q 395,320 380,330 L 210,320 Z" fill="none" stroke="#64748B" stroke-width="3" stroke-dasharray="4,2" />
+  </g>
+
+  <!-- ==================== MAIN DIAMOND E-FRAME ==================== -->
+  <g id="main-frame" filter="url(#cycleShadow)">
+    <!-- Down Tube (Integrated 750Wh Lithium Battery Pack) -->
+    <path d="M 380,320 L 530,175 L 515,165 L 365,305 Z" fill="url(#carbonFrame)" stroke="#334155" stroke-width="1.5" />
+    <!-- Battery Accent Strip (Electric Lime) -->
+    <path d="M 395,305 L 505,195 L 510,200 L 400,310 Z" fill="url(#limeAccent)" opacity="0.9" />
+
+    <!-- Top Tube (Aggressive Aero Slope) -->
+    <path d="M 350,200 L 525,175 L 525,165 L 350,190 Z" fill="url(#carbonFrame)" />
+
+    <!-- Seat Tube -->
+    <path d="M 380,320 L 350,190 L 340,195 L 370,325 Z" fill="url(#carbonFrame)" />
+
+    <!-- Aero Seatpost & Saddle -->
+    <rect x="340" y="145" width="12" height="50" rx="3" fill="#1E293B" stroke="#475569" stroke-width="1" />
+    <!-- Racing Ergonomic Saddle -->
+    <path d="M 310,145 Q 345,142 375,148 Q 385,150 365,155 Q 340,154 315,152 Z" fill="#0F172A" stroke="#334155" stroke-width="1" />
+    <path d="M 335,146 L 365,147" stroke="url(#limeAccent)" stroke-width="2" />
+
+    <!-- Head Tube -->
+    <rect x="520" y="160" width="16" height="42" rx="4" fill="#0F172A" stroke="#334155" stroke-width="1.5" />
+
+    <!-- Front Aero Carbon Fork -->
+    <path d="M 528,198 L 590,315 L 582,318 L 522,202 Z" fill="url(#carbonFrame)" stroke="#334155" stroke-width="1" />
+  </g>
+
+  <!-- ==================== COCKPIT & CONTROLS ==================== -->
+  <g id="cockpit">
+    <!-- Stem & Integrated Headlight -->
+    <path d="M 526,160 L 540,138 L 555,142 L 536,165 Z" fill="#0F172A" />
+    <!-- Low-Profile Flat Bar Handlebars -->
+    <ellipse cx="546" cy="138" rx="6" ry="12" fill="#334155" />
+    <line x1="535" y1="138" x2="560" y2="138" stroke="#1E293B" stroke-width="8" stroke-linecap="round" />
+    <line x1="550" y1="138" x2="565" y2="142" stroke="#0F172A" stroke-width="6" stroke-linecap="round" />
+    <!-- Integrated Matrix Mini-Headlamp -->
+    <path d="M 545,150 L 555,153 L 555,146 Z" fill="#38BDF8" />
+    <!-- Smart OLED Display -->
+    <rect x="532" y="132" width="12" height="6" rx="1.5" fill="#020617" stroke="#C9FF36" stroke-width="0.8" />
+  </g>
+
+  <!-- ASKR EV Brand Badge on Downtube -->
+  <g transform="translate(435, 252) rotate(-43)">
+    <rect x="0" y="0" width="14" height="14" rx="2.5" fill="#165DAD" />
+    <text x="3" y="11" fill="#FFFFFF" font-size="9" font-weight="900" font-family="Inter, sans-serif">A</text>
+    <text x="18" y="11" fill="#FFFFFF" font-size="9" font-weight="800" letter-spacing="1" font-family="Inter, sans-serif">ASKR <tspan fill="#C9FF36">EV</tspan></text>
+  </g>
+</svg>

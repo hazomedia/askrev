@@ -51,16 +51,6 @@
     </filter>
   </defs>
 
-  <!-- Clean Studio Floor Background -->
-  <rect width="800" height="480" fill="url(#studioFloor)" />
-
-  <!-- Pre-Production Concept Watermark Badge -->
-  <g transform="translate(620, 24)">
-    <rect width="156" height="26" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1" />
-    <circle cx="16" cy="13" r="4" fill="#165DAD" />
-    <text x="28" y="17" fill="#475569" font-size="10" font-weight="700" letter-spacing="1" font-family="Inter, sans-serif">CONCEPT DESIGN</text>
-  </g>
-
   <!-- Ground Soft Shadows -->
   <ellipse cx="230" cy="385" rx="90" ry="16" fill="url(#tireShadow)" />
   <ellipse cx="580" cy="385" rx="90" ry="16" fill="url(#tireShadow)" />

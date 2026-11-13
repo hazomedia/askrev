@@ -29,13 +29,18 @@ import {
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
-type TabType = 'overview' | 'membership' | 'team' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
+type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [directTeam, setDirectTeam] = useState<any>(null);
   const [binaryTree, setBinaryTree] = useState<any>(null);
+  const [inspectedBinaryTree, setInspectedBinaryTree] = useState<any>(null);
+  const [binaryHistory, setBinaryHistory] = useState<any[]>([]);
+  const [binaryBreadcrumb, setBinaryBreadcrumb] = useState<{ memberId: string; fullName: string }[]>([]);
+  const [loadingBinarySubtree, setLoadingBinarySubtree] = useState(false);
+  const [binaryTreeError, setBinaryTreeError] = useState<string | null>(null);
   const [userBookings, setUserBookings] = useState<any[]>([]);
   const [userVouchers, setUserVouchers] = useState<any[]>([]);
   const [walletOverview, setWalletOverview] = useState<any>(null);
@@ -68,6 +73,7 @@ export default function DashboardPage() {
         profileData,
         teamData,
         binaryData,
+        binaryHistoryData,
         bookingsData,
         vouchersData,
         walletData,
@@ -78,6 +84,7 @@ export default function DashboardPage() {
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
         fetchApi<any>('/members/binary-tree').catch(() => null),
+        fetchApi<any[]>('/members/binary/history').catch(() => []),
         fetchApi<any>('/ev-bikes/my-bookings').catch(() => []),
         fetchApi<any>('/vouchers/my-vouchers').catch(() => []),
         fetchApi<any>('/wallet/my-wallet').catch(() => null),
@@ -89,6 +96,11 @@ export default function DashboardPage() {
       setUser(profileData);
       setDirectTeam(teamData);
       setBinaryTree(binaryData);
+      setInspectedBinaryTree(binaryData);
+      setBinaryHistory(Array.isArray(binaryHistoryData) ? binaryHistoryData : []);
+      if (profileData?.memberId) {
+        setBinaryBreadcrumb([{ memberId: profileData.memberId, fullName: profileData.fullName || 'Me' }]);
+      }
       setUserBookings(bookingsData);
       setUserVouchers(vouchersData);
       setWalletOverview(walletData);
@@ -188,6 +200,28 @@ export default function DashboardPage() {
     }
   };
 
+  const handleInspectBinarySubtree = async (targetMemberId: string, targetFullName: string, resetRoot = false) => {
+    setLoadingBinarySubtree(true);
+    setBinaryTreeError(null);
+    try {
+      const data = await fetchApi<any>(`/members/binary-tree?memberId=${encodeURIComponent(targetMemberId)}`);
+      setInspectedBinaryTree(data);
+      if (resetRoot) {
+        setBinaryBreadcrumb([{ memberId: targetMemberId, fullName: targetFullName }]);
+      } else {
+        setBinaryBreadcrumb((prev) => {
+          const existingIdx = prev.findIndex((b) => b.memberId === targetMemberId);
+          if (existingIdx >= 0) return prev.slice(0, existingIdx + 1);
+          return [...prev, { memberId: targetMemberId, fullName: targetFullName }];
+        });
+      }
+    } catch (err: any) {
+      setBinaryTreeError(err.message || 'Unable to inspect binary subtree.');
+    } finally {
+      setLoadingBinarySubtree(false);
+    }
+  };
+
   const handleLogout = async () => {
     await logoutSession();
     router.push('/auth/login');
@@ -221,6 +255,7 @@ export default function DashboardPage() {
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'membership', label: 'My Membership', icon: Sparkles },
     { id: 'team', label: 'My Team', icon: Users, count: directTeam?.directs?.length },
+    { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
     { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
     { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
     { id: 'bookings', label: 'My Bookings', icon: Bike, count: userBookings.length },
@@ -260,7 +295,7 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-xs sm:text-sm text-[#253247]">Member Portal</span>
                 <span className="text-slate-300">/</span>
-                <span className="font-mono text-xs font-bold text-[#165DAD] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                <span className="font-mono text-xs font-bold text-[#165DAD] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 whitespace-nowrap">
                   {user.memberId}
                 </span>
               </div>
@@ -617,6 +652,72 @@ export default function DashboardPage() {
                   </div>
                 )}
 
+                {/* MY BINARY TREE SUMMARY CARD */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="w-4 h-4 text-[#165DAD]" />
+                        <h3 className="text-sm font-bold text-[#253247]">Binary Tree & Matching Summary</h3>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            binaryTree?.node?.isPlaced
+                              ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                              : user?.role === 'SUPER_ADMIN'
+                              ? 'bg-blue-50 text-[#165DAD] border-blue-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          {binaryTree?.node?.isPlaced
+                            ? `Placed (${binaryTree.node.parent?.leg} under ${binaryTree.node.parent?.memberId})`
+                            : user?.role === 'SUPER_ADMIN'
+                            ? 'Company Root'
+                            : 'Not Yet Placed'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        1:1 ratio (1 Left : 1 Right qualified unit) • ₹3,000 per match • Cap: 15/day (₹45,000)
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('binary')}
+                      className="self-start sm:self-center text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1 min-h-[36px]"
+                    >
+                      <span>Open My Binary Tree</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] text-slate-500">Left Leg (Cnt / Vol / Carry)</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.leftCount ?? 0} / {binaryTree?.node?.leftVolumeUnits ?? 0}u /{' '}
+                        <span className="text-[#165DAD]">{binaryTree?.node?.carryLeftUnits ?? 0}u</span>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] text-slate-500">Right Leg (Cnt / Vol / Carry)</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.rightCount ?? 0} / {binaryTree?.node?.rightVolumeUnits ?? 0}u /{' '}
+                        <span className="text-[#15803D]">{binaryTree?.node?.carryRightUnits ?? 0}u</span>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] text-slate-500">Total Matches / Reward</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.totalMatchesConsumed ?? 0} pairs • ₹{(binaryTree?.node?.totalRewardEarnedINR ?? 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] text-slate-500">Daily Cap Status (Today)</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.todayMatchesSettled ?? 0} / 15 settled
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* =========================================================================
                     TASK 7 — RECENT DIRECT REFERRALS TABLE
                     Includes Member ID, Name, Membership Status, Joining Date & View All
@@ -720,7 +821,7 @@ export default function DashboardPage() {
                     <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
                       <span className="text-slate-500">Binary Matching Income:</span>
                       <div className="text-sm font-bold text-[#253247] mt-1">
-                        {user.isFullQualified ? 'Eligible (1:2 / 2:1)' : 'Requires Full Qualification'}
+                        {user.isFullQualified ? 'Eligible (1:1 • ₹3,000/match)' : 'Requires Full Qualification'}
                       </div>
                     </div>
                     <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
@@ -837,7 +938,7 @@ export default function DashboardPage() {
                           <h4 className="text-base font-bold text-[#253247] mt-1">Full Membership</h4>
                           <div className="text-2xl font-bold text-[#253247] mt-2">₹33,000</div>
                           <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                            Includes ₹3,000 platform fee + <strong>₹30,000 EV Shopping Voucher</strong> liability and unlocks full Binary Matching (1:2 / 2:1, ₹3,000/match) upon approval.
+                            Includes ₹3,000 platform fee + <strong>₹30,000 EV Shopping Voucher</strong> liability and unlocks full Binary Matching (1:1 ratio, ₹3,000/match) upon approval.
                           </p>
                         </div>
 
@@ -1037,14 +1138,23 @@ export default function DashboardPage() {
 
                 {/* Binary Placement Card */}
                 <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-[#253247] flex items-center gap-2">
-                      <GitBranch className="w-4 h-4 text-[#165DAD]" />
-                      <span>Binary Placement & Business Volume</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Ratio: 1:2 or 2:1 • Reward: ₹3,000 per match • Daily Capping: 15 matches (₹45,000/day max)
-                    </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#253247] flex items-center gap-2">
+                        <GitBranch className="w-4 h-4 text-[#165DAD]" />
+                        <span>Binary Placement & Business Volume</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Ratio: 1:1 (1 Left : 1 Right) • Reward: ₹3,000 per match • Daily Capping: 15 matches (₹45,000/day max)
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('binary')}
+                      className="self-start sm:self-center text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1"
+                    >
+                      <span>View Visual Binary Tree</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1088,6 +1198,361 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3B: MY BINARY TREE (READ-ONLY MEMBER VIEW) */}
+            {activeTab === 'binary' && (
+              <div className="space-y-6">
+                {/* Header & Read-Only Placement Status Banner */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-bold text-[#253247] flex items-center gap-2">
+                        <GitBranch className="w-5 h-5 text-[#165DAD]" />
+                        <span>My Binary Tree & Matching Volume</span>
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Approved 1:1 matching (1 Left : 1 Right Full-Qualified unit) • ₹3,000/pair • Daily Cap: 15 pairs (₹45,000/day)
+                      </p>
+                    </div>
+                    <span
+                      className={`self-start text-xs font-semibold px-3 py-1 rounded-full border ${
+                        binaryTree?.node?.isPlaced
+                          ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                          : user?.role === 'SUPER_ADMIN'
+                          ? 'bg-blue-50 text-[#165DAD] border-blue-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}
+                    >
+                      {binaryTree?.node?.isPlaced
+                        ? `Placed (${binaryTree.node.parent?.leg} Leg)`
+                        : user?.role === 'SUPER_ADMIN'
+                        ? 'Company Binary Root'
+                        : 'Pending Admin Placement'}
+                    </span>
+                  </div>
+
+                  {/* Placement Identity Grid (Parent, Leg, Sponsor, Qualification) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 text-xs">
+                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] font-semibold uppercase text-slate-400">Placement Status</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.isPlaced
+                          ? 'Placed in Binary Tree'
+                          : user?.role === 'SUPER_ADMIN'
+                          ? 'Root Node (Top of Tree)'
+                          : 'Not Yet Placed in Binary Tree'}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Leg: <span className="font-semibold text-[#165DAD]">{binaryTree?.node?.parent?.leg || (user?.role === 'SUPER_ADMIN' ? 'Root' : 'Unassigned')}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] font-semibold uppercase text-slate-400">Binary Parent Node</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.parent
+                          ? binaryTree.node.parent.fullName
+                          : user?.role === 'SUPER_ADMIN'
+                          ? 'None (Company Root)'
+                          : 'Awaiting Placement'}
+                      </div>
+                      <div className="text-[11px] font-mono text-[#165DAD] mt-0.5">
+                        {binaryTree?.node?.parent
+                          ? binaryTree.node.parent.memberId
+                          : user?.role === 'SUPER_ADMIN'
+                          ? 'Top-level origin node'
+                          : 'No parent assigned yet'}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] font-semibold uppercase text-slate-400">Direct Sponsor</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.sponsor ? binaryTree.node.sponsor.fullName : 'Company Root'}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-600 mt-0.5">
+                        {binaryTree?.node?.sponsor ? binaryTree.node.sponsor.memberId : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                      <div className="text-[11px] font-semibold uppercase text-slate-400">Daily Cap Status (IST)</div>
+                      <div className="font-bold text-[#253247] mt-1">
+                        {binaryTree?.node?.todayMatchesSettled ?? 0} / {binaryTree?.node?.dailyMaxMatches ?? 15} matches today
+                      </div>
+                      <div className="text-[11px] text-[#15803D] font-medium mt-0.5">
+                        Remaining: {binaryTree?.node?.dailyCapRemaining ?? 15} (₹{((binaryTree?.node?.dailyCapRemaining ?? 15) * 3000).toLocaleString('en-IN')})
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6 Core Binary Metrics Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <div className="text-xs font-semibold uppercase text-slate-400">Left Leg Metrics</div>
+                    <div className="mt-2 flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500">Team Members</span>
+                      <span className="text-lg font-bold text-[#253247]">{binaryTree?.node?.leftCount ?? 0}</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500">Qualified Volume</span>
+                      <span className="text-sm font-bold text-[#165DAD]">{binaryTree?.node?.leftVolumeUnits ?? 0} Units</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500">Carry Forward</span>
+                      <span className="text-sm font-bold text-emerald-700">{binaryTree?.node?.carryLeftUnits ?? 0} Units</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <div className="text-xs font-semibold uppercase text-slate-400">Right Leg Metrics</div>
+                    <div className="mt-2 flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500">Team Members</span>
+                      <span className="text-lg font-bold text-[#253247]">{binaryTree?.node?.rightCount ?? 0}</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500">Qualified Volume</span>
+                      <span className="text-sm font-bold text-[#15803D]">{binaryTree?.node?.rightVolumeUnits ?? 0} Units</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500">Carry Forward</span>
+                      <span className="text-sm font-bold text-emerald-700">{binaryTree?.node?.carryRightUnits ?? 0} Units</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <div className="text-xs font-semibold uppercase text-slate-400">Total Matched Pairs</div>
+                    <div className="text-2xl font-bold text-[#253247] mt-2">
+                      {binaryTree?.node?.totalMatchesConsumed ?? 0}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Consumed: {binaryTree?.node?.matchedLeftUnits ?? 0} Left : {binaryTree?.node?.matchedRightUnits ?? 0} Right
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <div className="text-xs font-semibold uppercase text-slate-400">Binary Matching Reward</div>
+                    <div className="text-2xl font-bold text-[#15803D] mt-2">
+                      ₹{(binaryTree?.node?.totalRewardEarnedINR ?? 0).toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      {user.isFullQualified ? 'Full Qualified for Matching' : 'Full Membership required to settle'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Multi-Level Binary Subtree Visualizer */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#253247]">Visual Binary Downline Subtree</h3>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-1">
+                        {binaryBreadcrumb.map((crumb, idx) => (
+                          <React.Fragment key={crumb.memberId}>
+                            {idx > 0 && <ChevronRight className="w-3 h-3 text-slate-400" />}
+                            <button
+                              type="button"
+                              onClick={() => handleInspectBinarySubtree(crumb.memberId, crumb.fullName, idx === 0)}
+                              className={`font-medium hover:underline ${
+                                idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
+                              }`}
+                            >
+                              {crumb.fullName} ({crumb.memberId})
+                            </button>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+
+                    {binaryBreadcrumb.length > 1 && user?.memberId && (
+                      <button
+                        type="button"
+                        onClick={() => handleInspectBinarySubtree(user.memberId, user.fullName || 'Me', true)}
+                        className="self-start sm:self-center px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700"
+                      >
+                        Reset to My Root
+                      </button>
+                    )}
+                  </div>
+
+                  {binaryTreeError && (
+                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                      {binaryTreeError}
+                    </div>
+                  )}
+
+                  {loadingBinarySubtree ? (
+                    <div className="py-10 text-center text-xs text-slate-500">Loading binary subtree...</div>
+                  ) : inspectedBinaryTree?.node ? (
+                    <div className="space-y-6">
+                      {/* Inspected Root Node */}
+                      <div className="flex justify-center">
+                        <div className="w-full max-w-xs bg-blue-50 border-2 border-[#165DAD] rounded-xl p-4 shadow-sm text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#165DAD] text-white uppercase">
+                              {inspectedBinaryTree.node.user.memberId === user.memberId ? 'You (Root)' : 'Subtree Node'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white text-[#253247] border border-blue-200">
+                              {inspectedBinaryTree.node.user.currentPackage}
+                            </span>
+                          </div>
+                          <div className="font-bold text-sm text-[#253247] mt-2">
+                            {inspectedBinaryTree.node.user.fullName}
+                          </div>
+                          <div className="text-xs font-mono font-bold text-[#165DAD]">
+                            {inspectedBinaryTree.node.user.memberId}
+                          </div>
+                          <div className="text-[11px] text-slate-600 mt-1">
+                            {inspectedBinaryTree.node.user.isFullQualified ? 'Full Qualified' : 'Basic (Not Qualified)'}
+                          </div>
+                          <div className="mt-2.5 pt-2.5 border-t border-blue-200/70 grid grid-cols-2 gap-2 text-[11px]">
+                            <div>
+                              <div className="text-slate-500">Left</div>
+                              <div className="font-bold text-slate-800">
+                                {inspectedBinaryTree.node.leftCount} ({inspectedBinaryTree.node.carryLeftUnits}u carry)
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500">Right</div>
+                              <div className="font-bold text-slate-800">
+                                {inspectedBinaryTree.node.rightCount} ({inspectedBinaryTree.node.carryRightUnits}u carry)
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Level 1 & Level 2 Downline Branches */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        {[
+                          { label: 'LEFT BRANCH', child: inspectedBinaryTree.leftChild, accent: 'text-[#165DAD]', badge: 'bg-blue-50 text-[#165DAD] border-blue-200' },
+                          { label: 'RIGHT BRANCH', child: inspectedBinaryTree.rightChild, accent: 'text-[#15803D]', badge: 'bg-emerald-50 text-[#15803D] border-emerald-200' },
+                        ].map(({ label, child, accent, badge }) => (
+                          <div key={label} className="bg-[#F7F9FC] border border-slate-200 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-xs font-bold ${accent}`}>{label}</span>
+                              <span className="text-[10px] font-semibold uppercase text-slate-400">Level 1</span>
+                            </div>
+
+                            {child ? (
+                              <div className="space-y-3">
+                                <div className="bg-white rounded-lg border border-slate-200 p-3.5 space-y-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-bold text-xs text-[#253247]">{child.fullName}</span>
+                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${badge}`}>
+                                      {child.currentPackage}
+                                    </span>
+                                  </div>
+                                  <div className={`text-xs font-mono font-bold ${accent}`}>{child.memberId}</div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {child.isFullQualified ? 'Full Qualified' : 'Basic (Qualification Pending)'}
+                                  </div>
+                                  <div className="pt-2 mt-1 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                                    <span>L: {child.leftCount} ({child.leftVolumeUnits}u)</span>
+                                    <span>R: {child.rightCount} ({child.rightVolumeUnits}u)</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInspectBinarySubtree(child.memberId, child.fullName)}
+                                      className={`${accent} font-bold hover:underline`}
+                                    >
+                                      Inspect Subtree →
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Level 2 Children */}
+                                <div className="grid grid-cols-2 gap-2.5">
+                                  {[
+                                    { subLabel: 'LEFT SLOT', subChild: child.leftChild },
+                                    { subLabel: 'RIGHT SLOT', subChild: child.rightChild },
+                                  ].map(({ subLabel, subChild }) =>
+                                    subChild ? (
+                                      <button
+                                        key={subLabel}
+                                        type="button"
+                                        onClick={() => handleInspectBinarySubtree(subChild.memberId, subChild.fullName)}
+                                        className="p-2.5 rounded-lg bg-white border border-slate-200 hover:border-[#165DAD] text-left transition-colors"
+                                      >
+                                        <div className="text-[9px] font-bold text-slate-400 uppercase">{subLabel}</div>
+                                        <div className="font-bold text-[11px] text-[#253247] truncate">{subChild.fullName}</div>
+                                        <div className="text-[10px] font-mono text-[#165DAD]">{subChild.memberId}</div>
+                                        <div className="text-[9px] text-slate-500 mt-0.5">
+                                          {subChild.currentPackage} • {subChild.isFullQualified ? 'Qualified' : 'Basic'}
+                                        </div>
+                                      </button>
+                                    ) : (
+                                      <div
+                                        key={subLabel}
+                                        className="p-2.5 rounded-lg bg-white/80 border border-dashed border-slate-200 text-center text-[10px] text-slate-400 flex flex-col items-center justify-center min-h-[70px]"
+                                      >
+                                        <span className="font-semibold uppercase text-[9px]">{subLabel}</span>
+                                        <span>Vacant Slot</span>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="p-6 rounded-lg bg-white border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                                {label === 'LEFT BRANCH' ? 'Vacant Left Slot' : 'Vacant Right Slot'}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Binary Match Settlement History */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-[#253247]">Match Settlement History</h3>
+                    <p className="text-xs text-slate-500">
+                      Read-only record of your binary 1:1 matching evaluations, daily cap status, and carry-forward balances
+                    </p>
+                  </div>
+
+                  {binaryHistory.length === 0 ? (
+                    <div className="p-5 rounded-lg bg-[#F7F9FC] border border-slate-200 text-center text-xs text-slate-500">
+                      No binary matching settlements recorded yet. Qualified 1:1 pairs appear here once settled.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                      <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead className="bg-[#F7F9FC] text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="p-3">Match Date (IST)</th>
+                            <th className="p-3">Pairs Evaluated</th>
+                            <th className="p-3">Pairs Settled</th>
+                            <th className="p-3">Capped</th>
+                            <th className="p-3">Used (L : R)</th>
+                            <th className="p-3">Carry Forward (L : R)</th>
+                            <th className="p-3 text-right">Simulated Reward</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {binaryHistory.map((ev: any) => (
+                            <tr key={ev.id} className="hover:bg-slate-50">
+                              <td className="p-3 font-mono">{ev.matchDate}</td>
+                              <td className="p-3">{ev.matchesEvaluated}</td>
+                              <td className="p-3 font-bold text-[#15803D]">{ev.matchesSettled}</td>
+                              <td className="p-3 text-amber-700">{ev.cappedOutMatches}</td>
+                              <td className="p-3">{ev.leftUnitsUsed} : {ev.rightUnitsUsed}</td>
+                              <td className="p-3 font-medium">{ev.newCarryLeft} : {ev.newCarryRight}</td>
+                              <td className="p-3 text-right font-bold text-[#15803D]">
+                                ₹{(ev.rewardINR ?? 0).toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -79,20 +79,29 @@ export class MembersService {
         throw new BadRequestException('Self-placement is strictly prohibited.');
       }
 
-      // Acquire deterministic FOR UPDATE row locks on target & parent BinaryPlacement rows
-      // to eliminate concurrent placement / leg-occupation race conditions.
+      // Acquire deterministic FOR UPDATE row locks on User rows FIRST, then BinaryPlacement rows,
+      // eliminating concurrent placement / leg-occupation and upgrade-propagation race conditions.
       const lockUserIds = [dto.userId, dto.parentId].sort();
       for (const uid of lockUserIds) {
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${uid} FOR UPDATE`;
         await tx.$queryRaw`SELECT id FROM "BinaryPlacement" WHERE "userId" = ${uid} FOR UPDATE`;
       }
 
-      // 2. Validate member existence
+      // 2. Validate member existence and activated package
       const targetUser = await tx.user.findUnique({
         where: { id: dto.userId },
         include: { binaryPlacement: true },
       });
       if (!targetUser) {
         throw new NotFoundException('Member to place was not found.');
+      }
+      if (
+        targetUser.currentPackage !== MembershipPackage.BASIC &&
+        targetUser.currentPackage !== MembershipPackage.FULL
+      ) {
+        throw new BadRequestException(
+          'Only activated BASIC or FULL members can be placed in the binary tree.'
+        );
       }
 
       // Authorization Check: Non-admin actors can only place their own direct referrals within their subtree
@@ -137,19 +146,25 @@ export class MembersService {
       }
 
       // Check if member is already placed under a parent on a binary leg
-      if (targetUser.binaryPlacement && targetUser.binaryPlacement.parentId && targetUser.binaryPlacement.leg) {
+      if (targetUser.binaryPlacement && (targetUser.binaryPlacement.parentId || targetUser.binaryPlacement.leg)) {
         throw new BadRequestException(
           `Member ${targetUser.memberId} is already placed in the binary tree under parent ${targetUser.binaryPlacement.parentId}. Duplicate placement is not permitted.`
         );
       }
 
-      // 3. Validate parent existence
+      // 3. Validate parent existence & eligibility
       const parentUser = await tx.user.findUnique({
         where: { id: dto.parentId },
         include: { binaryPlacement: true },
       });
       if (!parentUser) {
         throw new NotFoundException('Specified parent node was not found.');
+      }
+      if (parentUser.currentPackage === MembershipPackage.FREE) {
+        throw new BadRequestException('Cannot place a member under an unactivated FREE account.');
+      }
+      if (!parentUser.binaryPlacement) {
+        await tx.binaryPlacement.create({ data: { userId: dto.parentId } });
       }
 
       // 4. Verify parent leg vacancy
@@ -208,8 +223,18 @@ export class MembersService {
       let currParentId: string | null = dto.parentId;
       let currLeg: BinaryLeg | null = dto.leg;
       const isQualified = targetUser.isFullQualified;
+      const visitedPropagate = new Set<string>();
 
       while (currParentId && currLeg) {
+        if (visitedPropagate.has(currParentId)) break;
+        visitedPropagate.add(currParentId);
+
+        const parentNode: { parentId: string | null; leg: BinaryLeg | null } | null = await tx.binaryPlacement.findUnique({
+          where: { userId: currParentId },
+          select: { parentId: true, leg: true },
+        });
+        if (!parentNode) break;
+
         const updateData: any = {};
         if (currLeg === BinaryLeg.LEFT) {
           updateData.leftCount = { increment: 1 };
@@ -230,12 +255,7 @@ export class MembersService {
           data: updateData,
         });
 
-        const parentNode: { parentId: string | null; leg: BinaryLeg | null } | null = await tx.binaryPlacement.findUnique({
-          where: { userId: currParentId },
-          select: { parentId: true, leg: true },
-        });
-
-        if (!parentNode || !parentNode.parentId || !parentNode.leg) break;
+        if (!parentNode.parentId || !parentNode.leg) break;
         currLeg = parentNode.leg;
         currParentId = parentNode.parentId;
       }
@@ -249,6 +269,7 @@ export class MembersService {
           entityId: placement.id,
           metadata: {
             placedMemberId: targetUser.memberId,
+            placedPackage: targetUser.currentPackage,
             parentMemberId: parentUser.memberId,
             leg: dto.leg,
             isFullQualified: isQualified,
@@ -271,7 +292,7 @@ export class MembersService {
    * Settle Binary Matching for a beneficiary member.
    * Enforces:
    * - Full Qualification mandatory
-   * - 1:2 or 2:1 ratio greedy matching
+   * - Approved 1:1 ratio matching (1 Left : 1 Right qualified unit)
    * - ₹3,000 per match (300,000 paise)
    * - Daily cap: 15 matches (max ₹45,000 daily)
    * - Volume preservation (carry-forward not flushed when daily cap is hit)
@@ -342,69 +363,22 @@ export class MembersService {
       const isSameDay = placement.lastMatchDate === todayStr;
       const todaySettledMatches = isSameDay ? placement.dailyMatchesCount : 0;
 
-      // 4. Evaluate Matching with 1:2 or 2:1 Ratio Greedy Loop
-      const totalLeft = Number(placement.carryLeftPaise);
-      const totalRight = Number(placement.carryRightPaise);
+      // 4. Evaluate Matching with approved 1:1 Ratio (1 Left : 1 Right)
+      const totalLeft = Math.max(0, Number(placement.carryLeftPaise));
+      const totalRight = Math.max(0, Number(placement.carryRightPaise));
 
-      let matchesFound = 0;
-      let leftUsed = 0;
-      let rightUsed = 0;
-
-      while (true) {
-        const remLeft = totalLeft - leftUsed;
-        const remRight = totalRight - rightUsed;
-
-        // Try 2 Left : 1 Right (if left has more or equal)
-        if (remLeft >= 2 && remRight >= 1 && remLeft >= remRight) {
-          matchesFound++;
-          leftUsed += 2;
-          rightUsed += 1;
-          continue;
-        }
-
-        // Try 1 Left : 2 Right
-        if (remLeft >= 1 && remRight >= 2) {
-          matchesFound++;
-          leftUsed += 1;
-          rightUsed += 2;
-          continue;
-        }
-
-        break;
-      }
+      const matchesFound = Math.min(totalLeft, totalRight);
 
       // 5. Apply Daily Cap: Max 15 matches (₹45,000) per calendar day
       const remainingCapSlots = Math.max(0, FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES - todaySettledMatches);
       const payableMatches = Math.min(matchesFound, remainingCapSlots);
       const cappedOutMatches = matchesFound - payableMatches;
 
-      // Calculate volume consumed strictly for payable matches
-      let payableLeftUsed = 0;
-      let payableRightUsed = 0;
+      // Consume 1 Left and 1 Right unit per payable match
+      const payableLeftUsed = payableMatches;
+      const payableRightUsed = payableMatches;
 
-      if (payableMatches === matchesFound) {
-        payableLeftUsed = leftUsed;
-        payableRightUsed = rightUsed;
-      } else {
-        // Greedily simulate payable matches only
-        let pLeft = 0;
-        let pRight = 0;
-        for (let m = 0; m < payableMatches; m++) {
-          const rL = totalLeft - pLeft;
-          const rR = totalRight - pRight;
-          if (rL >= 2 && rR >= 1 && rL >= rR) {
-            pLeft += 2;
-            pRight += 1;
-          } else if (rL >= 1 && rR >= 2) {
-            pLeft += 1;
-            pRight += 2;
-          }
-        }
-        payableLeftUsed = pLeft;
-        payableRightUsed = pRight;
-      }
-
-      // Unmatched volume is preserved in carry-forward! (Zero silent volume loss)
+      // Unmatched & capped-out volume is preserved in carry-forward! (Zero silent volume loss)
       const newCarryLeft = totalLeft - payableLeftUsed;
       const newCarryRight = totalRight - payableRightUsed;
       const rewardPaise = BigInt(payableMatches) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE;
@@ -577,7 +551,7 @@ export class MembersService {
 
     return {
       matchingRules: {
-        ratio: '1:2 or 2:1',
+        ratio: '1:1',
         rewardPerMatchINR: 3000,
         dailyMaxMatches: 15,
         dailyCapRewardINR: 45000,
@@ -608,12 +582,145 @@ export class MembersService {
    */
   async findUserByMemberId(memberId: string) {
     return this.prisma.user.findFirst({
-      where: { memberId: { equals: memberId, mode: 'insensitive' } },
+      where: { memberId: { equals: memberId.trim(), mode: 'insensitive' } },
+      select: { id: true, memberId: true },
     });
   }
 
   /**
-   * Get Binary Tree Placement info for a user with parent and sponsor hierarchy
+   * Helper to verify user existence by internal id
+   */
+  async findUserById(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, memberId: true },
+    });
+  }
+
+  /**
+   * Verify whether targetUserId lies in ancestorUserId's binary placement subtree (inclusive).
+   */
+  async isUserInBinarySubtree(ancestorUserId: string, targetUserId: string): Promise<boolean> {
+    if (ancestorUserId === targetUserId) return true;
+    let currId: string | null = targetUserId;
+    const visited = new Set<string>();
+
+    while (currId) {
+      if (currId === ancestorUserId) return true;
+      if (visited.has(currId)) return false;
+      visited.add(currId);
+
+      const node = await this.prisma.binaryPlacement.findUnique({
+        where: { userId: currId },
+        select: { parentId: true },
+      });
+      currId = node?.parentId || null;
+    }
+
+    return false;
+  }
+
+  /**
+   * Admin helper: list unplaced activated members (BASIC/FULL) and eligible parents with leg vacancy state.
+   */
+  async getBinaryPlacementCandidates() {
+    const activatedUsers = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { role: UserRole.SUPER_ADMIN },
+          { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        memberId: true,
+        fullName: true,
+        role: true,
+        currentPackage: true,
+        isFullQualified: true,
+        qualificationDate: true,
+        createdAt: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+        binaryPlacement: { select: { parentId: true, leg: true } },
+      },
+    });
+
+    const placedChildren = await this.prisma.binaryPlacement.findMany({
+      where: { parentId: { not: null }, leg: { not: null } },
+      select: {
+        parentId: true,
+        leg: true,
+        user: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    const legsByParent = new Map<
+      string,
+      { left: { memberId: string; fullName: string } | null; right: { memberId: string; fullName: string } | null }
+    >();
+    for (const child of placedChildren) {
+      if (!child.parentId || !child.leg) continue;
+      const entry = legsByParent.get(child.parentId) || { left: null, right: null };
+      if (child.leg === BinaryLeg.LEFT) entry.left = child.user;
+      if (child.leg === BinaryLeg.RIGHT) entry.right = child.user;
+      legsByParent.set(child.parentId, entry);
+    }
+
+    const unplacedMembers = activatedUsers
+      .filter((u) => u.role !== UserRole.SUPER_ADMIN && (!u.binaryPlacement?.parentId || !u.binaryPlacement?.leg))
+      .map((u) => ({
+        id: u.id,
+        memberId: u.memberId,
+        fullName: u.fullName,
+        currentPackage: u.currentPackage,
+        isFullQualified: u.isFullQualified,
+        qualificationDate: u.qualificationDate,
+        sponsorMemberId: u.sponsor?.memberId || null,
+        sponsorName: u.sponsor?.fullName || null,
+        createdAt: u.createdAt,
+      }));
+
+    const availableParents = activatedUsers
+      .map((u) => {
+        const legs = legsByParent.get(u.id) || { left: null, right: null };
+        return {
+          id: u.id,
+          memberId: u.memberId,
+          fullName: u.fullName,
+          role: u.role,
+          currentPackage: u.currentPackage,
+          isFullQualified: u.isFullQualified,
+          isPlaced: Boolean(u.binaryPlacement?.parentId && u.binaryPlacement?.leg),
+          leftChild: legs.left,
+          rightChild: legs.right,
+          leftVacant: !legs.left,
+          rightVacant: !legs.right,
+          hasVacantLeg: !legs.left || !legs.right,
+        };
+      })
+      .sort((a, b) => {
+        if (a.role === UserRole.SUPER_ADMIN && b.role !== UserRole.SUPER_ADMIN) return -1;
+        if (b.role === UserRole.SUPER_ADMIN && a.role !== UserRole.SUPER_ADMIN) return 1;
+        if (a.isPlaced !== b.isPlaced) return a.isPlaced ? -1 : 1;
+        return a.memberId.localeCompare(b.memberId);
+      });
+
+    return {
+      unplacedMembers,
+      availableParents,
+      summary: {
+        totalEligibleMembers: activatedUsers.filter((u) => u.role !== UserRole.SUPER_ADMIN).length,
+        placedCount: activatedUsers.filter(
+          (u) => u.role !== UserRole.SUPER_ADMIN && Boolean(u.binaryPlacement?.parentId && u.binaryPlacement?.leg)
+        ).length,
+        unplacedCount: unplacedMembers.length,
+      },
+    };
+  }
+
+  /**
+   * Get Binary Tree Placement info for a user with parent, sponsor, and 2-level sanitized visual subtree
    */
   async getBinaryTree(userId: string) {
     const placement = await this.prisma.binaryPlacement.findUnique({
@@ -655,25 +762,32 @@ export class MembersService {
       }
     }
 
-    // Fetch left and right direct children in binary tree
+    const childUserSelect = {
+      id: true,
+      memberId: true,
+      fullName: true,
+      currentPackage: true,
+      isFullQualified: true,
+    };
+
+    // Fetch depth-1 children and depth-2 grandchildren for visual tree rendering
     const children = await this.prisma.binaryPlacement.findMany({
       where: { parentId: userId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            memberId: true,
-            fullName: true,
-            currentPackage: true,
-            isFullQualified: true,
-          },
-        },
-      },
+      include: { user: { select: childUserSelect } },
     });
 
-    const formatChild = (c: any) => {
+    const childUserIds = children.map((c) => c.userId);
+    const grandchildren =
+      childUserIds.length > 0
+        ? await this.prisma.binaryPlacement.findMany({
+            where: { parentId: { in: childUserIds } },
+            include: { user: { select: childUserSelect } },
+          })
+        : [];
+
+    const formatNode = (c: any, depthRemaining = 0): any => {
       if (!c) return null;
-      return {
+      const formatted: any = {
         id: c.id,
         userId: c.userId,
         memberId: c.user?.memberId,
@@ -687,36 +801,51 @@ export class MembersService {
         carryRightUnits: Number(c.carryRightPaise),
         leftVolumeUnits: Number(c.leftVolumePaise),
         rightVolumeUnits: Number(c.rightVolumePaise),
-        carryLeftINR: paiseToRupees(c.carryLeftPaise),
-        carryRightINR: paiseToRupees(c.carryRightPaise),
       };
+      if (depthRemaining > 0) {
+        const directKids = grandchildren.filter((gc) => gc.parentId === c.userId);
+        formatted.leftChild = formatNode(directKids.find((k) => k.leg === BinaryLeg.LEFT), 0);
+        formatted.rightChild = formatNode(directKids.find((k) => k.leg === BinaryLeg.RIGHT), 0);
+      }
+      return formatted;
     };
 
-    const leftChild = formatChild(children.find((c) => c.leg === 'LEFT'));
-    const rightChild = formatChild(children.find((c) => c.leg === 'RIGHT'));
+    const leftChild = formatNode(children.find((c) => c.leg === BinaryLeg.LEFT), 1);
+    const rightChild = formatNode(children.find((c) => c.leg === BinaryLeg.RIGHT), 1);
+
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const todayMatchesSettled = placement.lastMatchDate === todayStr ? placement.dailyMatchesCount : 0;
+    const dailyCapRemaining = Math.max(0, FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES - todayMatchesSettled);
 
     return {
       node: {
         ...placement,
+        isPlaced: Boolean(placement.parentId && placement.leg),
         parent: parentInfo,
         sponsor: placement.user.sponsor,
         leftVolumeUnits: Number(placement.leftVolumePaise),
         rightVolumeUnits: Number(placement.rightVolumePaise),
         carryLeftUnits: Number(placement.carryLeftPaise),
         carryRightUnits: Number(placement.carryRightPaise),
-        leftVolumeINR: paiseToRupees(placement.leftVolumePaise),
-        rightVolumeINR: paiseToRupees(placement.rightVolumePaise),
-        carryLeftINR: paiseToRupees(placement.carryLeftPaise),
-        carryRightINR: paiseToRupees(placement.carryRightPaise),
+        matchedLeftUnits: Number(placement.matchedVolumeLeftPaise),
+        matchedRightUnits: Number(placement.matchedVolumeRightPaise),
+        todayMatchesSettled,
+        dailyMaxMatches: FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES,
+        dailyCapRemaining,
+        dailyCapRewardINR: paiseToRupees(
+          BigInt(FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE
+        ),
         totalRewardEarnedINR: paiseToRupees(placement.totalRewardEarnedPaise),
       },
       leftChild,
       rightChild,
       matchingStatus: {
-        ratio: '1:2 or 2:1',
+        ratio: '1:1',
         proposedRewardINR: 3000,
         dailyCapINR: 45000,
         maxDailyMatches: 15,
+        todayMatchesSettled,
+        dailyCapRemaining,
         status: 'SIMULATION_ONLY',
         carryForwardRule: 'UNMATCHED_VOLUME_CARRIED_FORWARD',
       },

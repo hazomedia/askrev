@@ -9,7 +9,7 @@ try {
 }
 
 const prisma = new PrismaClient();
-const API_URL = 'http://localhost:4000/api';
+const API_URL = process.env.API_URL || 'http://localhost:4000/api';
 
 async function login(email, password) {
   const res = await fetch(`${API_URL}/auth/login`, {
@@ -218,9 +218,9 @@ async function runTest() {
     }
 
     // =========================================================================
-    // STEP 3: BINARY MATCHING 1:2 RATIO SETTLEMENT TEST
+    // STEP 3: BINARY MATCHING 1:1 RATIO SETTLEMENT TEST
     // =========================================================================
-    console.log('\n--- Step 3: Testing 1:2 Ratio Binary Matching Settlement ---');
+    console.log('\n--- Step 3: Testing 1:1 Ratio Binary Matching Settlement ---');
 
     // AUDIT REQUIREMENT 6: Regular member cannot initiate binary matching settlements even for own account
     const unauthMemberRes = await fetch(`${API_URL}/members/binary/run-matching`, {
@@ -234,7 +234,7 @@ async function runTest() {
       throw new Error(`Expected 403 Forbidden for regular member binary matching, got ${unauthMemberRes.status}`);
     }
 
-    console.log('Root has 1 Left and 2 Right. Running administrative binary matching settlement:');
+    console.log('Root has 1 Left and 2 Right. Running administrative 1:1 binary matching settlement:');
     const match1Res = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
       headers: adminHeaders,
@@ -253,8 +253,8 @@ async function runTest() {
     if (match1Json.matchesSettled !== 1 || match1Json.rewardINR !== 3000) {
       throw new Error(`Expected 1 match and ₹3,000 reward, got ${match1Json.matchesSettled} matches, ₹${match1Json.rewardINR}`);
     }
-    if (match1Json.carryLeft !== 0 || match1Json.carryRight !== 0) {
-      throw new Error(`Expected 0 carry on both legs after 1:2 match, got Left=${match1Json.carryLeft}, Right=${match1Json.carryRight}`);
+    if (match1Json.carryLeft !== 0 || match1Json.carryRight !== 1) {
+      throw new Error(`Expected Left=0, Right=1 carry after 1:1 match of (1L, 2R), got Left=${match1Json.carryLeft}, Right=${match1Json.carryRight}`);
     }
 
     // Verify Double-Entry Journal for 1:2 Match
@@ -283,11 +283,11 @@ async function runTest() {
     console.log(`  ✓ Root Wallet Available Earnings: ₹${Number(rootWallet1.availableEarningsPaise) / 100}`);
 
     // =========================================================================
-    // STEP 4: BINARY MATCHING 2:1 RATIO SETTLEMENT TEST
+    // STEP 4: SECOND 1:1 RATIO SETTLEMENT WITH CARRIED VOLUME TEST
     // =========================================================================
-    console.log('\n--- Step 4: Testing 2:1 Ratio Binary Matching Settlement ---');
+    console.log('\n--- Step 4: Testing Carried-Forward Volume + 1:1 Settlement ---');
 
-    // Add 2 Left nodes (L2, L3) under L1, and 1 Right node (R3) under R2
+    // Add 2 Left nodes (L2, L3) under L1, and 1 Right node (R3) under R2 (adds to existing 1R carry -> 2L : 2R)
     const nodeL2 = await createTestMember('L2', true);
     const nodeL3 = await createTestMember('L3', true);
     const nodeR3 = await createTestMember('R3', true);
@@ -311,38 +311,38 @@ async function runTest() {
     const rootPlacementBefore21 = await prisma.binaryPlacement.findUnique({
       where: { userId: rootUser.id },
     });
-    console.log(`  ✓ Added 2 Left and 1 Right. Root Carry Forward: Left = ${rootPlacementBefore21.carryLeftPaise}, Right = ${rootPlacementBefore21.carryRightPaise}`);
-    if (rootPlacementBefore21.carryLeftPaise !== 2n || rootPlacementBefore21.carryRightPaise !== 1n) {
-      throw new Error(`Expected Carry Left=2, Right=1; got Left=${rootPlacementBefore21.carryLeftPaise}, Right=${rootPlacementBefore21.carryRightPaise}`);
+    console.log(`  ✓ Added 2 Left and 1 Right to carried 1R. Root Carry Forward: Left = ${rootPlacementBefore21.carryLeftPaise}, Right = ${rootPlacementBefore21.carryRightPaise}`);
+    if (rootPlacementBefore21.carryLeftPaise !== 2n || rootPlacementBefore21.carryRightPaise !== 2n) {
+      throw new Error(`Expected Carry Left=2, Right=2; got Left=${rootPlacementBefore21.carryLeftPaise}, Right=${rootPlacementBefore21.carryRightPaise}`);
     }
 
-    // Settle 2:1 match via Admin
+    // Settle 1:1 matches via Admin (2 pairs = ₹6,000)
     const match2Res = await fetch(`${API_URL}/members/binary/run-matching`, {
       method: 'POST',
       headers: adminHeaders,
       body: JSON.stringify({ userId: rootUser.id }),
     });
     const match2Json = await match2Res.json();
-    if (!match2Res.ok) throw new Error(`Matching settlement 2:1 failed: ${JSON.stringify(match2Json)}`);
+    if (!match2Res.ok) throw new Error(`Matching settlement 1:1 failed: ${JSON.stringify(match2Json)}`);
 
-    console.log('  ✓ 2:1 Matching settlement response:');
+    console.log('  ✓ 1:1 Matching settlement response:');
     console.log(`    - Matches Settled: ${match2Json.matchesSettled}`);
     console.log(`    - Reward Earned: ₹${match2Json.rewardINR}`);
     console.log(`    - Remaining Carry Left: ${match2Json.carryLeft}, Carry Right: ${match2Json.carryRight}`);
 
-    if (match2Json.matchesSettled !== 1 || match2Json.rewardINR !== 3000) {
-      throw new Error(`Expected 1 match and ₹3,000 reward for 2:1, got ${match2Json.matchesSettled} matches, ₹${match2Json.rewardINR}`);
+    if (match2Json.matchesSettled !== 2 || match2Json.rewardINR !== 6000) {
+      throw new Error(`Expected 2 matches and ₹6,000 reward for 1:1 of (2L, 2R), got ${match2Json.matchesSettled} matches, ₹${match2Json.rewardINR}`);
     }
     if (match2Json.carryLeft !== 0 || match2Json.carryRight !== 0) {
-      throw new Error(`Expected 0 carry on both legs after 2:1 match, got Left=${match2Json.carryLeft}, Right=${match2Json.carryRight}`);
+      throw new Error(`Expected 0 carry on both legs after 1:1 match of (2L, 2R), got Left=${match2Json.carryLeft}, Right=${match2Json.carryRight}`);
     }
 
-    // Cumulative wallet balance should now be ₹6,000
+    // Cumulative wallet balance should now be ₹9,000 (₹3,000 + ₹6,000)
     const rootWallet2 = await prisma.walletAccount.findUnique({
       where: { userId: rootUser.id },
     });
-    if (rootWallet2.availableEarningsPaise !== 600000n) {
-      throw new Error(`Expected cumulative available earnings 600,000 paise (₹6,000), got ${rootWallet2.availableEarningsPaise}`);
+    if (rootWallet2.availableEarningsPaise !== 900000n) {
+      throw new Error(`Expected cumulative available earnings 900,000 paise (₹9,000), got ${rootWallet2.availableEarningsPaise}`);
     }
     console.log(`  ✓ Cumulative Root Wallet Available Earnings: ₹${Number(rootWallet2.availableEarningsPaise) / 100}`);
 
@@ -407,16 +407,15 @@ async function runTest() {
       Authorization: `Bearer ${capRootAuth.tokens.accessToken}`,
     };
 
-    // Provide 32 Left units and 16 Right units
-    // With 2:1 ratio, 16 full matches would consume 32 Left and 16 Right.
-    // Daily cap allows max 15 matches (30 Left, 15 Right consumed).
+    // Provide 17 Left units and 16 Right units
+    // With 1:1 ratio, 16 full matches exist; daily cap allows max 15 matches (15 Left, 15 Right consumed).
     // Volume preservation rule: 2 Left and 1 Right MUST remain in carry-forward!
     await prisma.binaryPlacement.update({
       where: { userId: capRootUser.id },
       data: {
-        carryLeftPaise: 32n,
+        carryLeftPaise: 17n,
         carryRightPaise: 16n,
-        leftVolumePaise: 32n,
+        leftVolumePaise: 17n,
         rightVolumePaise: 16n,
       },
     });

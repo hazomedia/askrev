@@ -9,13 +9,29 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Automotive Redesign Palette (ASKR EV)
+        graphite: '#101318',
+        carbon: '#080A0D',
+        lightSurface: '#F6F7F8',
+        lime: {
+          DEFAULT: '#C9FF36',
+          400: '#D5FF5C',
+          500: '#C9FF36',
+          600: '#B0EA1E',
+        },
+        silver: {
+          DEFAULT: '#A7ADB5',
+          300: '#D1D5DB',
+          400: '#A7ADB5',
+          500: '#8E95A0',
+        },
         brand: {
           50: '#F0F6FC',
           100: '#E1EDF9',
           200: '#C3DCF4',
           300: '#8FBFEA',
           400: '#529CDA',
-          500: '#165DAD', // Primary Brand Blue
+          500: '#165DAD', // Primary Brand Blue (Official ASKR EV Identity)
           600: '#124B8D',
           700: '#0E3A6D',
           800: '#0B2C52',
