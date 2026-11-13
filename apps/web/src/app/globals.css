@@ -104,46 +104,61 @@ body {
 /* 1. Electric Jeep 4x4 (Muscular heavy vehicle, steady descent) */
 @keyframes travelJeep {
   0% {
-    transform: translate3d(0, -160px, 0);
+    transform: translate3d(0, 0px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 180px), 0);
+    transform: translate3d(0, calc(100vh + 220px), 0);
   }
 }
 
 .animate-vehicle-jeep {
-  animation: travelJeep 14s linear infinite;
-  animation-delay: 0.5s;
+  animation: travelJeep 12s linear infinite;
+  animation-delay: 0s;
 }
 
 /* 2. Electric Motorcycle (Fast sport streetfighter, zips down right lane) */
 @keyframes travelMotorcycle {
   0% {
-    transform: translate3d(0, -160px, 0);
+    transform: translate3d(0, 0px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 180px), 0);
+    transform: translate3d(0, calc(100vh + 220px), 0);
   }
 }
 
 .animate-vehicle-motorcycle {
-  animation: travelMotorcycle 9.5s linear infinite;
-  animation-delay: 4.2s;
+  animation: travelMotorcycle 9s linear infinite;
+  animation-delay: 2.5s;
 }
 
 /* 3. Electric Scooter (Agile urban commuter, moderate speed) */
 @keyframes travelScooter {
   0% {
-    transform: translate3d(0, -160px, 0);
+    transform: translate3d(0, 0px, 0);
   }
   100% {
-    transform: translate3d(0, calc(100vh + 180px), 0);
+    transform: translate3d(0, calc(100vh + 220px), 0);
   }
 }
 
 .animate-vehicle-scooter {
-  animation: travelScooter 12s linear infinite;
-  animation-delay: 8.0s;
+  animation: travelScooter 11s linear infinite;
+  animation-delay: 5.5s;
+}
+
+/* 4. Electric Cycle (Lightweight agile commuter, smooth cadence) */
+@keyframes travelCycle {
+  0% {
+    transform: translate3d(0, 0px, 0);
+  }
+  100% {
+    transform: translate3d(0, calc(100vh + 220px), 0);
+  }
+}
+
+.animate-vehicle-cycle {
+  animation: travelCycle 12s linear infinite;
+  animation-delay: 8.5s;
 }
 
 /* =============================================================================

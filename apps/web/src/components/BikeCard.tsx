@@ -19,19 +19,19 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
   const detailLink = `/bikes/${item.modelCode || item.slug}`;
 
   return (
-    <div className="product-card rounded-2xl overflow-hidden flex flex-col justify-between bg-gradient-to-b from-[#111827] to-[#0A0E17] border border-white/10 hover:border-[#267DFF]/50 transition-all duration-300 group">
-      {/* Product Image Stage (Dark Automotive Studio Stage) */}
+    <div className="product-card rounded-2xl overflow-hidden flex flex-col justify-between bg-gradient-to-b from-[#131B2C] to-[#0A0E18] border border-white/12 hover:border-[#267DFF]/60 hover:shadow-[0_20px_45px_-10px_rgba(0,0,0,0.8),0_0_35px_-5px_rgba(38,125,255,0.3)] transition-all duration-300 group">
+      {/* Product Image Stage (Enhanced Contrast Dark Automotive Studio Stage) */}
       <div
-        className="relative p-6 pb-2 flex flex-col items-center justify-center min-h-[250px] sm:min-h-[270px] border-b border-white/10 overflow-hidden"
+        className="relative p-5 pb-3 flex flex-col items-center justify-center min-h-[290px] sm:min-h-[320px] border-b border-white/10 overflow-hidden"
         style={{
-          background: 'linear-gradient(180deg, #131C2D 0%, #0F1726 50%, #0A0F1A 100%)',
+          background: 'radial-gradient(ellipse at 50% 40%, #1B263C 0%, #131A29 60%, #0A0F1A 100%)',
         }}
       >
-        {/* Directional Electric Blue Ambient Spotlight */}
+        {/* Directional Electric Blue Ambient Spotlight Behind Silhouette */}
         <div
-          className="absolute inset-x-4 top-8 bottom-4 rounded-full filter blur-2xl opacity-30 group-hover:opacity-60 pointer-events-none transition-opacity duration-500"
+          className="absolute inset-x-6 top-8 bottom-6 rounded-full filter blur-3xl opacity-40 group-hover:opacity-75 pointer-events-none transition-opacity duration-500"
           style={{
-            background: 'radial-gradient(circle, rgba(38, 125, 255, 0.45) 0%, rgba(80, 217, 255, 0.15) 50%, transparent 75%)',
+            background: 'radial-gradient(circle, rgba(38, 125, 255, 0.5) 0%, rgba(80, 217, 255, 0.2) 50%, transparent 75%)',
           }}
         />
 
@@ -53,19 +53,22 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
           )}
         </div>
 
-        {/* Real Vehicle Photography — Large Prominent Automotive Stance */}
-        <Link href={detailLink} className="w-full flex items-center justify-center my-3 relative z-10">
-          <div className="relative w-full h-48 sm:h-52 flex items-center justify-center transition-transform duration-500 group-hover:scale-105">
+        {/* Real Vehicle Photography — Prominent Stance, High-Contrast Silhouette */}
+        <Link href={detailLink} className="w-full flex items-center justify-center my-2 relative z-10">
+          <div className="relative w-full h-56 sm:h-64 flex items-center justify-center transition-transform duration-500 group-hover:scale-105">
             {/* Realistic Contact Shadow on Dark Floor */}
-            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-4/5 h-4 bg-black/75 rounded-full filter blur-sm pointer-events-none" />
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-4/5 h-5 bg-black/85 rounded-full filter blur-md pointer-events-none" />
             <img
               src={item.imageUrl}
               alt={item.name}
-              className="relative z-10 w-full h-full object-contain filter drop-shadow-[0_10px_20px_rgba(0,0,0,0.65)] select-none"
+              className="relative z-10 w-full h-full object-contain filter drop-shadow-[0_14px_24px_rgba(0,0,0,0.85)] drop-shadow-[0_0_16px_rgba(38,125,255,0.18)] select-none"
               loading="lazy"
             />
           </div>
         </Link>
+
+        {/* Bottom Horizon Accent Line */}
+        <div className="absolute bottom-0 inset-x-8 h-[1px] bg-gradient-to-r from-transparent via-[#50D9FF]/25 to-transparent pointer-events-none" />
       </div>
 
       {/* Product Details & Specs */}

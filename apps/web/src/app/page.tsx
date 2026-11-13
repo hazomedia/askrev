@@ -121,7 +121,7 @@ export default function HomePage() {
       <VerticalRoad />
 
       {/* Main Content Wrapper (Leaves reserved track space on desktop for Vertical Road) */}
-      <div className="w-full xl:pr-[104px] 2xl:pr-[120px] transition-all">
+      <div className="w-full lg:pr-[116px] xl:pr-[130px] 2xl:pr-[144px] transition-all">
         <Navbar />
 
         {/* =========================================================================
@@ -132,7 +132,7 @@ export default function HomePage() {
         <section
           className="relative border-b border-white/10 overflow-hidden pt-8 pb-16 md:pt-14 md:pb-24"
           style={{
-            background: 'linear-gradient(180deg, #0A101D 0%, #080B12 50%, #0D1424 100%)',
+            background: 'radial-gradient(ellipse at 75% 35%, #142138 0%, #0C1322 45%, #080B12 100%)',
           }}
         >
           {/* Directional Automotive Studio Ambient Backlight Glow */}
@@ -178,40 +178,40 @@ export default function HomePage() {
                 </div>
 
                 {/* Key 4-Metric Grid in Midnight Glassmorphic Pill */}
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-[#101827]/85 border border-white/10 shadow-lg max-w-lg backdrop-blur-md">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md">
                   <div>
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                       Range
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
                       {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
                     </span>
                   </div>
 
                   <div className="border-l border-white/10 pl-3">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                       Top Speed
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
                       {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
                     </span>
                   </div>
 
-                  <div className="border-l border-white/10 pl-3">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
+                  <div className="border-l sm:border-l border-white/10 pl-3">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                       Battery
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
                       {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
                     </span>
                   </div>
 
-                  <div className="hidden sm:block border-l border-white/10 pl-3">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold">
-                      0-40 km/h
+                  <div className="border-l border-white/10 pl-3">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
+                      {activeVehicle.category === 'cycles' ? '0-25 km/h' : '0-40 km/h'}
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF]">
-                      {activeVehicle.acceleration0to40 || '3.2s'}
+                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                      {activeVehicle.acceleration0to40 || '3.2 sec'}
                     </span>
                   </div>
                 </div>
