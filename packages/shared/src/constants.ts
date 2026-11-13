@@ -36,6 +36,19 @@ export enum MembershipRequestStatus {
   CANCELLED = 'CANCELLED',
 }
 
+export enum ProductCategory {
+  SCOOTER = 'SCOOTER',
+  BIKE = 'BIKE',
+  CYCLE = 'CYCLE',
+  JEEP = 'JEEP',
+}
+
+export enum ProductStatus {
+  DRAFT = 'DRAFT',
+  PUBLISHED = 'PUBLISHED',
+  ARCHIVED = 'ARCHIVED',
+}
+
 export enum JournalAccount {
   CASH_AND_BANK = '1000_CASH_AND_BANK',
   MEMBER_PENDING_RECOVERY = '1200_MEMBER_PENDING_RECOVERY',

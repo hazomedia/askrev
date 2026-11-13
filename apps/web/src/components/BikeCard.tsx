@@ -12,11 +12,16 @@ interface BikeCardProps {
 }
 
 export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) {
-  const item: Vehicle = vehicle || bike;
+  const item: any = vehicle || bike;
   if (!item) return null;
 
-  const isBookable = item.isBookable;
+  const isBookable = item.isBookable ?? Boolean(item.bookingAmountINR || item.bookingAmountPaise);
   const detailLink = `/bikes/${item.modelCode || item.slug}`;
+  const imageSrc = item.heroImage || item.imageUrl || (item.images && item.images[0]?.url) || '/images/vehicles/dark/thunder-pro.jpg';
+  const priceINR = item.sellingPriceINR || item.exShowroomPriceINR;
+  const rangeVal = item.rangeKm ?? item.range;
+  const speedVal = item.topSpeedKmh ?? item.topSpeed;
+  const battVal = item.batteryCapacityKwh ?? item.battery;
 
   return (
     <div className="product-card rounded-2xl overflow-hidden flex flex-col justify-between bg-gradient-to-b from-[#131B2C] to-[#0A0E18] border border-white/12 hover:border-[#267DFF]/60 hover:shadow-[0_20px_45px_-10px_rgba(0,0,0,0.8),0_0_35px_-5px_rgba(38,125,255,0.3)] transition-all duration-300 group">
@@ -59,7 +64,7 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
             {/* Realistic Contact Shadow on Dark Floor */}
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-4/5 h-5 bg-black/85 rounded-full filter blur-md pointer-events-none" />
             <img
-              src={item.imageUrl}
+              src={imageSrc}
               alt={item.name}
               className="relative z-10 w-full h-full object-contain filter drop-shadow-[0_14px_24px_rgba(0,0,0,0.85)] drop-shadow-[0_0_16px_rgba(38,125,255,0.18)] select-none"
               loading="lazy"
@@ -75,7 +80,7 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
       <div className="p-6 flex-1 flex flex-col justify-between space-y-5 bg-[#0C121E]/60">
         <div>
           <div className="text-[11px] font-semibold text-[#AAB7C8] uppercase tracking-wider">
-            {item.manufacturer || 'ASKR EV Mobility'}
+            {item.manufacturer || item.brand || 'ASKR EV Mobility'}
           </div>
           <Link href={detailLink} className="hover:text-[#50D9FF] transition-colors">
             <h3 className="text-xl font-extrabold text-[#F7FAFF] tracking-tight mt-0.5">
@@ -83,7 +88,7 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
             </h3>
           </Link>
           <p className="text-xs text-[#AAB7C8] mt-1 line-clamp-1">
-            {item.tagline}
+            {item.tagline || item.shortDescription || item.headline || ''}
           </p>
 
           {/* Clean 3-Metric Specifications Grid in Midnight Pill */}
@@ -93,7 +98,7 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
                 Range
               </span>
               <span className="text-sm font-bold text-[#F7FAFF]">
-                {item.rangeKm} <span className="text-[10px] font-normal text-[#AAB7C8]">km</span>
+                {rangeVal ? `${rangeVal} ` : '— '}<span className="text-[10px] font-normal text-[#AAB7C8]">km</span>
               </span>
             </div>
 
@@ -102,7 +107,7 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
                 Top Speed
               </span>
               <span className="text-sm font-bold text-[#F7FAFF]">
-                {item.topSpeedKmh} <span className="text-[10px] font-normal text-[#AAB7C8]">km/h</span>
+                {speedVal ? `${speedVal} ` : '— '}<span className="text-[10px] font-normal text-[#AAB7C8]">km/h</span>
               </span>
             </div>
 
@@ -111,7 +116,7 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
                 Battery
               </span>
               <span className="text-sm font-bold text-[#F7FAFF]">
-                {item.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#AAB7C8]">kWh</span>
+                {battVal ? `${battVal} ` : '— '}<span className="text-[10px] font-normal text-[#AAB7C8]">kWh</span>
               </span>
             </div>
           </div>
@@ -124,9 +129,9 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
               Ex-Showroom
             </span>
             <div className="text-lg font-black text-[#F7FAFF]">
-              {item.exShowroomPriceINR
-                ? `₹${item.exShowroomPriceINR.toLocaleString('en-IN')}`
-                : 'Showcase Preview'}
+              {priceINR
+                ? `₹${priceINR.toLocaleString('en-IN')}`
+                : item.formattedSellingPrice || 'Showcase Preview'}
             </div>
             {item.estimatedOnRoadINR && (
               <span className="text-[10px] text-[#AAB7C8] block">

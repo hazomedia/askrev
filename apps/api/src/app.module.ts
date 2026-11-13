@@ -8,6 +8,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
 import { EvBikesModule } from './ev-bikes/ev-bikes.module';
 import { AdminModule } from './admin/admin.module';
 import { WalletModule } from './wallet/wallet.module';
+import { ProductsModule } from './products/products.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -21,6 +22,7 @@ import { HealthController } from './health.controller';
     EvBikesModule,
     AdminModule,
     WalletModule,
+    ProductsModule,
   ],
   controllers: [HealthController],
 })

@@ -8,6 +8,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
+const cookieParser = require('cookie-parser');
 
 // Ensure BigInts serialize automatically to JSON string
 if (typeof BigInt !== 'undefined' && !(BigInt.prototype as any).toJSON) {
@@ -46,15 +47,26 @@ async function bootstrap() {
   expressApp.disable('x-powered-by');
 
   app.setGlobalPrefix('api');
+  app.use(cookieParser());
 
   const configuredOrigins = (process.env.CORS_ORIGIN || '')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
+  const prodOrigins = [
+    'https://www.askrevdrive.com',
+    'https://askrevdrive.com',
+    'https://admin.askrevdrive.com',
+  ];
   const devFallbackOrigins =
     process.env.NODE_ENV === 'production'
-      ? []
-      : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+      ? prodOrigins
+      : [
+          'http://localhost:3000',
+          'http://127.0.0.1:3000',
+          'http://admin.localhost:3000',
+          ...prodOrigins,
+        ];
   const allowedOrigins = new Set([...configuredOrigins, ...devFallbackOrigins]);
 
   app.enableCors({
@@ -69,7 +81,8 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-CSRF-Token', 'x-csrf-token'],
+    exposedHeaders: ['Retry-After', 'X-CSRF-Token'],
   });
 
   // Register global JSON/urlencoded body parsers via @nestjs/platform-express (avoids pnpm phantom express import)

@@ -32,6 +32,34 @@ export class LoginDto {
   @IsString()
   @MinLength(6)
   password: string;
+
+  @IsString()
+  @IsOptional()
+  totpCode?: string;
+
+  @IsString()
+  @IsOptional()
+  recoveryCode?: string;
+}
+
+export class VerifyMfaDto {
+  @IsString()
+  @IsNotEmpty()
+  code: string;
+
+  @IsString()
+  @IsOptional()
+  secret?: string;
+}
+
+export class DisableMfaDto {
+  @IsString()
+  @IsNotEmpty()
+  password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  code: string;
 }
 
 export class RefreshTokenDto {

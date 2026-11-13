@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, AlertCircle } from 'lucide-react';
+import { Mail, Lock, KeyRound, AlertCircle, ShieldCheck } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
 import { fetchApi, setAuthSession } from '../../../lib/api';
@@ -12,6 +12,10 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,12 +25,26 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      const payload: any = {
+        email,
+        password,
+      };
+
+      if (mfaRequired) {
+        if (useRecoveryCode) {
+          payload.recoveryCode = recoveryCode.trim();
+        } else {
+          payload.totpCode = totpCode.trim();
+        }
+      }
+
       const data: any = await fetchApi('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(payload),
       });
 
-      setAuthSession(data.tokens.accessToken, data.user, data.tokens.refreshToken);
+      // Secure session: Admin tokens are stored strictly in HttpOnly cookies, never localStorage
+      setAuthSession(data.tokens?.accessToken, data.user, data.tokens?.refreshToken);
 
       if (['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(data.user.role)) {
         router.push('/admin');
@@ -34,7 +52,13 @@ export default function LoginPage() {
         router.push('/dashboard');
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please verify your credentials.');
+      const message = err.message || 'Login failed. Please verify your credentials.';
+      if (message.includes('MFA_REQUIRED')) {
+        setMfaRequired(true);
+        setError('Two-Factor Authentication is enabled for this account. Please enter your 6-digit authenticator code.');
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -43,6 +67,9 @@ export default function LoginPage() {
   const fillDemo = (demoEmail: string, demoPass: string) => {
     setEmail(demoEmail);
     setPassword(demoPass);
+    setMfaRequired(false);
+    setTotpCode('');
+    setRecoveryCode('');
     setError(null);
   };
 
@@ -101,12 +128,66 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* MFA Verification Challenge */}
+            {mfaRequired && (
+              <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#165DAD]">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Two-Factor Authentication Required</span>
+                </div>
+
+                {!useRecoveryCode ? (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      6-Digit Authenticator Code
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        maxLength={6}
+                        autoFocus
+                        value={totpCode}
+                        onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="123456"
+                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono tracking-widest text-center"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Backup Recovery Code
+                    </label>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={recoveryCode}
+                      onChange={(e) => setRecoveryCode(e.target.value)}
+                      placeholder="XXXX-XXXX-XX"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono text-center"
+                    />
+                  </div>
+                )}
+
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => setUseRecoveryCode(!useRecoveryCode)}
+                    className="text-[11px] text-[#165DAD] hover:underline"
+                  >
+                    {useRecoveryCode ? 'Use 6-digit Authenticator Code' : 'Use Backup Recovery Code'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
               className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-xs font-semibold transition-colors disabled:opacity-50"
             >
-              {loading ? 'Authenticating...' : 'Sign In'}
+              {loading ? 'Authenticating...' : mfaRequired ? 'Verify & Continue' : 'Sign In'}
             </button>
           </form>
 
@@ -118,11 +199,11 @@ export default function LoginPage() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 type="button"
-                onClick={() => fillDemo('superadmin@askrev.local', 'SuperAdmin@AskREV2026!')}
+                onClick={() => fillDemo('admin@askrev.com', 'Admin@123456')}
                 className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-left hover:border-slate-300 transition-colors"
               >
                 <div className="font-semibold text-[#253247]">Super Admin</div>
-                <div className="text-[10px] text-slate-400 truncate">superadmin@...</div>
+                <div className="text-[10px] text-slate-400 truncate">admin@askrev.com</div>
               </button>
               <button
                 type="button"

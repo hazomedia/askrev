@@ -1,5 +1,18 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
+/**
+ * Retrieve CSRF token from document cookies (double-submit pattern)
+ */
+export function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|;\s*)askrev_csrf_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+/**
+ * Legacy auth token helper (preserved for non-admin backward compatibility)
+ * Admin accounts strictly use secure HttpOnly cookies.
+ */
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('askrev_access_token');
@@ -10,13 +23,28 @@ export function getRefreshToken(): string | null {
   return localStorage.getItem('askrev_refresh_token');
 }
 
+/**
+ * Session storage handler:
+ * CRITICAL SECURITY RULE: Admin credentials are NEVER written to localStorage.
+ * Tokens are securely managed by the server in HttpOnly cookies.
+ */
 export function setAuthSession(token: string, user: any, refreshToken?: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem('askrev_access_token', token);
-  localStorage.setItem('askrev_user', JSON.stringify(user));
-  if (refreshToken) {
-    localStorage.setItem('askrev_refresh_token', refreshToken);
+
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+
+  if (isAdmin) {
+    // Strictly purge any legacy tokens from localStorage for admin users
+    localStorage.removeItem('askrev_access_token');
+    localStorage.removeItem('askrev_refresh_token');
+    localStorage.setItem('askrev_user', JSON.stringify(user));
+    return;
   }
+
+  // Non-admin fallback session persistence
+  if (token) localStorage.setItem('askrev_access_token', token);
+  if (user) localStorage.setItem('askrev_user', JSON.stringify(user));
+  if (refreshToken) localStorage.setItem('askrev_refresh_token', refreshToken);
 }
 
 export function clearAuthSession() {
@@ -31,15 +59,15 @@ export const clearAuth = clearAuthSession;
 export async function logoutSession(): Promise<void> {
   const token = getAuthToken();
   try {
-    if (token) {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-    }
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken()! } : {}),
+      },
+    });
   } catch {
     // Always clear client credentials even if server call fails
   } finally {
@@ -62,7 +90,6 @@ let pendingRefreshPromise: Promise<string | null> | null = null;
 
 async function attemptTokenRefresh(): Promise<string | null> {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
 
   if (pendingRefreshPromise) {
     return pendingRefreshPromise;
@@ -72,8 +99,12 @@ async function attemptTokenRefresh(): Promise<string | null> {
     try {
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken()! } : {}),
+        },
+        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
       });
       if (!res.ok) {
         clearAuthSession();
@@ -102,6 +133,9 @@ async function attemptTokenRefresh(): Promise<string | null> {
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
+  const csrf = getCsrfToken();
+  const method = (options.method || 'GET').toUpperCase();
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
@@ -111,7 +145,12 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  if (csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    headers['X-CSRF-Token'] = csrf;
+  }
+
   let response = await fetch(`${API_BASE}${endpoint}`, {
+    credentials: 'include',
     ...options,
     headers,
   });
@@ -126,6 +165,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     if (newAccessToken) {
       headers['Authorization'] = `Bearer ${newAccessToken}`;
       response = await fetch(`${API_BASE}${endpoint}`, {
+        credentials: 'include',
         ...options,
         headers,
       });
@@ -144,4 +184,86 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   return response.json();
+}
+
+/**
+ * Upload product photo with authorization for Admin Product Catalog
+ */
+export async function uploadProductImageApi(
+  file: File,
+  slugPrefix?: string
+): Promise<{ url: string; filename: string; storageProvider?: string }> {
+  const token = getAuthToken();
+  const csrf = getCsrfToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf;
+  }
+
+  const query = slugPrefix ? `?slug=${encodeURIComponent(slugPrefix)}` : '';
+  const response = await fetch(`${API_BASE}/admin/products/upload-image${query}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let errMessage = 'Image upload failed';
+    try {
+      const err = await response.json();
+      errMessage = err.message || errMessage;
+    } catch {}
+    throw new Error(errMessage);
+  }
+
+  return response.json();
+}
+
+/**
+ * Safe delete image from storage (Cloudflare R2 or local)
+ */
+export async function deleteProductImageApi(url: string): Promise<{ deleted: boolean; reason?: string }> {
+  return fetchApi<{ deleted: boolean; reason?: string }>(
+    `/admin/products/image?url=${encodeURIComponent(url)}`,
+    { method: 'DELETE' }
+  );
+}
+
+/**
+ * Public catalog fetcher with dynamic live revalidation
+ */
+export async function fetchPublishedCatalog(params?: { category?: string; featured?: boolean }): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (params?.category) query.append('category', params.category);
+  if (params?.featured) query.append('featured', 'true');
+  const qs = query.toString() ? `?${query.toString()}` : '';
+
+  const res = await fetch(`${API_BASE}/catalog${qs}`, {
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch catalog from ${API_BASE}/catalog: ${res.status} ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchProductBySlug(slug: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/catalog/${encodeURIComponent(slug)}`, {
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch product '${slug}': ${res.status} ${res.statusText}`);
+  }
+
+  return res.json();
 }

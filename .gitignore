@@ -43,3 +43,12 @@ test-results
 playwright-report
 .vercel
 .env*
+
+# Backups and Local Dumps
+backups/
+*.sql
+*.dump
+
+# Local uploads
+apps/web/public/uploads/products/*
+!apps/web/public/uploads/products/.gitkeep

@@ -64,6 +64,11 @@ model User {
 
   refreshTokenHash    String?
 
+  // Two-Factor Authentication (TOTP RFC 6238)
+  twoFactorSecret        String?
+  twoFactorEnabled       Boolean            @default(false)
+  twoFactorRecoveryCodes String[]           @default([])
+
   wallet              WalletAccount?
   binaryPlacement     BinaryPlacement?
   vouchers            ShoppingVoucher[]
@@ -246,6 +251,7 @@ model EvBike {
   imageUrl               String
   isAvailable            Boolean     @default(true)
   bookings               EvBooking[]
+  products               Product[]
 
   createdAt              DateTime    @default(now())
 }
@@ -348,3 +354,72 @@ model BinaryMatchEvent {
   @@index([userId])
   @@index([matchDate])
 }
+
+enum ProductCategory {
+  SCOOTER
+  BIKE
+  CYCLE
+  JEEP
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Product {
+  id                      String          @id @default(uuid())
+  name                    String
+  slug                    String          @unique
+  category                ProductCategory
+  brand                   String          @default("ASKR EV")
+  tagline                 String?
+  shortDescription        String?
+  fullDescription         String?         @db.Text
+
+  // Monetary values strictly in integer paise (BigInt)
+  regularPricePaise       BigInt?
+  sellingPricePaise       BigInt?
+  bookingAmountPaise      BigInt?
+  voucherRedeemLimitPaise BigInt?
+
+  // Performance specifications (nullable where not applicable across categories)
+  rangeKm                 Int?
+  topSpeedKmh             Int?
+  batteryCapacityKwh      Float?
+  chargingTimeHours       Float?
+  motorPower              String?
+  acceleration            String?
+  warranty                String?
+  powertrain              String?
+
+  // Structured specifications and custom styling (JSON arrays)
+  colors                  Json?           // Array of { name, hex, accentHex?, description }
+  specifications          Json?           // Array of { label, value, sub? }
+  highlights              Json?           // Array of string highlights
+
+  // Media & Photo gallery management
+  images                  Json?           // Array of { url, publicId?, isPrimary, order, caption? }
+  heroImage               String?
+  thumbnailImage          String?
+
+  // Catalog status & ordering
+  isFeatured              Boolean         @default(false)
+  status                  ProductStatus   @default(DRAFT)
+  displayOrder            Int             @default(0)
+
+  // Optional connection to legacy EvBike for booking integration
+  evBikeId                String?
+  evBike                  EvBike?         @relation(fields: [evBikeId], references: [id], onDelete: SetNull)
+
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@index([isFeatured])
+  @@index([displayOrder])
+  @@index([slug])
+}
+

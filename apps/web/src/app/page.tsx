@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -21,7 +23,7 @@ import BookingModal from '../components/BookingModal';
 import VerticalRoad from '../components/VerticalRoad';
 import MobileBackgroundRoad from '../components/MobileBackgroundRoad';
 import GroundMist from '../components/GroundMist';
-import { fetchApi, getStoredUser } from '../lib/api';
+import { fetchApi, fetchPublishedCatalog, getStoredUser } from '../lib/api';
 import {
   ELECTRIC_SCOOTERS,
   ELECTRIC_MOTORCYCLES,
@@ -37,9 +39,12 @@ export default function HomePage() {
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<'all' | 'scooters' | 'bikes' | 'cycles' | 'jeeps'>('bikes');
   const [bookingVehicle, setBookingVehicle] = useState<any | null>(null);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  // 4 Featured Hero Vehicles across categories (Motorcycle, Scooter, Cycle, Jeep)
-  const heroSlides = [
+  // 4 Featured Hero Vehicles baseline across categories (Motorcycle, Scooter, Cycle, Jeep)
+  const initialHeroSlides = [
     {
       vehicle: ELECTRIC_MOTORCYCLES[0], // ASKR Thunder Pro
       headline: 'Pure Torque. Zero Compromise.',
@@ -78,20 +83,78 @@ export default function HomePage() {
     },
   ];
 
+  const [heroSlides, setHeroSlides] = useState<any[]>(initialHeroSlides);
+
+  const loadCatalog = async () => {
+    setLoadingProducts(true);
+    setCatalogError(null);
+    try {
+      const data = await fetchPublishedCatalog();
+      if (Array.isArray(data)) {
+        setProducts(data);
+        const featured = data.filter((p: any) => p.isFeatured);
+        if (featured.length > 0) {
+          const updatedSlides = featured.map((p: any) => {
+            const cat = (p.category || '').toUpperCase();
+            const defaultImg =
+              cat === 'SCOOTER'
+                ? '/images/vehicles/dark/hero-scooter-dark.jpg'
+                : cat === 'CYCLE'
+                ? '/images/vehicles/dark/hero-cycle-dark.jpg'
+                : cat === 'JEEP'
+                ? '/images/vehicles/dark/hero-jeep-dark.jpg'
+                : '/images/vehicles/dark/hero-motorcycle-dark.jpg';
+            const ambientGlow =
+              cat === 'CYCLE'
+                ? 'rgba(13, 148, 136, 0.28)'
+                : cat === 'JEEP'
+                ? 'rgba(37, 99, 235, 0.35)'
+                : 'rgba(38, 125, 255, 0.35)';
+            const ambientCyan =
+              cat === 'CYCLE'
+                ? 'rgba(94, 234, 212, 0.14)'
+                : cat === 'JEEP'
+                ? 'rgba(99, 102, 241, 0.18)'
+                : 'rgba(80, 217, 255, 0.18)';
+
+            return {
+              vehicle: p,
+              headline: p.tagline || (cat === 'SCOOTER' ? 'The Revolution in Electric Mobility.' : 'Pure Torque. Zero Compromise.'),
+              subline: p.shortDescription || p.fullDescription || 'High-efficiency connected electric vehicle engineered by ASKR EV Mobility.',
+              primaryBadge: p.statusBadge ? `${p.name} • ${p.statusBadge}` : `${p.categoryLabel || 'EV'} Showcase`,
+              image: p.heroImage || defaultImg,
+              ambientGlow,
+              ambientCyan,
+            };
+          });
+          setHeroSlides(updatedSlides);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Live catalog fetch notice:', err.message);
+      // In production, never fall back to hardcoded products when API is unavailable per Requirement 9.
+      setCatalogError('Live showroom catalog is momentarily unavailable. Please retry to load live vehicle specs.');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
   useEffect(() => {
     setCurrentUser(getStoredUser());
+    loadCatalog();
   }, []);
 
   // Auto-advance hero slider every 7.5 seconds
   useEffect(() => {
+    if (!heroSlides.length) return;
     const timer = setInterval(() => {
       setCurrentSlideIndex((prev) => (prev + 1) % heroSlides.length);
     }, 7500);
     return () => clearInterval(timer);
   }, [heroSlides.length]);
 
-  const activeSlide = heroSlides[currentSlideIndex];
-  const activeVehicle = activeSlide.vehicle;
+  const activeSlide = heroSlides[currentSlideIndex] || heroSlides[0] || initialHeroSlides[0];
+  const activeVehicle = activeSlide?.vehicle || initialHeroSlides[0].vehicle;
 
   const handleOpenBooking = (vehicle: any) => {
     setBookingVehicle(vehicle);
@@ -99,17 +162,18 @@ export default function HomePage() {
   };
 
   const getFilteredVehicles = () => {
+    if (!products || products.length === 0) return [];
     switch (selectedCategoryTab) {
       case 'scooters':
-        return ELECTRIC_SCOOTERS;
+        return products.filter((p) => (p.category || '').toUpperCase() === 'SCOOTER');
       case 'bikes':
-        return ELECTRIC_MOTORCYCLES;
+        return products.filter((p) => (p.category || '').toUpperCase() === 'BIKE');
       case 'cycles':
-        return ELECTRIC_CYCLES;
+        return products.filter((p) => (p.category || '').toUpperCase() === 'CYCLE');
       case 'jeeps':
-        return ELECTRIC_JEEPS;
+        return products.filter((p) => (p.category || '').toUpperCase() === 'JEEP');
       default:
-        return ALL_CATALOG_VEHICLES;
+        return products;
     }
   };
 
@@ -569,9 +633,32 @@ export default function HomePage() {
 
           {/* Product Cards Grid with Dark Graphite Stage & Subtle Electric Glow */}
           <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {getFilteredVehicles().map((veh) => (
-              <BikeCard key={veh.id} vehicle={veh} onBookClick={handleOpenBooking} />
-            ))}
+            {loadingProducts ? (
+              <div className="col-span-full py-16 flex flex-col items-center justify-center gap-3">
+                <RefreshCw className="w-8 h-8 text-[#50D9FF] animate-spin" />
+                <span className="text-xs text-[#AAB7C8]">Loading showroom lineup from live database...</span>
+              </div>
+            ) : catalogError ? (
+              <div className="col-span-full py-12 px-6 rounded-2xl bg-white/5 border border-white/10 text-center space-y-3">
+                <AlertCircle className="w-8 h-8 text-amber-400 mx-auto" />
+                <div className="text-sm font-bold text-white">Live Showroom Catalog Offline</div>
+                <p className="text-xs text-[#AAB7C8] max-w-md mx-auto">{catalogError}</p>
+                <button
+                  onClick={loadCatalog}
+                  className="px-5 py-2.5 rounded-full bg-[#267DFF] text-white text-xs font-bold hover:bg-[#1A6EEB] transition-colors"
+                >
+                  Retry Connection
+                </button>
+              </div>
+            ) : getFilteredVehicles().length === 0 ? (
+              <div className="col-span-full py-16 text-center text-[#AAB7C8] text-xs">
+                No vehicles currently published in this category.
+              </div>
+            ) : (
+              getFilteredVehicles().map((veh) => (
+                <BikeCard key={veh.id} vehicle={veh} onBookClick={handleOpenBooking} />
+              ))
+            )}
           </div>
 
           {/* View All In Category Link */}

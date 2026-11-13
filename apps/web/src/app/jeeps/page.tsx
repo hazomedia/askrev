@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -10,14 +10,38 @@ import {
   Gauge,
   Compass,
   Sparkles,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import BikeCard from '../../components/BikeCard';
-import { ELECTRIC_JEEPS } from '../../lib/catalog';
+import { fetchPublishedCatalog } from '../../lib/api';
 
 export default function JeepsPage() {
-  const [jeeps] = useState(ELECTRIC_JEEPS);
+  const [jeeps, setJeeps] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadJeeps = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchPublishedCatalog({ category: 'JEEP' });
+      setJeeps(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.warn('Jeeps catalog fetch notice:', err.message);
+      setError('Live electric 4x4 Jeep catalog is momentarily offline. Please retry connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadJeeps();
+  }, []);
+
+  const featured = jeeps.find((j) => j.isFeatured) || jeeps[0];
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
@@ -48,43 +72,47 @@ export default function JeepsPage() {
         </div>
 
         {/* Featured Jeep Hero Banner (Dramatic Midnight Mountain Adventure) */}
-        <div className="mt-8 p-8 sm:p-12 rounded-3xl bg-[#101827] border border-white/10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center shadow-2xl relative overflow-hidden">
-          <div className="lg:col-span-6 space-y-4 relative z-10">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/15 border border-blue-500/30">
-              <Compass className="w-3.5 h-3.5" />
-              <span>Flagship Adventure 4x4</span>
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-[#F7FAFF] tracking-tight">
-              ASKR TerraMax 4x4
-            </h2>
-            <p className="text-sm text-[#AAB7C8] leading-relaxed">
-              Certified 380 km range, Dual PMSM All-Wheel Drive delivering 450 Nm combined torque, 230 mm ground clearance with water-wading capability up to 550 mm depth.
-            </p>
+        {featured && (
+          <div className="mt-8 p-8 sm:p-12 rounded-3xl bg-[#101827] border border-white/10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center shadow-2xl relative overflow-hidden">
+            <div className="lg:col-span-6 space-y-4 relative z-10">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/15 border border-blue-500/30">
+                <Compass className="w-3.5 h-3.5" />
+                <span>Flagship Adventure 4x4</span>
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-[#F7FAFF] tracking-tight">
+                {featured.name}
+              </h2>
+              <p className="text-sm text-[#AAB7C8] leading-relaxed">
+                {featured.tagline || featured.shortDescription || 'Dual PMSM all-wheel drive adventure electric vehicle with extreme ground clearance.'}
+              </p>
 
-            <div className="pt-2 flex items-baseline gap-2">
-              <span className="text-xs text-[#AAB7C8] uppercase font-semibold">Estimated Showroom</span>
-              <span className="text-2xl font-black text-[#F7FAFF]">₹18,50,000</span>
-              <span className="text-xs text-[#AAB7C8]/70">Ex-showroom</span>
+              <div className="pt-2 flex items-baseline gap-2">
+                <span className="text-xs text-[#AAB7C8] uppercase font-semibold">Starting at</span>
+                <span className="text-2xl font-black text-[#F7FAFF]">
+                  {featured.sellingPriceINR ? `₹${featured.sellingPriceINR.toLocaleString('en-IN')}` : (featured.formattedSellingPrice || 'Showcase Preview')}
+                </span>
+                <span className="text-xs text-[#AAB7C8]/70">Ex-showroom</span>
+              </div>
+
+              <div className="pt-2 flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/bikes/${featured.modelCode || featured.slug}`}
+                  className="px-6 py-3 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)]"
+                >
+                  Explore {featured.name}
+                </Link>
+              </div>
             </div>
 
-            <div className="pt-2 flex flex-wrap items-center gap-3">
-              <Link
-                href="/bikes/TERRAMAX-4X4"
-                className="px-6 py-3 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)]"
-              >
-                Explore TerraMax 4x4
-              </Link>
+            <div className="lg:col-span-6 flex items-center justify-center">
+              <img
+                src={featured.heroImage || featured.imageUrl || '/images/vehicles/dark/hero-jeep-dark.jpg'}
+                alt={featured.name}
+                className="w-full max-h-84 object-cover rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)]"
+              />
             </div>
           </div>
-
-          <div className="lg:col-span-6 flex items-center justify-center">
-            <img
-              src="/images/vehicles/dark/hero-jeep-dark.jpg"
-              alt="ASKR TerraMax 4x4 Electric Adventure Vehicle"
-              className="w-full max-h-84 object-cover rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)]"
-            />
-          </div>
-        </div>
+        )}
 
         {/* Fleet Grid Display */}
         <div className="mt-14">
@@ -97,13 +125,44 @@ export default function JeepsPage() {
                 Explore technical specifications, torque ratings, and off-road geometry
               </p>
             </div>
+            <button
+              onClick={loadJeeps}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 text-xs text-[#AAB7C8] hover:text-white transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#50D9FF]' : ''}`} />
+              <span>Refresh</span>
+            </button>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-            {jeeps.map((jeep) => (
-              <BikeCard key={jeep.id} vehicle={jeep} />
-            ))}
-          </div>
+          {loading ? (
+            <div className="py-20 flex flex-col items-center justify-center gap-3">
+              <RefreshCw className="w-8 h-8 text-[#50D9FF] animate-spin" />
+              <span className="text-xs text-[#AAB7C8]">Loading 4x4 Jeep models from database...</span>
+            </div>
+          ) : error ? (
+            <div className="py-12 px-6 rounded-2xl bg-white/5 border border-white/10 text-center space-y-3">
+              <AlertCircle className="w-8 h-8 text-amber-400 mx-auto" />
+              <div className="text-sm font-bold text-white">Jeep Catalog Offline</div>
+              <p className="text-xs text-[#AAB7C8] max-w-md mx-auto">{error}</p>
+              <button
+                onClick={loadJeeps}
+                className="px-5 py-2 rounded-full bg-[#267DFF] text-white text-xs font-bold hover:bg-[#1A6EEB]"
+              >
+                Retry Connection
+              </button>
+            </div>
+          ) : jeeps.length === 0 ? (
+            <div className="py-16 text-center text-[#AAB7C8] text-xs">
+              No electric 4x4 Jeep models currently published in the catalog.
+            </div>
+          ) : (
+            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+              {jeeps.map((jeep) => (
+                <BikeCard key={jeep.id} vehicle={jeep} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Engineering Highlights */}

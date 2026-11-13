@@ -21,7 +21,7 @@ import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
 import BookingModal from '../../../components/BookingModal';
 import BikeCard from '../../../components/BikeCard';
-import { fetchApi, getStoredUser } from '../../../lib/api';
+import { fetchApi, fetchProductBySlug, fetchPublishedCatalog, getStoredUser } from '../../../lib/api';
 import {
   ALL_CATALOG_VEHICLES,
   getVehicleBySlugOrCode,
@@ -32,7 +32,8 @@ export default function BikeDetailPage() {
   const params = useParams();
   const idOrCode = (params?.id as string) || (params?.slug as string) || '';
 
-  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const [vehicle, setVehicle] = useState<any | null>(null);
+  const [relatedVehicles, setRelatedVehicles] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [selectedColorIndex, setSelectedColorIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -43,6 +44,7 @@ export default function BikeDetailPage() {
   useEffect(() => {
     if (idOrCode) {
       loadVehicleData(idOrCode);
+      loadRelated(idOrCode);
       loadProfile();
     }
   }, [idOrCode]);
@@ -51,49 +53,48 @@ export default function BikeDetailPage() {
     setLoading(true);
     setError(null);
 
-    // Look up static catalog definition
-    const staticMatch = getVehicleBySlugOrCode(target);
-
     try {
-      // Attempt API lookup for live database models
-      const apiData = await fetchApi<any>(`/ev-bikes/${target}`);
-      if (apiData && apiData.id) {
-        setVehicle({
-          ...(staticMatch || ({} as any)),
-          ...apiData,
-          category: staticMatch?.category || 'bikes',
-          categoryLabel: staticMatch?.categoryLabel || 'Electric Motorcycle',
-          isBookable: true,
-          statusBadge: 'Bookings Open',
-          imageUrl: staticMatch?.imageUrl || '/images/vehicles/dark/thunder-pro.jpg',
-          galleryImages: staticMatch?.galleryImages || ['/images/vehicles/dark/thunder-pro.jpg'],
-          colors: staticMatch?.colors || [
-            { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' },
-            { name: 'Carbon Black', hex: '#0B0F17', description: 'Matte stealth finish' },
-          ],
-          specs: staticMatch?.specs || [
-            { label: 'Certified Range', value: `${apiData.rangeKm} km`, sub: 'IDC Test Cycle' },
-            { label: 'Top Speed', value: `${apiData.topSpeedKmh} km/h`, sub: 'Peak Speed' },
-            { label: 'Battery Capacity', value: `${apiData.batteryCapacityKwh} kWh`, sub: 'IP67 Pack' },
-            { label: 'Fast Charge', value: `${apiData.chargingTimeHours} hrs`, sub: '0-80% Time' },
-          ],
-          highlights: staticMatch?.highlights || [
-            'Permanent Magnet Synchronous Motor (PMSM) with liquid-cooled controller',
-            'Advanced Battery Management System with IP67 protection',
-            'Full digital instrumentation and cloud telemetry',
-          ],
-        });
+      const product = await fetchProductBySlug(target);
+      if (product && product.id) {
+        setVehicle(product);
+        setLoading(false);
         return;
       }
-    } catch (err) {
-      // Fallback to static catalog entry
-      if (staticMatch) {
-        setVehicle(staticMatch);
-        return;
-      }
-      setError('Requested vehicle specifications could not be loaded.');
-    } finally {
+    } catch (err: any) {
+      console.warn('Live product lookup notice:', err.message);
+    }
+
+    // Requirement 9: Production must never fall back to hardcoded products when the catalog API is unavailable.
+    if (process.env.NODE_ENV === 'production') {
+      setError('Live vehicle specifications are currently unavailable. Please check back shortly.');
       setLoading(false);
+      return;
+    }
+
+    // In local development fallback only if API is offline:
+    const staticMatch = getVehicleBySlugOrCode(target);
+    if (staticMatch) {
+      setVehicle(staticMatch);
+      setLoading(false);
+      return;
+    }
+
+    setError('Requested vehicle specifications could not be loaded.');
+    setLoading(false);
+  };
+
+  const loadRelated = async (target: string) => {
+    try {
+      const all = await fetchPublishedCatalog();
+      if (Array.isArray(all)) {
+        setRelatedVehicles(
+          all
+            .filter((v: any) => v.slug !== target && v.modelCode !== target && v.id !== target)
+            .slice(0, 3)
+        );
+      }
+    } catch {
+      // In production, keep related empty if API is unavailable
     }
   };
 
@@ -161,18 +162,13 @@ export default function BikeDetailPage() {
 
   // Category breadcrumb link
   const categoryHref =
-    vehicle.category === 'scooters'
+    (vehicle.category || '').toLowerCase() === 'scooters' || (vehicle.category || '').toLowerCase() === 'scooter'
       ? '/scooters'
-      : vehicle.category === 'cycles'
+      : (vehicle.category || '').toLowerCase() === 'cycles' || (vehicle.category || '').toLowerCase() === 'cycle'
       ? '/cycles'
-      : vehicle.category === 'jeeps'
+      : (vehicle.category || '').toLowerCase() === 'jeeps' || (vehicle.category || '').toLowerCase() === 'jeep'
       ? '/jeeps'
       : '/bikes';
-
-  // Related models
-  const relatedVehicles = ALL_CATALOG_VEHICLES.filter(
-    (v) => v.id !== vehicle.id && v.modelCode !== vehicle.modelCode
-  ).slice(0, 3);
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
@@ -224,7 +220,7 @@ export default function BikeDetailPage() {
 
                   {/* Vehicle Image */}
                   <img
-                    src={vehicle.imageUrl || '/images/vehicles/dark/thunder-pro.jpg'}
+                    src={vehicle.heroImage || vehicle.imageUrl || '/images/vehicles/dark/thunder-pro.jpg'}
                     alt={vehicle.name}
                     className="relative z-10 w-full h-full object-cover rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)] transition-all duration-300"
                   />
@@ -267,13 +263,13 @@ export default function BikeDetailPage() {
               <div className="lg:col-span-5 space-y-6">
                 <div>
                   <div className="text-xs font-bold text-[#50D9FF] uppercase tracking-wider mb-1">
-                    {vehicle.manufacturer || 'ASKR EV Mobility'} • {vehicle.modelCode}
+                    {vehicle.manufacturer || vehicle.brand || 'ASKR EV Mobility'} • {vehicle.modelCode || vehicle.slug}
                   </div>
                   <h1 className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
                     {vehicle.name}
                   </h1>
                   <p className="mt-2 text-sm text-[#AAB7C8] leading-relaxed">
-                    {vehicle.tagline}
+                    {vehicle.tagline || vehicle.shortDescription || vehicle.fullDescription}
                   </p>
                 </div>
 
@@ -324,9 +320,9 @@ export default function BikeDetailPage() {
                         Ex-Showroom Price
                       </span>
                       <div className="text-3xl font-black text-[#F7FAFF]">
-                        {vehicle.exShowroomPriceINR
-                          ? `₹${vehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
-                          : 'Showroom Showcase'}
+                        {vehicle.sellingPriceINR || vehicle.exShowroomPriceINR
+                          ? `₹${(vehicle.sellingPriceINR || vehicle.exShowroomPriceINR).toLocaleString('en-IN')}`
+                          : vehicle.formattedSellingPrice || 'Showroom Showcase'}
                       </div>
                     </div>
 
@@ -342,11 +338,11 @@ export default function BikeDetailPage() {
                     )}
                   </div>
 
-                  {vehicle.isBookable && vehicle.bookingAmountINR && (
+                  {vehicle.isBookable && (vehicle.bookingAmountINR || vehicle.bookingAmountPaise) && (
                     <div className="pt-2 pb-1 border-t border-white/10 flex items-center justify-between text-xs">
                       <span className="text-[#AAB7C8]">Simulated Booking Token:</span>
                       <span className="font-bold text-[#F7FAFF]">
-                        ₹{vehicle.bookingAmountINR.toLocaleString('en-IN')}
+                        ₹{(vehicle.bookingAmountINR || Number(vehicle.bookingAmountPaise) / 100).toLocaleString('en-IN')}
                       </span>
                     </div>
                   )}

@@ -1,5 +1,6 @@
 import { PrismaClient, UserRole, MembershipPackage } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedProducts } from './seed-products';
 
 const prisma = new PrismaClient();
 
@@ -199,6 +200,9 @@ async function main() {
     });
   }
   console.log(`✓ 3 Demo EV Bike Models seeded`);
+
+  // Seed Product Catalog (Scooters, Bikes, Cycles, Jeeps)
+  await seedProducts();
 
   console.log('--- Database Seeding Complete ---');
 }

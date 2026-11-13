@@ -1,4 +1,4 @@
-import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus } from './constants';
+import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus, ProductCategory, ProductStatus } from './constants';
 
 export interface MembershipRequestItem {
   id: string;
@@ -232,4 +232,65 @@ export interface EvBookingDetailItem {
   cancelledAt?: string | null;
   createdAt: string;
 }
+
+export interface ProductColorItem {
+  name: string;
+  hex: string;
+  accentHex?: string;
+  description: string;
+}
+
+export interface ProductSpecificationItem {
+  label: string;
+  value: string;
+  sub?: string;
+}
+
+export interface ProductImageItem {
+  url: string;
+  publicId?: string;
+  isPrimary: boolean;
+  order: number;
+  caption?: string;
+}
+
+export interface ProductItem {
+  id: string;
+  name: string;
+  slug: string;
+  category: ProductCategory;
+  brand: string;
+  tagline?: string | null;
+  shortDescription?: string | null;
+  fullDescription?: string | null;
+  regularPriceINR?: number | null;
+  sellingPriceINR?: number | null;
+  bookingAmountINR?: number | null;
+  voucherRedeemLimitINR?: number | null;
+  regularPricePaise?: string | null;
+  sellingPricePaise?: string | null;
+  bookingAmountPaise?: string | null;
+  voucherRedeemLimitPaise?: string | null;
+  rangeKm?: number | null;
+  topSpeedKmh?: number | null;
+  batteryCapacityKwh?: number | null;
+  chargingTimeHours?: number | null;
+  motorPower?: string | null;
+  acceleration?: string | null;
+  warranty?: string | null;
+  powertrain?: string | null;
+  colors?: ProductColorItem[] | null;
+  specifications?: ProductSpecificationItem[] | null;
+  highlights?: string[] | null;
+  images?: ProductImageItem[] | null;
+  heroImage?: string | null;
+  thumbnailImage?: string | null;
+  isFeatured: boolean;
+  status: ProductStatus;
+  displayOrder: number;
+  evBikeId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 

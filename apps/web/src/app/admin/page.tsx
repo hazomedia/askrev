@@ -34,11 +34,14 @@ import {
   XCircle,
   HelpCircle,
   ExternalLink,
+  Package,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
+import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 
 type AdminTab =
   | 'overview'
+  | 'products'
   | 'members'
   | 'approvals'
   | 'binary'
@@ -542,6 +545,7 @@ export default function AdminPage() {
 
   const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'products', label: 'Product Catalog', icon: Package },
     { id: 'members', label: 'Members', icon: Users, count: membersTotal },
     {
       id: 'approvals',
@@ -1034,6 +1038,13 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* TAB: PRODUCT CATALOG */}
+            {activeTab === 'products' && (
+              <div className="space-y-6">
+                <AdminProductCatalog />
               </div>
             )}
 
