@@ -13,6 +13,13 @@
   --border: #E5E7EB;
   --brand-blue: #165DAD;
   --brand-black: #0A0A0A;
+  
+  /* Automotive Premium Gradient Tokens */
+  --grad-pearl-ice: linear-gradient(180deg, #FFFFFF 0%, #F5F8FC 45%, #EBF3FA 100%);
+  --grad-pearl-lavender: linear-gradient(135deg, #FBFBFD 0%, #F6F4FA 50%, #F1EEF8 100%);
+  --grad-silver-white: linear-gradient(180deg, #F0F4F8 0%, #F7FAFC 50%, #FFFFFF 100%);
+  --grad-tech-features: linear-gradient(180deg, #F4F8FC 0%, #EBF2F9 50%, #F5F8FB 100%);
+  --grad-cta-graphite: linear-gradient(135deg, #0F172A 0%, #151F32 50%, #0B111E 100%);
 }
 
 html {
@@ -62,15 +69,177 @@ body {
   background: #9CA3AF;
 }
 
-/* Clean minimal card */
+/* =============================================================================
+   PREMIUM PRODUCT CARD ELEVATION & GLOW
+   ============================================================================= */
 .product-card {
   background-color: #FFFFFF;
   border: 1px solid #E5E7EB;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 
 .product-card:hover {
-  border-color: #D1D5DB;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
-  transform: translateY(-2px);
+  border-color: rgba(22, 93, 173, 0.35);
+  box-shadow: 0 16px 36px -8px rgba(22, 93, 173, 0.12), 0 6px 14px -3px rgba(0, 0, 0, 0.04);
+  transform: translateY(-3px);
+}
+
+/* =============================================================================
+   VERTICAL ROAD & EV VEHICLE ANIMATION KEYFRAMES (TOP TO BOTTOM)
+   ============================================================================= */
+
+/* Lane Markings Downward Flow */
+@keyframes roadMarkingsMove {
+  0% {
+    background-position-y: 0px;
+  }
+  100% {
+    background-position-y: 34px;
+  }
+}
+
+.animate-road-markings {
+  animation: roadMarkingsMove 0.85s linear infinite;
+}
+
+/* 1. Electric Jeep (Heavy 4x4, steady speed down the road) */
+@keyframes travelJeep {
+  0% {
+    transform: translate3d(0, -140px, 0);
+  }
+  100% {
+    transform: translate3d(0, calc(100vh + 160px), 0);
+  }
+}
+
+.animate-vehicle-jeep {
+  animation: travelJeep 14s linear infinite;
+  animation-delay: 0.5s;
+}
+
+/* 2. Electric Motorcycle (Fast sport streetfighter, zips down) */
+@keyframes travelMotorcycle {
+  0% {
+    transform: translate3d(0, -140px, 0);
+  }
+  100% {
+    transform: translate3d(0, calc(100vh + 160px), 0);
+  }
+}
+
+.animate-vehicle-motorcycle {
+  animation: travelMotorcycle 9s linear infinite;
+  animation-delay: 3.8s;
+}
+
+/* 3. Electric Scooter (Agile urban commuter, moderate speed) */
+@keyframes travelScooter {
+  0% {
+    transform: translate3d(0, -140px, 0);
+  }
+  100% {
+    transform: translate3d(0, calc(100vh + 160px), 0);
+  }
+}
+
+.animate-vehicle-scooter {
+  animation: travelScooter 11.5s linear infinite;
+  animation-delay: 7.2s;
+}
+
+/* 4. Electric Cycle (Lightweight pedal-assist, leisurely cruise) */
+@keyframes travelCycle {
+  0% {
+    transform: translate3d(0, -140px, 0);
+  }
+  100% {
+    transform: translate3d(0, calc(100vh + 160px), 0);
+  }
+}
+
+.animate-vehicle-cycle {
+  animation: travelCycle 16.5s linear infinite;
+  animation-delay: 11.0s;
+}
+
+/* =============================================================================
+   GROUND MIST DRIFT ANIMATIONS
+   ============================================================================= */
+@keyframes mistDrift1 {
+  0% {
+    transform: translate3d(-10%, 0, 0);
+  }
+  50% {
+    transform: translate3d(8%, 0, 0);
+  }
+  100% {
+    transform: translate3d(-10%, 0, 0);
+  }
+}
+
+.animate-mist-drift-1 {
+  animation: mistDrift1 14s ease-in-out infinite;
+}
+
+@keyframes mistDrift2 {
+  0% {
+    transform: translate3d(8%, 0, 0);
+  }
+  50% {
+    transform: translate3d(-8%, 0, 0);
+  }
+  100% {
+    transform: translate3d(8%, 0, 0);
+  }
+}
+
+.animate-mist-drift-2 {
+  animation: mistDrift2 18s ease-in-out infinite;
+}
+
+/* =============================================================================
+   HERO VEHICLE FLOATING & LIGHTING DYNAMICS
+   ============================================================================= */
+@keyframes vehicleFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-vehicle-float {
+  animation: vehicleFloat 4.2s ease-in-out infinite;
+}
+
+@keyframes contactShadowScale {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(0.95);
+    opacity: 0.35;
+  }
+}
+
+.animate-shadow-scale {
+  animation: contactShadowScale 4.2s ease-in-out infinite;
+}
+
+@keyframes ambientGlowPulse {
+  0%, 100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.05);
+  }
+}
+
+.animate-glow-pulse {
+  animation: ambientGlowPulse 5.5s ease-in-out infinite;
 }

@@ -113,17 +113,14 @@ async function main() {
     ];
 
     const pages = [
-      { url: `${BASE_URL}/`, name: 'redesign_home' },
-      { url: `${BASE_URL}/scooters`, name: 'redesign_scooters' },
-      { url: `${BASE_URL}/bikes`, name: 'redesign_bikes' },
-      { url: `${BASE_URL}/cycles`, name: 'redesign_cycles' },
-      { url: `${BASE_URL}/jeeps`, name: 'redesign_jeeps' },
-      { url: `${BASE_URL}/bikes/thunder-pro`, name: 'redesign_bike_detail' },
-      { url: `${BASE_URL}/bikes/scooter-s1-pro`, name: 'redesign_scooter_detail' },
-      { url: `${BASE_URL}/bikes/aerotrek-c1`, name: 'redesign_cycle_detail' },
-      { url: `${BASE_URL}/bikes/terramax-4x4`, name: 'redesign_jeep_detail' },
-      { url: `${BASE_URL}/dashboard`, name: 'redesign_dashboard' },
-      { url: `${BASE_URL}/admin`, name: 'redesign_admin' },
+      { url: `${BASE_URL}/`, name: 'cinematic_home' },
+      { url: `${BASE_URL}/scooters`, name: 'cinematic_scooters' },
+      { url: `${BASE_URL}/bikes`, name: 'cinematic_bikes' },
+      { url: `${BASE_URL}/cycles`, name: 'cinematic_cycles' },
+      { url: `${BASE_URL}/jeeps`, name: 'cinematic_jeeps' },
+      { url: `${BASE_URL}/bikes/thunder-pro`, name: 'cinematic_bike_detail' },
+      { url: `${BASE_URL}/dashboard`, name: 'cinematic_dashboard' },
+      { url: `${BASE_URL}/admin`, name: 'cinematic_admin' },
     ];
 
     for (const vp of viewports) {
@@ -161,6 +158,18 @@ async function main() {
 
         // Capture screenshot
         await capture(cdp, `${p.name}_${vp.suffix}.png`, false);
+
+        // If homepage, also capture scrolled view showing vertical road integration
+        if (p.name === 'cinematic_home') {
+          await cdp.send('Runtime.evaluate', {
+            expression: 'window.scrollTo(0, 700);',
+          });
+          await sleep(800);
+          await capture(cdp, `${p.name}_scrolled_${vp.suffix}.png`, false);
+          await cdp.send('Runtime.evaluate', {
+            expression: 'window.scrollTo(0, 0);',
+          });
+        }
       }
     }
 

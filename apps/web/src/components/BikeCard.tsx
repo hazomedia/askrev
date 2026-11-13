@@ -20,10 +20,23 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
 
   return (
     <div className="product-card rounded-2xl overflow-hidden flex flex-col justify-between bg-white border border-neutral-200 hover:border-neutral-300 transition-all duration-300">
-      {/* Product Image Stage (Seamless Studio Light Grey) */}
-      <div className="relative bg-[#F9FAFB] p-6 pb-2 flex flex-col items-center justify-center min-h-[240px] border-b border-neutral-100">
+      {/* Product Image Stage (Seamless Studio Soft Ice-Blue Gradient) */}
+      <div
+        className="relative p-6 pb-2 flex flex-col items-center justify-center min-h-[240px] border-b border-neutral-100 transition-colors"
+        style={{
+          background: 'linear-gradient(180deg, #FFFFFF 0%, #F7FAFD 50%, #EDF4FA 100%)',
+        }}
+      >
+        {/* Subtle Ambient Backlight Glow on Card */}
+        <div
+          className="absolute inset-x-8 top-12 bottom-6 rounded-full filter blur-xl opacity-0 group-hover:opacity-40 pointer-events-none transition-opacity duration-300"
+          style={{
+            background: 'radial-gradient(circle, rgba(22, 93, 173, 0.25) 0%, transparent 70%)',
+          }}
+        />
+
         {/* Top Badges */}
-        <div className="w-full flex items-center justify-between mb-2">
+        <div className="w-full flex items-center justify-between mb-2 relative z-10">
           <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
             {item.categoryLabel || 'Electric Vehicle'}
           </span>
@@ -43,10 +56,12 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
         {/* Real Vehicle Photography */}
         <Link href={detailLink} className="w-full flex items-center justify-center my-3 group">
           <div className="relative w-full h-44 sm:h-48 flex items-center justify-center transition-transform duration-300 group-hover:scale-103">
+            {/* Ground Contact Shadow */}
+            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-3/4 h-3 bg-neutral-900/20 rounded-full filter blur-xs pointer-events-none" />
             <img
               src={item.imageUrl}
               alt={item.name}
-              className="w-full h-full object-contain filter drop-shadow-sm"
+              className="relative z-10 w-full h-full object-contain filter drop-shadow-sm"
               loading="lazy"
             />
           </div>
