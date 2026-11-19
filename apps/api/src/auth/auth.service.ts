@@ -3,15 +3,17 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, DisableMfaDto } from './dto/auth.dto';
 import { UserRole, MembershipPackage, paiseToRupees } from '@askrev/shared';
 import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken } from './jwt-secrets';
+import { TotpService } from './totp.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
+    private readonly totpService: TotpService
   ) {}
 
   /**
@@ -124,15 +126,85 @@ export class AuthService {
     });
 
     if (!user) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'AUTH_LOGIN_FAILED',
+            entityType: 'User',
+            metadata: { email: dto.email.toLowerCase().trim(), reason: 'USER_NOT_FOUND' },
+          },
+        });
+      } catch {}
       throw new UnauthorizedException('Invalid email or password');
     }
 
     const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isMatch) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'AUTH_LOGIN_FAILED',
+            entityType: 'User',
+            entityId: user.id,
+            metadata: { email: dto.email.toLowerCase().trim(), reason: 'BAD_PASSWORD' },
+          },
+        });
+      } catch {}
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    // Mandatory Two-Factor Authentication Check for MFA-enabled accounts
+    if (user.twoFactorEnabled) {
+      let mfaPassed = false;
+
+      if (dto.totpCode) {
+        mfaPassed = this.totpService.verifyToken(user.twoFactorSecret || '', dto.totpCode);
+      } else if (dto.recoveryCode) {
+        const recoveryResult = this.totpService.verifyAndConsumeRecoveryCode(
+          dto.recoveryCode,
+          user.twoFactorRecoveryCodes || []
+        );
+        if (recoveryResult.valid) {
+          mfaPassed = true;
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { twoFactorRecoveryCodes: recoveryResult.remainingHashedCodes },
+          });
+        }
+      }
+
+      if (!mfaPassed) {
+        try {
+          await this.prisma.auditLog.create({
+            data: {
+              action: 'AUTH_MFA_CHALLENGE_FAILED',
+              entityType: 'User',
+              entityId: user.id,
+              metadata: { email: user.email, hasTotp: Boolean(dto.totpCode), hasRecovery: Boolean(dto.recoveryCode) },
+            },
+          });
+        } catch {}
+        throw new UnauthorizedException('MFA_REQUIRED: Valid 6-digit TOTP code or backup recovery code is required for administrator access.');
+      }
+    }
+
     const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_LOGIN_SUCCESS',
+          entityType: 'User',
+          entityId: user.id,
+          actorId: user.id,
+          metadata: {
+            email: user.email,
+            role: user.role,
+            mfaUsed: user.twoFactorEnabled,
+          },
+        },
+      });
+    } catch {}
 
     return {
       message: 'Login successful',
@@ -246,6 +318,91 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  async setupMfa(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+    const { secret, otpauthUrl } = this.totpService.generateSecret();
+    return {
+      secret,
+      otpauthUrl,
+      issuer: 'ASKR EV',
+      accountName: user.email,
+      instructions: 'Scan this URI with an authenticator app (Google Authenticator, Microsoft Authenticator) or enter the secret manually, then verify with a 6-digit code.',
+    };
+  }
+
+  async enableMfa(userId: string, code: string, secret?: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+    const secretToUse = secret || user.twoFactorSecret;
+    if (!secretToUse) throw new BadRequestException('MFA secret not provided');
+
+    const isValid = this.totpService.verifyToken(secretToUse, code);
+    if (!isValid) throw new BadRequestException('Invalid 6-digit TOTP verification code');
+
+    const rawRecoveryCodes = this.totpService.generateRecoveryCodes(8);
+    const hashedCodes = rawRecoveryCodes.map((c) => this.totpService.hashRecoveryCode(c));
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorSecret: secretToUse,
+        twoFactorEnabled: true,
+        twoFactorRecoveryCodes: hashedCodes,
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_MFA_ENABLED',
+          entityType: 'User',
+          entityId: userId,
+          actorId: userId,
+          metadata: { email: user.email },
+        },
+      });
+    } catch {}
+
+    return {
+      message: 'Two-Factor Authentication (TOTP) successfully enabled',
+      recoveryCodes: rawRecoveryCodes,
+    };
+  }
+
+  async disableMfa(userId: string, dto: DisableMfaDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+    const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isMatch) throw new UnauthorizedException('Invalid password');
+    if (!user.twoFactorSecret || !this.totpService.verifyToken(user.twoFactorSecret, dto.code)) {
+      throw new BadRequestException('Invalid TOTP verification code');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorSecret: null,
+        twoFactorEnabled: false,
+        twoFactorRecoveryCodes: [],
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_MFA_DISABLED',
+          entityType: 'User',
+          entityId: userId,
+          actorId: userId,
+          metadata: { email: user.email },
+        },
+      });
+    } catch {}
+
+    return { message: 'Two-Factor Authentication disabled' };
+  }
+
   public formatUserProfile(user: any) {
     return {
       id: user.id,
@@ -257,6 +414,7 @@ export class AuthService {
       currentPackage: user.currentPackage,
       isFullQualified: user.isFullQualified,
       qualificationMethod: user.qualificationMethod,
+      twoFactorEnabled: user.twoFactorEnabled ?? false,
       sponsorMemberId: user.sponsor?.memberId ?? null,
       sponsorName: user.sponsor?.fullName ?? null,
       wallet: user.wallet

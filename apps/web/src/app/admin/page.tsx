@@ -34,11 +34,17 @@ import {
   XCircle,
   HelpCircle,
   ExternalLink,
+  Package,
+  Sliders,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
+import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
+import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
 
 type AdminTab =
   | 'overview'
+  | 'hero-slider'
+  | 'products'
   | 'members'
   | 'approvals'
   | 'binary'
@@ -542,6 +548,8 @@ export default function AdminPage() {
 
   const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'hero-slider', label: 'Hero Slider', icon: Sliders },
+    { id: 'products', label: 'Product Catalog', icon: Package },
     { id: 'members', label: 'Members', icon: Users, count: membersTotal },
     {
       id: 'approvals',
@@ -1034,6 +1042,20 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* TAB: HERO SLIDER (WEBSITE MANAGEMENT) */}
+            {activeTab === 'hero-slider' && (
+              <div className="space-y-6">
+                <AdminHeroSlider />
+              </div>
+            )}
+
+            {/* TAB: PRODUCT CATALOG */}
+            {activeTab === 'products' && (
+              <div className="space-y-6">
+                <AdminProductCatalog />
               </div>
             )}
 

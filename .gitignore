@@ -43,3 +43,13 @@ test-results
 playwright-report
 .vercel
 .env*
+
+# Backups and Local Dumps
+backups/
+*.sql
+!packages/database/prisma/migrations/**/*.sql
+*.dump
+
+# Local uploads
+apps/web/public/uploads/products/*
+!apps/web/public/uploads/products/.gitkeep

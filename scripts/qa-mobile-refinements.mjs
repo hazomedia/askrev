@@ -312,7 +312,7 @@ async function run() {
       videoFrames.push(params.data);
       try {
         await cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId });
-      } catch (e) {}
+      } catch (e) { }
     });
 
     await cdp.send('Page.startScreencast', {

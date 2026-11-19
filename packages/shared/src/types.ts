@@ -1,4 +1,4 @@
-import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus } from './constants';
+import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus, ProductCategory, ProductStatus, HeroSlideStatus } from './constants';
 
 export interface MembershipRequestItem {
   id: string;
@@ -232,4 +232,124 @@ export interface EvBookingDetailItem {
   cancelledAt?: string | null;
   createdAt: string;
 }
+
+export interface ProductColorItem {
+  name: string;
+  hex: string;
+  accentHex?: string;
+  description?: string;
+  images?: ProductImageItem[];
+  primaryImage?: string;
+  sku?: string;
+  isAvailable?: boolean;
+}
+
+export interface ProductSpecificationItem {
+  label: string;
+  value: string;
+  sub?: string;
+}
+
+export interface ProductImageItem {
+  url: string;
+  publicId?: string;
+  isPrimary: boolean;
+  order: number;
+  caption?: string;
+}
+
+export interface ProductItem {
+  id: string;
+  name: string;
+  slug: string;
+  category: ProductCategory;
+  brand: string;
+  tagline?: string | null;
+  shortDescription?: string | null;
+  fullDescription?: string | null;
+  regularPriceINR?: number | null;
+  sellingPriceINR?: number | null;
+  bookingAmountINR?: number | null;
+  voucherRedeemLimitINR?: number | null;
+  regularPricePaise?: string | null;
+  sellingPricePaise?: string | null;
+  bookingAmountPaise?: string | null;
+  voucherRedeemLimitPaise?: string | null;
+  rangeKm?: number | null;
+  topSpeedKmh?: number | null;
+  batteryCapacityKwh?: number | null;
+  chargingTimeHours?: number | null;
+  motorPower?: string | null;
+  acceleration?: string | null;
+  warranty?: string | null;
+  powertrain?: string | null;
+  colors?: ProductColorItem[] | null;
+  specifications?: ProductSpecificationItem[] | null;
+  highlights?: string[] | null;
+  images?: ProductImageItem[] | null;
+  heroImage?: string | null;
+  thumbnailImage?: string | null;
+  isHero: boolean;
+  heroMobileImage?: string | null;
+  heroHeading?: string | null;
+  heroDescription?: string | null;
+  heroCtaText?: string | null;
+  heroCtaLink?: string | null;
+  heroSlideOrder?: number | null;
+  oemManufacturer?: string | null;
+  oemModelName?: string | null;
+  oemReference?: string | null;
+  internalNotes?: string | null;
+  slugAliases?: string[];
+  isRebranded?: boolean;
+  rebrandingNotes?: string | null;
+  isFeatured: boolean;
+  status: ProductStatus;
+  displayOrder: number;
+  evBikeId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HomepageHeroSlideItem {
+  id: string;
+  internalName: string;
+  heading: string;
+  subheading?: string | null;
+  description?: string | null;
+  eyebrowText?: string | null;
+  desktopImageUrl: string;
+  mobileImageUrl?: string | null;
+  desktopFocalX: number;
+  desktopFocalY: number;
+  mobileFocalX: number;
+  mobileFocalY: number;
+  desktopAltText?: string | null;
+  mobileAltText?: string | null;
+  primaryCtaLabel?: string | null;
+  primaryCtaUrl?: string | null;
+  primaryCtaStyle: 'PRIMARY' | 'SECONDARY' | 'OUTLINE';
+  primaryCtaEnabled: boolean;
+  secondaryCtaLabel?: string | null;
+  secondaryCtaUrl?: string | null;
+  secondaryCtaStyle: 'PRIMARY' | 'SECONDARY' | 'OUTLINE';
+  secondaryCtaEnabled: boolean;
+  linkedProductId?: string | null;
+  linkedProduct?: ProductItem | null;
+  showPrice: boolean;
+  showRange: boolean;
+  showTopSpeed: boolean;
+  showBattery: boolean;
+  showSpecifications: boolean;
+  sortOrder: number;
+  status: HeroSlideStatus;
+  publishStartAt?: string | null;
+  publishEndAt?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
