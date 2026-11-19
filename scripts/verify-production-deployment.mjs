@@ -1,95 +1,111 @@
-import https from 'https';
+// scripts/verify-production-deployment.mjs
+const API_URL = 'https://api-production-486e9909.up.railway.app/api';
+const ADMIN_URL = 'https://askrev-admin.vercel.app';
+const SHOWROOM_URL = 'https://www.askrevdrive.com';
 
-const BASE_URL = 'https://askrev-pdev2o7uv-hazoshoppy-8719.vercel.app';
+const results = [];
 
-function testRoute(path) {
-  return new Promise((resolve) => {
-    const url = new URL(path, BASE_URL);
-    const req = https.get(url, { headers: { 'User-Agent': 'Askrev-QA-Bot' } }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => {
-        resolve({
-          path,
-          status: res.statusCode,
-          headers: res.headers,
-          bodySnippet: body.slice(0, 300)
-        });
-      });
-    });
-    req.on('error', (err) => {
-      resolve({ path, error: err.message });
-    });
-  });
+function check(title, passed, detail) {
+  results.push({ title, passed, detail });
+  console.log(`${passed ? '✅ PASS' : '❌ FAIL'}: ${title} - ${detail}`);
 }
 
 async function run() {
-  console.log(`\n=== VERIFYING VERCEL PRODUCTION DEPLOYMENT: ${BASE_URL} ===\n`);
+  console.log('--- STARTING PRODUCTION DEPLOYMENT AUDIT & VERIFICATION ---\n');
 
-  const publicRoutes = [
-    '/',
-    '/bikes',
-    '/scooters',
-    '/cycles',
-    '/jeeps',
-    '/bikes/thunder-pro',
-    '/robots.txt',
-    '/sitemap.xml'
-  ];
-
-  const lockedRoutes = [
-    '/admin',
-    '/dashboard',
-    '/auth/login',
-    '/auth/register',
-    '/simulator',
-    '/api/v1/health'
-  ];
-
-  console.log('--- PUBLIC ROUTES (Expected 200) ---');
-  let publicPassed = true;
-  for (const r of publicRoutes) {
-    const res = await testRoute(r);
-    const ok = res.status === 200;
-    if (!ok) publicPassed = false;
-    console.log(`${ok ? '✓' : '✗'} ${r} -> Status ${res.status}`);
+  // 1. Production API Health
+  try {
+    const res = await fetch(`${API_URL}/health`);
+    const data = await res.json();
+    check('API Health Status', res.status === 200 && data.status === 'ok', `Status: ${data.status}, Database: ${data.database}`);
+  } catch (e) {
+    check('API Health Status', false, e.message);
   }
 
-  console.log('\n--- LOCKED PRIVATE ROUTES (Expected 404) ---');
-  let lockedPassed = true;
-  for (const r of lockedRoutes) {
-    const res = await testRoute(r);
-    const ok = res.status === 404;
-    if (!ok) lockedPassed = false;
-    console.log(`${ok ? '✓' : '✗'} ${r} -> Status ${res.status} (Lockdown: ${ok ? 'SECURE' : 'EXPOSED'})`);
+  // 2. Production Baseline Hero Slides
+  try {
+    const res = await fetch(`${API_URL}/homepage/hero-slides`);
+    const slides = await res.json();
+    check('Production Hero Slides', res.status === 200 && slides.length === 3, `Count: ${slides.length} published slides`);
+  } catch (e) {
+    check('Production Hero Slides', false, e.message);
   }
 
-  console.log('\n--- SECURITY HEADERS CHECK ---');
-  const rootRes = await testRoute('/');
-  const xfo = rootRes.headers['x-frame-options'];
-  const xcto = rootRes.headers['x-content-type-options'];
-  const refPol = rootRes.headers['referrer-policy'];
-  const permPol = rootRes.headers['permissions-policy'];
+  // 3. Draft Isolation (Public Catalog)
+  try {
+    const res = await fetch(`${API_URL}/catalog`);
+    const items = await res.json();
+    check('Public Catalog Draft Privacy', res.status === 200 && items.length === 0, `Unauthenticated items count: ${items.length} (Strict Draft Isolation)`);
+  } catch (e) {
+    check('Public Catalog Draft Privacy', false, e.message);
+  }
 
-  console.log(`X-Frame-Options: ${xfo} (${xfo === 'DENY' ? 'PASS' : 'FAIL'})`);
-  console.log(`X-Content-Type-Options: ${xcto} (${xcto === 'nosniff' ? 'PASS' : 'FAIL'})`);
-  console.log(`Referrer-Policy: ${refPol} (${refPol ? 'PASS' : 'FAIL'})`);
-  console.log(`Permissions-Policy: ${permPol ? 'PASS' : 'FAIL'}`);
+  // 4. Super Admin Authentication & JWT Issuance
+  let token = '';
+  try {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@askrevdrive.com', password: '3hsGGl_wJpGEkA3nj-ehpVzv' }),
+    });
+    const data = await res.json();
+    token = data.tokens?.accessToken || '';
+    check('Super Admin Authentication', res.status === 201 && data.user?.role === 'SUPER_ADMIN', `Role: ${data.user?.role}, Member ID: ${data.user?.memberId}`);
+  } catch (e) {
+    check('Super Admin Authentication', false, e.message);
+  }
 
-  console.log('\n--- BRANDING & ENQUIRY AUDIT ---');
-  const homeRes = await testRoute('/');
-  const hasAskrBrand = homeRes.bodySnippet.includes('ASKR EV') || true;
-  console.log(`Brand ASKR EV Present: ${hasAskrBrand}`);
+  // 5. Authenticated Admin Preview Access
+  if (token) {
+    try {
+      const res = await fetch(`${API_URL}/catalog?preview=true`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const catalog = await res.json();
+      check('Admin Preview Catalog Access', res.status === 200 && catalog.length === 12, `Admin preview count: ${catalog.length} vehicles (all 12 real models visible)`);
+    } catch (e) {
+      check('Admin Preview Catalog Access', false, e.message);
+    }
+  }
 
-  const thunderRes = await testRoute('/bikes/thunder-pro');
-  const isEnquiryMode = thunderRes.bodySnippet.includes('Priority') || thunderRes.bodySnippet.includes('ASKR') || thunderRes.status === 200;
-  console.log(`Vehicle Detail Operational: ${isEnquiryMode}`);
+  // 6. Public Showroom Lockdown (/admin returns 404)
+  try {
+    const res = await fetch(`${SHOWROOM_URL}/admin`);
+    check('Showroom Admin Lockdown', res.status === 404, `Status: ${res.status} (Admin route strictly removed/404 on showroom)`);
+  } catch (e) {
+    check('Showroom Admin Lockdown', false, e.message);
+  }
 
-  console.log('\n=== SUMMARY ===');
-  console.log(`Public Showroom: ${publicPassed ? 'ALL PASSED (200 OK)' : 'FAILURES DETECTED'}`);
-  console.log(`Route Lockdown: ${lockedPassed ? 'ALL ENFORCED (404 NOT FOUND)' : 'SECURITY LEAK DETECTED'}`);
-  console.log(`Headers: ${xfo === 'DENY' && xcto === 'nosniff' ? 'FULLY SECURE' : 'INCOMPLETE'}`);
+  // 7. Dedicated Admin Dashboard Access (/admin returns 200)
+  try {
+    const res = await fetch(`${ADMIN_URL}/admin`);
+    check('Independent Admin App Access', res.status === 200, `Status: ${res.status} (Admin dashboard available on dedicated Vercel project)`);
+  } catch (e) {
+    check('Independent Admin App Access', false, e.message);
+  }
+
+  // 8. Dedicated Admin Login Page Access (/auth/login returns 200)
+  try {
+    const res = await fetch(`${ADMIN_URL}/auth/login`);
+    const html = await res.text();
+    check('Admin Login Page Rendering', res.status === 200 && html.includes('Sign In'), `Status: ${res.status}, Contains Sign In form`);
+  } catch (e) {
+    check('Admin Login Page Rendering', false, e.message);
+  }
+
+  // 9. Live Showroom Public Home Page
+  try {
+    const res = await fetch(SHOWROOM_URL);
+    const html = await res.text();
+    check('Public Showroom Availability', res.status === 200 && html.includes('ASKR EV'), `Status: ${res.status}, Live Showroom active`);
+  } catch (e) {
+    check('Public Showroom Availability', false, e.message);
+  }
+
+  console.log('\n--- VERIFICATION SUMMARY ---');
+  const allPassed = results.every(r => r.passed);
+  console.log(`Total checks: ${results.length}, Passed: ${results.filter(r => r.passed).length}, Failed: ${results.filter(r => !r.passed).length}`);
+  console.log(`Final Outcome: ${allPassed ? 'ALL SYSTEMS OPERATIONAL (PASS)' : 'ATTENTION REQUIRED (FAIL)'}`);
 }
 
 run().catch(console.error);
-
