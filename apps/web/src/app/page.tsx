@@ -28,6 +28,7 @@ import {
   fetchApi,
   fetchPublishedCatalog,
   fetchHeroSlides,
+  fetchHeroSliderSlides,
   getStoredUser,
   isAdminPreviewActive,
 } from '../lib/api';
@@ -187,9 +188,9 @@ export default function HomePage() {
     setCatalogError(null);
     try {
       const isPreview = isAdminPreviewActive();
-      const [catalogRes, heroRes] = await Promise.allSettled([
+      const [catalogRes, heroSliderRes] = await Promise.allSettled([
         fetchPublishedCatalog({ preview: isPreview }),
-        fetchHeroSlides(isPreview),
+        fetchHeroSliderSlides(isPreview),
       ]);
 
       const rawData = catalogRes.status === 'fulfilled' && Array.isArray(catalogRes.value) ? catalogRes.value : [];
@@ -200,26 +201,15 @@ export default function HomePage() {
       const data = isPreview ? rawData.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawData;
       setProducts(data);
 
-      const rawHero =
-        heroRes.status === 'fulfilled' && Array.isArray(heroRes.value) && heroRes.value.length > 0
-          ? heroRes.value
-          : data.filter((p: any) => p.isHero || p.isFeatured);
+      const rawHeroSlider =
+        heroSliderRes.status === 'fulfilled' && Array.isArray(heroSliderRes.value) && heroSliderRes.value.length > 0
+          ? heroSliderRes.value
+          : [];
 
-      const heroCandidates = isPreview ? rawHero.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawHero;
-
-      if (heroCandidates.length > 0) {
-        const updatedSlides = heroCandidates.map((p: any) => {
-          const cat = (p.category || '').toUpperCase();
-          const defaultImg =
-            cat === 'SCOOTER'
-              ? (p.heroImage || '/images/real/branded/askr-s01-commuter-lineup.jpg')
-              : cat === 'CYCLE'
-                ? (p.heroImage || '/images/vehicles/dark/hero-cycle-dark.jpg')
-                : cat === 'JEEP'
-                  ? (p.heroImage || '/images/real/branded/askr-j01-monster-front.jpg')
-                  : cat === 'UTILITY'
-                    ? (p.heroImage || '/images/real/branded/askr-u01-commercial-loader.jpg')
-                    : (p.heroImage || '/images/real/branded/askr-b01-racing-front.jpg');
+      if (rawHeroSlider.length > 0) {
+        const formattedSlides = rawHeroSlider.map((s: any) => {
+          const linked = s.linkedProduct || {};
+          const cat = (linked.category || '').toUpperCase();
           const ambientGlow =
             cat === 'CYCLE'
               ? 'rgba(13, 148, 136, 0.28)'
@@ -237,20 +227,54 @@ export default function HomePage() {
                   ? 'rgba(59, 130, 246, 0.20)'
                   : 'rgba(80, 217, 255, 0.18)';
 
+          const defaultLink = linked.slug ? `/bikes/${linked.slug}${isPreview ? '?preview=true' : ''}` : '/scooters';
+
           return {
-            vehicle: p,
-            headline: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
-            subline: p.heroDescription || p.tagline || 'Discover ASKR EV\'s range of electric scooters, motorcycles and utility vehicles. Explore modern designs and find the right electric vehicle for your journey.',
-            primaryBadge: p.statusBadge ? `${p.name} • ${p.statusBadge}` : `ASKR EV Real Fleet • ${p.categoryLabel || 'EV'}`,
-            image: p.heroImage || defaultImg,
-            mobileImage: p.heroMobileImage || p.heroImage || defaultImg,
-            ctaText: p.heroCtaText || `Explore ${p.name}`,
-            ctaLink: p.heroCtaLink || `/bikes/${p.modelCode || p.slug}${isPreview ? '?preview=true' : ''}`,
+            id: s.id,
+            vehicle: {
+              id: linked.id || s.id,
+              name: linked.name || s.internalName || 'ASKR EV Fleet',
+              modelCode: linked.modelCode || (linked.slug ? linked.slug.toUpperCase() : 'ASKR-EV'),
+              category: linked.category || 'SCOOTER',
+              categoryLabel: linked.categoryLabel || linked.category || 'Electric Vehicle',
+              brand: linked.brand || 'ASKR EV',
+              sellingPriceINR: linked.sellingPriceINR || null,
+              exShowroomPriceINR: linked.sellingPriceINR || null,
+              rangeKm: linked.rangeKm || null,
+              topSpeedKmh: linked.topSpeedKmh || null,
+              batteryCapacityKwh: linked.batteryCapacityKwh || null,
+              payloadCapacityKg: linked.payloadCapacityKg || null,
+              acceleration0to40: '3.2 sec',
+            },
+            headline: s.heading,
+            subline: s.subheading || s.description || 'Discover ASKR EV\'s range of electric scooters, motorcycles and utility vehicles.',
+            primaryBadge: s.eyebrowText || (linked.name ? `${linked.name} • ${linked.category || 'EV'}` : 'ASKR EV Real Fleet'),
+            image: s.desktopImageUrl,
+            mobileImage: s.mobileImageUrl || s.desktopImageUrl,
+            desktopFocalX: s.desktopFocalX ?? 50,
+            desktopFocalY: s.desktopFocalY ?? 50,
+            mobileFocalX: s.mobileFocalX ?? 50,
+            mobileFocalY: s.mobileFocalY ?? 50,
+            desktopAltText: s.desktopAltText || s.heading,
+            mobileAltText: s.mobileAltText || s.heading,
+            ctaText: s.primaryCtaLabel || 'Explore Vehicles',
+            ctaLink: s.primaryCtaUrl ? `${s.primaryCtaUrl}${isPreview ? (s.primaryCtaUrl.includes('?') ? '&preview=true' : '?preview=true') : ''}` : defaultLink,
+            ctaStyle: s.primaryCtaStyle || 'PRIMARY',
+            primaryCtaEnabled: s.primaryCtaEnabled !== false,
+            secondaryCtaEnabled: Boolean(s.secondaryCtaEnabled && s.secondaryCtaLabel),
+            secondaryCtaLabel: s.secondaryCtaLabel || 'Book Test Drive',
+            secondaryCtaUrl: s.secondaryCtaUrl ? `${s.secondaryCtaUrl}${isPreview ? (s.secondaryCtaUrl.includes('?') ? '&preview=true' : '?preview=true') : ''}` : '/test-ride',
+            secondaryCtaStyle: s.secondaryCtaStyle || 'SECONDARY',
+            showPrice: Boolean(s.showPrice),
+            showRange: Boolean(s.showRange),
+            showTopSpeed: Boolean(s.showTopSpeed),
+            showBattery: Boolean(s.showBattery),
+            showSpecifications: Boolean(s.showSpecifications),
             ambientGlow,
             ambientCyan,
           };
         });
-        setHeroSlides(updatedSlides);
+        setHeroSlides(formattedSlides);
       }
     } catch (err: any) {
       console.warn('Live catalog fetch notice:', err.message);
@@ -384,8 +408,11 @@ export default function HomePage() {
                   <img
                     key={`mobile-${activeSlide.mobileImage || activeSlide.image}`}
                     src={activeSlide.mobileImage || activeSlide.image}
-                    alt={activeVehicle.name}
+                    alt={activeSlide.mobileAltText || activeVehicle.name}
                     className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in rounded-xl"
+                    style={{
+                      objectPosition: `${activeSlide.mobileFocalX ?? 50}% ${activeSlide.mobileFocalY ?? 50}%`,
+                    }}
                   />
                 </div>
 
@@ -419,7 +446,7 @@ export default function HomePage() {
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/50 border border-white/10 backdrop-blur-sm">
                   {heroSlides.map((slide, idx) => (
                     <button
-                      key={`mob-dot-${slide.vehicle.id}`}
+                      key={`mob-dot-${slide.id || slide.vehicle?.id || idx}`}
                       onClick={() => setCurrentSlideIndex(idx)}
                       className={`h-1.5 rounded-full transition-all ${currentSlideIndex === idx
                           ? 'w-5 bg-[#267DFF] shadow-[0_0_8px_rgba(38,125,255,0.8)]'
@@ -444,96 +471,122 @@ export default function HomePage() {
 
               {/* 5. Compact Vehicle Specifications & Starting Price */}
               <div className="space-y-2">
-                <div className="flex items-baseline justify-between px-1">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
-                    <span className="text-xl xs:text-2xl font-black text-[#F7FAFF] tracking-tight">
-                      {activeVehicle.exShowroomPriceINR
-                        ? `₹${activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
-                        : 'Contact for Price'}
-                    </span>
+                {activeSlide.showPrice !== false && activeVehicle.exShowroomPriceINR && (
+                  <div className="flex items-baseline justify-between px-1">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
+                      <span className="text-xl xs:text-2xl font-black text-[#F7FAFF] tracking-tight">
+                        ₹{activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
                   </div>
-                  <span className="text-[10px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
-                </div>
+                )}
 
-                {/* Compact 4-Metric Grid */}
-                <div className="grid grid-cols-4 gap-1.5 py-2 px-2.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-md backdrop-blur-md">
-                  <div className="text-center">
-                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                      Range
-                    </span>
-                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.rangeKm ? (
-                        <>
-                          {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
-                        </>
-                      ) : (
-                        'TBA'
-                      )}
-                    </span>
-                  </div>
+                {/* Compact Metric Grid */}
+                {(activeSlide.showRange || activeSlide.showTopSpeed || activeSlide.showBattery || activeSlide.showSpecifications) && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 py-2 px-2.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-md backdrop-blur-md">
+                    {activeSlide.showRange && (
+                      <div className="text-center">
+                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                          Range
+                        </span>
+                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {activeVehicle.rangeKm ? (
+                            <>
+                              {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
+                            </>
+                          ) : (
+                            'TBA'
+                          )}
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="text-center border-l border-white/10 pl-1">
-                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                      Speed
-                    </span>
-                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.topSpeedKmh ? (
-                        <>
-                          {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
-                        </>
-                      ) : (
-                        'TBA'
-                      )}
-                    </span>
-                  </div>
+                    {activeSlide.showTopSpeed && (
+                      <div className="text-center border-l border-white/10 pl-1">
+                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                          Speed
+                        </span>
+                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {activeVehicle.topSpeedKmh ? (
+                            <>
+                              {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
+                            </>
+                          ) : (
+                            'TBA'
+                          )}
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="text-center border-l border-white/10 pl-1">
-                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                      Battery
-                    </span>
-                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.batteryCapacityKwh ? (
-                        <>
-                          {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
-                        </>
-                      ) : (
-                        'TBA'
-                      )}
-                    </span>
-                  </div>
+                    {activeSlide.showBattery && (
+                      <div className="text-center border-l border-white/10 pl-1">
+                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                          Battery
+                        </span>
+                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {activeVehicle.batteryCapacityKwh ? (
+                            <>
+                              {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
+                            </>
+                          ) : (
+                            'TBA'
+                          )}
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="text-center border-l border-white/10 pl-1">
-                    <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                      {(activeVehicle.category || '').toLowerCase() === 'utility' ? 'Payload' : '0-40 km/h'}
-                    </span>
-                    <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {(activeVehicle.category || '').toLowerCase() === 'utility'
-                        ? activeVehicle.payloadCapacityKg
-                          ? `${activeVehicle.payloadCapacityKg} kg`
-                          : 'Heavy Duty'
-                        : activeVehicle.acceleration0to40 || '3.2 sec'}
-                    </span>
+                    {activeSlide.showSpecifications && (
+                      <div className="text-center border-l border-white/10 pl-1">
+                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                          {(activeVehicle.category || '').toLowerCase() === 'utility' ? 'Payload' : '0-40 km/h'}
+                        </span>
+                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {(activeVehicle.category || '').toLowerCase() === 'utility'
+                            ? activeVehicle.payloadCapacityKg
+                              ? `${activeVehicle.payloadCapacityKg} kg`
+                              : 'Heavy Duty'
+                            : activeVehicle.acceleration0to40 || '3.2 sec'}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
               </div>
 
               {/* 6. Primary CTA and Secondary CTA */}
               <div className="pt-1 flex flex-col xs:flex-row items-center gap-2.5 w-full">
-                <Link
-                  href={activeSlide.ctaLink || '/bikes'}
-                  className="w-full py-3 px-5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.35)] flex items-center justify-center gap-1.5"
-                >
-                  <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+                {activeSlide.primaryCtaEnabled !== false && (
+                  <Link
+                    href={activeSlide.ctaLink || '/bikes'}
+                    className={`w-full py-3 px-5 rounded-full text-xs font-bold tracking-wide transition-all flex items-center justify-center gap-1.5 ${
+                      activeSlide.ctaStyle === 'SECONDARY'
+                        ? 'bg-white hover:bg-slate-100 text-slate-900 shadow-md'
+                        : activeSlide.ctaStyle === 'OUTLINE'
+                        ? 'border border-white/20 hover:border-white text-[#F7FAFF] bg-white/5'
+                        : 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white shadow-[0_0_20px_rgba(38,125,255,0.35)]'
+                    }`}
+                  >
+                    <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                )}
 
-                <button
-                  onClick={() => handleOpenBooking(activeVehicle)}
-                  className="w-full py-3 px-5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10 flex items-center justify-center"
-                >
-                  Enquire Now
-                </button>
+                {activeSlide.secondaryCtaEnabled && (
+                  <Link
+                    href={activeSlide.secondaryCtaUrl || '/test-ride'}
+                    className={`w-full py-3 px-5 rounded-full text-xs font-semibold tracking-wide transition-colors flex items-center justify-center ${
+                      activeSlide.secondaryCtaStyle === 'PRIMARY'
+                        ? 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white'
+                        : activeSlide.secondaryCtaStyle === 'SECONDARY'
+                        ? 'bg-white/10 hover:bg-white/20 text-[#F7FAFF] border border-white/20'
+                        : 'border border-white/20 hover:border-white text-[#F7FAFF] bg-white/5'
+                    }`}
+                  >
+                    <span>{activeSlide.secondaryCtaLabel || 'Enquire Now'}</span>
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -564,97 +617,123 @@ export default function HomePage() {
                 </div>
 
                 {/* Starting Price Display */}
-                <div className="pt-1 flex items-baseline gap-2.5">
-                  <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
-                  <span className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
-                    {activeVehicle.exShowroomPriceINR
-                      ? `₹${activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
-                      : 'Contact for Price'}
-                  </span>
-                  <span className="text-xs text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
-                </div>
-
-                {/* Key 4-Metric Grid in Midnight Glassmorphic Pill */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md">
-                  <div>
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                      Range
+                {activeSlide.showPrice !== false && activeVehicle.exShowroomPriceINR && (
+                  <div className="pt-1 flex items-baseline gap-2.5">
+                    <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
+                    <span className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
+                      ₹{activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.rangeKm ? (
-                        <>
-                          {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
-                        </>
-                      ) : (
-                        'TBA'
-                      )}
-                    </span>
+                    <span className="text-xs text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
                   </div>
+                )}
 
-                  <div className="border-l border-white/10 pl-3">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                      Top Speed
-                    </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.topSpeedKmh ? (
-                        <>
-                          {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
-                        </>
-                      ) : (
-                        'TBA'
-                      )}
-                    </span>
-                  </div>
+                {/* Key Metric Grid in Midnight Glassmorphic Pill */}
+                {(activeSlide.showRange || activeSlide.showTopSpeed || activeSlide.showBattery || activeSlide.showSpecifications) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md">
+                    {activeSlide.showRange && (
+                      <div>
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
+                          Range
+                        </span>
+                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {activeVehicle.rangeKm ? (
+                            <>
+                              {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
+                            </>
+                          ) : (
+                            'TBA'
+                          )}
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="border-l sm:border-l border-white/10 pl-3">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                      Battery
-                    </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.batteryCapacityKwh ? (
-                        <>
-                          {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
-                        </>
-                      ) : (
-                        'TBA'
-                      )}
-                    </span>
-                  </div>
+                    {activeSlide.showTopSpeed && (
+                      <div className="border-l border-white/10 pl-3">
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
+                          Top Speed
+                        </span>
+                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {activeVehicle.topSpeedKmh ? (
+                            <>
+                              {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
+                            </>
+                          ) : (
+                            'TBA'
+                          )}
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="border-l border-white/10 pl-3">
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                      {(activeVehicle.category || '').toLowerCase() === 'utility'
-                        ? 'Payload'
-                        : (activeVehicle.category || '').toLowerCase() === 'cycles'
-                          ? '0-25 km/h'
-                          : '0-40 km/h'}
-                    </span>
-                    <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {(activeVehicle.category || '').toLowerCase() === 'utility'
-                        ? activeVehicle.payloadCapacityKg
-                          ? `${activeVehicle.payloadCapacityKg} kg`
-                          : 'Heavy Duty'
-                        : activeVehicle.acceleration0to40 || '3.2 sec'}
-                    </span>
+                    {activeSlide.showBattery && (
+                      <div className="border-l sm:border-l border-white/10 pl-3">
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
+                          Battery
+                        </span>
+                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {activeVehicle.batteryCapacityKwh ? (
+                            <>
+                              {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
+                            </>
+                          ) : (
+                            'TBA'
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                    {activeSlide.showSpecifications && (
+                      <div className="border-l border-white/10 pl-3">
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
+                          {(activeVehicle.category || '').toLowerCase() === 'utility'
+                            ? 'Payload'
+                            : (activeVehicle.category || '').toLowerCase() === 'cycles'
+                              ? '0-25 km/h'
+                              : '0-40 km/h'}
+                        </span>
+                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                          {(activeVehicle.category || '').toLowerCase() === 'utility'
+                            ? activeVehicle.payloadCapacityKg
+                              ? `${activeVehicle.payloadCapacityKg} kg`
+                              : 'Heavy Duty'
+                            : activeVehicle.acceleration0to40 || '3.2 sec'}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="pt-2 flex flex-wrap items-center gap-3.5">
-                  <Link
-                    href={activeSlide.ctaLink || '/bikes'}
-                    className="px-7 py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)] hover:shadow-[0_0_35px_rgba(38,125,255,0.6)] flex items-center gap-2 group"
-                  >
-                    <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
-                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                  </Link>
+                  {activeSlide.primaryCtaEnabled !== false && (
+                    <Link
+                      href={activeSlide.ctaLink || '/bikes'}
+                      className={`px-7 py-3.5 rounded-full text-xs sm:text-sm font-bold tracking-wide transition-all flex items-center gap-2 group ${
+                        activeSlide.ctaStyle === 'SECONDARY'
+                          ? 'bg-white hover:bg-slate-100 text-slate-900 shadow-md'
+                          : activeSlide.ctaStyle === 'OUTLINE'
+                          ? 'border border-white/20 hover:border-white text-[#F7FAFF] bg-white/5'
+                          : 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white shadow-[0_0_25px_rgba(38,125,255,0.4)] hover:shadow-[0_0_35px_rgba(38,125,255,0.6)]'
+                      }`}
+                    >
+                      <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
+                      <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                    </Link>
+                  )}
 
-                  <button
-                    onClick={() => handleOpenBooking(activeVehicle)}
-                    className="px-7 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10"
-                  >
-                    Enquire Now
-                  </button>
+                  {activeSlide.secondaryCtaEnabled && (
+                    <Link
+                      href={activeSlide.secondaryCtaUrl || '/test-ride'}
+                      className={`px-7 py-3.5 rounded-full text-xs sm:text-sm font-semibold tracking-wide transition-colors ${
+                        activeSlide.secondaryCtaStyle === 'PRIMARY'
+                          ? 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white shadow-[0_0_20px_rgba(38,125,255,0.3)]'
+                          : activeSlide.secondaryCtaStyle === 'SECONDARY'
+                          ? 'bg-white/10 hover:bg-white/20 text-[#F7FAFF] border border-white/20'
+                          : 'border border-white/20 hover:border-white text-[#F7FAFF] bg-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      <span>{activeSlide.secondaryCtaLabel || 'Enquire Now'}</span>
+                    </Link>
+                  )}
                 </div>
               </div>
 
@@ -674,8 +753,11 @@ export default function HomePage() {
                     <img
                       key={activeSlide.image}
                       src={activeSlide.image}
-                      alt={activeVehicle.name}
+                      alt={activeSlide.desktopAltText || activeVehicle.name}
                       className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in"
+                      style={{
+                        objectPosition: `${activeSlide.desktopFocalX ?? 50}% ${activeSlide.desktopFocalY ?? 50}%`,
+                      }}
                     />
                   </div>
 
@@ -703,13 +785,13 @@ export default function HomePage() {
                   <div className="flex items-center gap-2">
                     {heroSlides.map((slide, idx) => (
                       <button
-                        key={slide.vehicle.id}
+                        key={slide.id || slide.vehicle?.id || idx}
                         onClick={() => setCurrentSlideIndex(idx)}
                         className={`h-2 rounded-full transition-all ${currentSlideIndex === idx
                             ? 'w-8 bg-[#267DFF] shadow-[0_0_10px_rgba(38,125,255,0.6)]'
                             : 'w-2 bg-white/20 hover:bg-white/40'
                           }`}
-                        aria-label={`Go to slide ${idx + 1}: ${slide.vehicle.name}`}
+                        aria-label={`Go to slide ${idx + 1}`}
                       />
                     ))}
                   </div>

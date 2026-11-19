@@ -1,4 +1,4 @@
-import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus, ProductCategory, ProductStatus } from './constants';
+import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus, ProductCategory, ProductStatus, HeroSlideStatus } from './constants';
 
 export interface MembershipRequestItem {
   id: string;
@@ -307,6 +307,47 @@ export interface ProductItem {
   status: ProductStatus;
   displayOrder: number;
   evBikeId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HomepageHeroSlideItem {
+  id: string;
+  internalName: string;
+  heading: string;
+  subheading?: string | null;
+  description?: string | null;
+  eyebrowText?: string | null;
+  desktopImageUrl: string;
+  mobileImageUrl?: string | null;
+  desktopFocalX: number;
+  desktopFocalY: number;
+  mobileFocalX: number;
+  mobileFocalY: number;
+  desktopAltText?: string | null;
+  mobileAltText?: string | null;
+  primaryCtaLabel?: string | null;
+  primaryCtaUrl?: string | null;
+  primaryCtaStyle: 'PRIMARY' | 'SECONDARY' | 'OUTLINE';
+  primaryCtaEnabled: boolean;
+  secondaryCtaLabel?: string | null;
+  secondaryCtaUrl?: string | null;
+  secondaryCtaStyle: 'PRIMARY' | 'SECONDARY' | 'OUTLINE';
+  secondaryCtaEnabled: boolean;
+  linkedProductId?: string | null;
+  linkedProduct?: ProductItem | null;
+  showPrice: boolean;
+  showRange: boolean;
+  showTopSpeed: boolean;
+  showBattery: boolean;
+  showSpecifications: boolean;
+  sortOrder: number;
+  status: HeroSlideStatus;
+  publishStartAt?: string | null;
+  publishEndAt?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }

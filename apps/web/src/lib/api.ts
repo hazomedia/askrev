@@ -346,3 +346,152 @@ export async function fetchProductBySlug(slug: string, preview: boolean = false)
 
   return res.json();
 }
+
+// =============================================================================
+// INDEPENDENT HOMEPAGE HERO SLIDER APIs
+// =============================================================================
+
+/**
+ * Public storefront: fetch active hero slider slides (with optional authenticated admin preview)
+ */
+export async function fetchHeroSliderSlides(preview: boolean = false): Promise<any[]> {
+  const qs = preview ? '?preview=true' : '';
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}/homepage/hero-slides${qs}`, {
+    cache: 'no-store',
+    credentials: 'include',
+    headers,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch homepage hero slides: ${res.status} ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Admin: fetch all hero slides with optional filters
+ */
+export async function adminFetchHeroSlides(params?: {
+  status?: string;
+  search?: string;
+}): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (params?.status && params.status !== 'ALL') query.append('status', params.status);
+  if (params?.search) query.append('search', params.search);
+  const qs = query.toString() ? `?${query.toString()}` : '';
+
+  return fetchApi<any[]>(`/admin/homepage/hero-slides${qs}`);
+}
+
+/**
+ * Admin: get single hero slide by ID
+ */
+export async function adminGetHeroSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/homepage/hero-slides/${id}`);
+}
+
+/**
+ * Admin: create a new hero slide
+ */
+export async function adminCreateHeroSlide(data: any): Promise<any> {
+  return fetchApi<any>('/admin/homepage/hero-slides', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Admin: update an existing hero slide
+ */
+export async function adminUpdateHeroSlide(id: string, data: any): Promise<any> {
+  return fetchApi<any>(`/admin/homepage/hero-slides/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Admin: reorder hero slides transactionally
+ */
+export async function adminReorderHeroSlides(slideIds: string[]): Promise<any> {
+  return fetchApi<any>('/admin/homepage/hero-slides/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ slideIds }),
+  });
+}
+
+/**
+ * Admin: publish a hero slide
+ */
+export async function adminPublishHeroSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/homepage/hero-slides/${id}/publish`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Admin: unpublish a hero slide
+ */
+export async function adminUnpublishHeroSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/homepage/hero-slides/${id}/unpublish`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Admin: duplicate a hero slide
+ */
+export async function adminDuplicateHeroSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/homepage/hero-slides/${id}/duplicate`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Admin: delete or archive a hero slide
+ */
+export async function adminDeleteHeroSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/homepage/hero-slides/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Admin: upload hero slide photograph (desktop or mobile)
+ */
+export async function adminUploadHeroImage(
+  file: File,
+  kind: 'desktop' | 'mobile' = 'desktop',
+  name: string = 'hero'
+): Promise<{ url: string; filename: string }> {
+  const token = getAuthToken();
+  const csrf = getCsrfToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (csrf) headers['X-CSRF-Token'] = csrf;
+
+  const url = `${API_BASE}/admin/homepage/hero-slides/upload-image?kind=${kind}&name=${encodeURIComponent(name)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.message || `Failed to upload hero image: ${res.status}`);
+  }
+
+  return res.json();
+}

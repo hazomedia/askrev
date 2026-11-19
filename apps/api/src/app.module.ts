@@ -9,6 +9,7 @@ import { EvBikesModule } from './ev-bikes/ev-bikes.module';
 import { AdminModule } from './admin/admin.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ProductsModule } from './products/products.module';
+import { HeroSliderModule } from './hero-slider/hero-slider.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -23,6 +24,7 @@ import { HealthController } from './health.controller';
     AdminModule,
     WalletModule,
     ProductsModule,
+    HeroSliderModule,
   ],
   controllers: [HealthController],
 })

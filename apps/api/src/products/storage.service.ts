@@ -21,6 +21,7 @@ export class StorageService {
   private readonly logger = new Logger(StorageService.name);
   private readonly maxSizeBytes = 10 * 1024 * 1024; // 10MB maximum
   private readonly uploadDir = path.resolve(process.cwd(), '../web/public/uploads/products');
+  private readonly heroUploadDir = path.resolve(process.cwd(), '../web/public/uploads/hero');
   private s3Client: S3Client | null = null;
   private isR2Configured = false;
 
@@ -62,6 +63,14 @@ export class StorageService {
       if (!fs.existsSync(this.uploadDir)) {
         fs.mkdirSync(this.uploadDir, { recursive: true });
         this.logger.log(`Created product upload directory: ${this.uploadDir}`);
+      }
+      const heroDesktopDir = path.join(this.heroUploadDir, 'desktop');
+      const heroMobileDir = path.join(this.heroUploadDir, 'mobile');
+      if (!fs.existsSync(heroDesktopDir)) {
+        fs.mkdirSync(heroDesktopDir, { recursive: true });
+      }
+      if (!fs.existsSync(heroMobileDir)) {
+        fs.mkdirSync(heroMobileDir, { recursive: true });
       }
     } catch (err: any) {
       this.logger.error(`Could not create upload directory: ${err.message}`);
@@ -147,6 +156,59 @@ export class StorageService {
 
     // 5. Fallback to durable local storage
     return this.uploadToLocal(file, objectKey, detected.mime);
+  }
+
+  /**
+   * Upload hero slide photograph (desktop or mobile) with strict validation.
+   */
+  async uploadHeroImage(
+    file: Express.Multer.File,
+    kind: 'desktop' | 'mobile' = 'desktop',
+    nameSlug = 'hero'
+  ): Promise<UploadResult> {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('No image file payload provided');
+    }
+
+    if (file.size > this.maxSizeBytes) {
+      throw new BadRequestException(
+        `File size (${(file.size / 1024 / 1024).toFixed(1)} MB) exceeds maximum allowed limit (10 MB).`
+      );
+    }
+
+    const detected = this.detectMagicMime(file.buffer);
+    if (!detected) {
+      throw new BadRequestException(
+        `Invalid image format or corrupted file signature. Only authentic JPEG, PNG, and WebP images are permitted.`
+      );
+    }
+
+    const cleanPrefix = nameSlug.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 30);
+    const uniqueHash = crypto.randomBytes(8).toString('hex');
+    const objectKey = `hero/${kind}/${cleanPrefix}_${Date.now()}_${uniqueHash}.${detected.ext}`;
+
+    if (this.isR2Configured && this.s3Client) {
+      return this.uploadToR2(file, objectKey, detected.mime);
+    }
+
+    // Local fallback
+    this.ensureUploadDir();
+    const basename = path.basename(objectKey);
+    const targetPath = path.join(this.heroUploadDir, kind, basename);
+
+    fs.writeFileSync(targetPath, file.buffer);
+
+    const publicUrl = `/uploads/hero/${kind}/${basename}`;
+    this.logger.log(`Saved hero ${kind} image locally: ${publicUrl} (${(file.size / 1024).toFixed(1)} KB)`);
+
+    return {
+      url: publicUrl,
+      filename: basename,
+      originalName: file.originalname,
+      sizeBytes: file.size,
+      mimeType: detected.mime,
+      storageProvider: 'local',
+    };
   }
 
   private async uploadToR2(

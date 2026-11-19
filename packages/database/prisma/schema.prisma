@@ -431,6 +431,9 @@ model Product {
   evBikeId                String?
   evBike                  EvBike?         @relation(fields: [evBikeId], references: [id], onDelete: SetNull)
 
+  // Independent Homepage Hero Slides linked to this vehicle
+  heroSlides              HomepageHeroSlide[]
+
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
 
@@ -440,5 +443,71 @@ model Product {
   @@index([isHero])
   @@index([displayOrder])
   @@index([slug])
+}
+
+enum HeroSlideStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model HomepageHeroSlide {
+  id                  String           @id @default(uuid())
+  internalName        String
+  heading             String
+  subheading          String?
+  description         String?          @db.Text
+  eyebrowText         String?
+
+  // Media Assets
+  desktopImageUrl     String
+  mobileImageUrl      String?
+  desktopFocalX       Float            @default(50.0)
+  desktopFocalY       Float            @default(50.0)
+  mobileFocalX        Float            @default(50.0)
+  mobileFocalY        Float            @default(50.0)
+  desktopAltText      String?
+  mobileAltText       String?
+
+  // Primary Call-to-Action
+  primaryCtaLabel     String?
+  primaryCtaUrl       String?
+  primaryCtaStyle     String           @default("PRIMARY") // PRIMARY, SECONDARY, OUTLINE
+  primaryCtaEnabled   Boolean          @default(true)
+
+  // Secondary Call-to-Action
+  secondaryCtaLabel   String?
+  secondaryCtaUrl     String?
+  secondaryCtaStyle   String           @default("SECONDARY") // PRIMARY, SECONDARY, OUTLINE
+  secondaryCtaEnabled Boolean          @default(false)
+
+  // Optional Product Linking
+  linkedProductId     String?
+  linkedProduct       Product?         @relation(fields: [linkedProductId], references: [id], onDelete: SetNull)
+
+  // Pricing & Spec overlay display settings
+  showPrice           Boolean          @default(false)
+  showRange           Boolean          @default(false)
+  showTopSpeed        Boolean          @default(false)
+  showBattery         Boolean          @default(false)
+  showSpecifications  Boolean          @default(false)
+
+  // Ordering & Lifecycle
+  sortOrder           Int              @default(0)
+  status              HeroSlideStatus  @default(DRAFT)
+  publishStartAt      DateTime?
+  publishEndAt        DateTime?
+
+  // Audit info
+  createdBy           String?
+  updatedBy           String?
+  version             Int              @default(1)
+
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([status])
+  @@index([sortOrder])
+  @@index([linkedProductId])
 }
 
