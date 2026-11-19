@@ -21,7 +21,14 @@ import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
 import BookingModal from '../../../components/BookingModal';
 import BikeCard from '../../../components/BikeCard';
-import { fetchApi, fetchProductBySlug, fetchPublishedCatalog, getStoredUser } from '../../../lib/api';
+import AdminPreviewBanner from '../../../components/AdminPreviewBanner';
+import {
+  fetchApi,
+  fetchProductBySlug,
+  fetchPublishedCatalog,
+  getStoredUser,
+  isAdminPreviewActive,
+} from '../../../lib/api';
 import {
   ALL_CATALOG_VEHICLES,
   getVehicleBySlugOrCode,
@@ -36,6 +43,7 @@ export default function BikeDetailPage() {
   const [relatedVehicles, setRelatedVehicles] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [selectedColorIndex, setSelectedColorIndex] = useState(0);
+  const [activeGalleryIndex, setActiveGalleryIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -47,14 +55,55 @@ export default function BikeDetailPage() {
       loadRelated(idOrCode);
       loadProfile();
     }
+
+    const handlePreviewChange = () => {
+      if (idOrCode) {
+        loadVehicleData(idOrCode);
+        loadRelated(idOrCode);
+      }
+    };
+
+    window.addEventListener('askrev_preview_change', handlePreviewChange);
+    return () => window.removeEventListener('askrev_preview_change', handlePreviewChange);
   }, [idOrCode]);
+
+  const currentColor =
+    vehicle?.colors && vehicle.colors[selectedColorIndex]
+      ? vehicle.colors[selectedColorIndex]
+      : { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' };
+
+  // Compute active gallery images based on selected colour variant:
+  const activeGalleryImages: string[] = React.useMemo(() => {
+    if (currentColor?.images && Array.isArray(currentColor.images) && currentColor.images.length > 0) {
+      return currentColor.images.map((img: any) => (typeof img === 'string' ? img : img?.url || '')).filter(Boolean);
+    }
+    if (currentColor?.primaryImage) {
+      return [currentColor.primaryImage];
+    }
+    if (Array.isArray(vehicle?.galleryImages) && vehicle.galleryImages.length > 0) {
+      return vehicle.galleryImages;
+    }
+    if (Array.isArray(vehicle?.images) && vehicle.images.length > 0) {
+      return vehicle.images.map((img: any) => (typeof img === 'string' ? img : img?.url || '')).filter(Boolean);
+    }
+    if (vehicle?.heroImage || vehicle?.imageUrl) {
+      return [vehicle.heroImage || vehicle.imageUrl];
+    }
+    return ['/images/vehicles/dark/thunder-pro.jpg'];
+  }, [currentColor, vehicle]);
+
+  // Reset active gallery image index to 0 whenever color changes:
+  useEffect(() => {
+    setActiveGalleryIndex(0);
+  }, [selectedColorIndex]);
 
   const loadVehicleData = async (target: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      const product = await fetchProductBySlug(target);
+      const isPreview = isAdminPreviewActive();
+      const product = await fetchProductBySlug(target, isPreview);
       if (product && product.id) {
         setVehicle(product);
         setLoading(false);
@@ -85,7 +134,8 @@ export default function BikeDetailPage() {
 
   const loadRelated = async (target: string) => {
     try {
-      const all = await fetchPublishedCatalog();
+      const isPreview = isAdminPreviewActive();
+      const all = await fetchPublishedCatalog({ preview: isPreview });
       if (Array.isArray(all)) {
         setRelatedVehicles(
           all
@@ -112,6 +162,7 @@ export default function BikeDetailPage() {
   if (loading) {
     return (
       <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+        <AdminPreviewBanner onToggle={() => { if (idOrCode) { loadVehicleData(idOrCode); loadRelated(idOrCode); } }} />
         <Navbar />
         <main className="flex-1 max-w-7xl mx-auto px-4 py-20 w-full animate-pulse">
           <div className="h-6 bg-white/10 rounded w-32 mb-8" />
@@ -132,6 +183,7 @@ export default function BikeDetailPage() {
   if (error || !vehicle) {
     return (
       <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+        <AdminPreviewBanner onToggle={() => { if (idOrCode) { loadVehicleData(idOrCode); loadRelated(idOrCode); } }} />
         <Navbar />
         <main className="flex-1 max-w-xl mx-auto px-4 py-24 text-center space-y-4">
           <div className="w-12 h-12 rounded-full bg-rose-500/15 text-rose-400 mx-auto flex items-center justify-center">
@@ -155,23 +207,25 @@ export default function BikeDetailPage() {
     );
   }
 
-  const currentColor =
-    vehicle.colors && vehicle.colors[selectedColorIndex]
-      ? vehicle.colors[selectedColorIndex]
-      : { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' };
+  const activeImageSrc = activeGalleryImages[activeGalleryIndex] || activeGalleryImages[0];
+  const hasMetrics = Boolean(vehicle.rangeKm || vehicle.topSpeedKmh || vehicle.batteryCapacityKwh || vehicle.chargingTimeHours);
+  const priceDisplay = vehicle.sellingPriceINR || vehicle.exShowroomPriceINR;
 
   // Category breadcrumb link
   const categoryHref =
     (vehicle.category || '').toLowerCase() === 'scooters' || (vehicle.category || '').toLowerCase() === 'scooter'
       ? '/scooters'
       : (vehicle.category || '').toLowerCase() === 'cycles' || (vehicle.category || '').toLowerCase() === 'cycle'
-      ? '/cycles'
-      : (vehicle.category || '').toLowerCase() === 'jeeps' || (vehicle.category || '').toLowerCase() === 'jeep'
-      ? '/jeeps'
-      : '/bikes';
+        ? '/cycles'
+        : (vehicle.category || '').toLowerCase() === 'jeeps' || (vehicle.category || '').toLowerCase() === 'jeep'
+          ? '/jeeps'
+          : (vehicle.category || '').toLowerCase() === 'utility'
+            ? '/utility'
+            : '/bikes';
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+      <AdminPreviewBanner onToggle={() => { if (idOrCode) { loadVehicleData(idOrCode); loadRelated(idOrCode); } }} />
       <Navbar />
 
       <main className="flex-1 w-full">
@@ -218,17 +272,36 @@ export default function BikeDetailPage() {
                     }}
                   />
 
-                  {/* Vehicle Image */}
+                  {/* Vehicle Image with Smooth Swapping */}
                   <img
-                    src={vehicle.heroImage || vehicle.imageUrl || '/images/vehicles/dark/thunder-pro.jpg'}
-                    alt={vehicle.name}
+                    key={activeImageSrc}
+                    src={activeImageSrc}
+                    alt={`${vehicle.name} - ${currentColor.name}`}
                     className="relative z-10 w-full h-full object-cover rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)] transition-all duration-300"
                   />
                 </div>
 
+                {/* Variant Image Gallery Thumbnails */}
+                {activeGalleryImages.length > 1 && (
+                  <div className="mt-3 flex items-center gap-2.5 overflow-x-auto w-full py-1">
+                    {activeGalleryImages.map((imgUrl: string, idx: number) => (
+                      <button
+                        key={idx}
+                        onClick={() => setActiveGalleryIndex(idx)}
+                        className={`relative w-20 h-16 rounded-xl overflow-hidden border transition-all shrink-0 ${activeGalleryIndex === idx
+                            ? 'border-[#267DFF] ring-2 ring-[#267DFF]/50 scale-105'
+                            : 'border-white/10 opacity-60 hover:opacity-100'
+                          }`}
+                      >
+                        <img src={imgUrl} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Color Variants Switcher */}
                 {vehicle.colors && vehicle.colors.length > 0 && (
-                  <div className="mt-6 p-4 rounded-2xl bg-[#101827] border border-white/10 w-full flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="mt-4 p-4 rounded-2xl bg-[#101827] border border-white/10 w-full flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold">
                         Finish:
@@ -238,11 +311,10 @@ export default function BikeDetailPage() {
                           <button
                             key={c.name}
                             onClick={() => setSelectedColorIndex(idx)}
-                            className={`w-7 h-7 rounded-full transition-transform border ${
-                              selectedColorIndex === idx
+                            className={`w-7 h-7 rounded-full transition-transform border ${selectedColorIndex === idx
                                 ? 'scale-125 border-white ring-2 ring-[#267DFF] shadow-sm'
                                 : 'border-white/20 hover:scale-110'
-                            }`}
+                              }`}
                             style={{ backgroundColor: c.hex }}
                             title={c.name}
                             aria-label={`Select ${c.name}`}
@@ -273,56 +345,66 @@ export default function BikeDetailPage() {
                   </p>
                 </div>
 
-                {/* Key Metrics Strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#101827] border border-white/10 text-center">
-                  <div>
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                      Range
-                    </span>
-                    <span className="text-xl font-black text-[#F7FAFF]">
-                      {vehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
-                    </span>
-                  </div>
+                {/* Key Metrics Strip (Hides empty specs cleanly) */}
+                {hasMetrics && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#101827] border border-white/10 text-center">
+                    {vehicle.rangeKm && (
+                      <div>
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                          Range
+                        </span>
+                        <span className="text-xl font-black text-[#F7FAFF]">
+                          {vehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
+                        </span>
+                      </div>
+                    )}
 
-                  <div>
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                      Top Speed
-                    </span>
-                    <span className="text-xl font-black text-[#F7FAFF]">
-                      {vehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
-                    </span>
-                  </div>
+                    {vehicle.topSpeedKmh && (
+                      <div>
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                          Top Speed
+                        </span>
+                        <span className="text-xl font-black text-[#F7FAFF]">
+                          {vehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
+                        </span>
+                      </div>
+                    )}
 
-                  <div>
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                      Battery
-                    </span>
-                    <span className="text-xl font-black text-[#F7FAFF]">
-                      {vehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
-                    </span>
-                  </div>
+                    {vehicle.batteryCapacityKwh && (
+                      <div>
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                          Battery
+                        </span>
+                        <span className="text-xl font-black text-[#F7FAFF]">
+                          {vehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
+                        </span>
+                      </div>
+                    )}
 
-                  <div>
-                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                      Fast Charge
-                    </span>
-                    <span className="text-xl font-black text-[#F7FAFF]">
-                      {vehicle.chargingTimeHours} <span className="text-xs font-normal text-[#50D9FF]">hrs</span>
-                    </span>
+                    {vehicle.chargingTimeHours && (
+                      <div>
+                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                          Fast Charge
+                        </span>
+                        <span className="text-xl font-black text-[#F7FAFF]">
+                          {vehicle.chargingTimeHours} <span className="text-xs font-normal text-[#50D9FF]">hrs</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
                 {/* Pricing & Booking Container */}
                 <div className="p-6 rounded-2xl bg-[#101827] border border-white/10 space-y-5">
                   <div className="flex items-baseline justify-between">
                     <div>
                       <span className="text-[11px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                        Ex-Showroom Price
+                        {priceDisplay ? 'Ex-Showroom Price' : 'Pricing'}
                       </span>
                       <div className="text-3xl font-black text-[#F7FAFF]">
-                        {vehicle.sellingPriceINR || vehicle.exShowroomPriceINR
-                          ? `₹${(vehicle.sellingPriceINR || vehicle.exShowroomPriceINR).toLocaleString('en-IN')}`
-                          : vehicle.formattedSellingPrice || 'Showroom Showcase'}
+                        {priceDisplay
+                          ? `₹${priceDisplay.toLocaleString('en-IN')}`
+                          : 'Contact for Price'}
                       </div>
                     </div>
 

@@ -16,7 +16,12 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
   if (!item) return null;
 
   const isBookable = item.isBookable ?? Boolean(item.bookingAmountINR || item.bookingAmountPaise);
-  const detailLink = `/bikes/${item.modelCode || item.slug}`;
+  const isPreview =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('preview=true') ||
+      (sessionStorage.getItem('askrev_admin_preview') !== 'false' &&
+        Boolean(localStorage.getItem('askrev_user'))));
+  const detailLink = `/bikes/${item.modelCode || item.slug}${isPreview ? '?preview=true' : ''}`;
   const imageSrc = item.heroImage || item.imageUrl || (item.images && item.images[0]?.url) || '/images/vehicles/dark/thunder-pro.jpg';
   const priceINR = item.sellingPriceINR || item.exShowroomPriceINR;
   const rangeVal = item.rangeKm ?? item.range;
@@ -42,9 +47,16 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
 
         {/* Top Badges */}
         <div className="w-full flex items-center justify-between mb-2 relative z-10">
-          <span className="text-[11px] font-bold text-[#50D9FF] uppercase tracking-wider">
-            {item.categoryLabel || 'Electric Vehicle'}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-[#50D9FF] uppercase tracking-wider">
+              {item.categoryLabel || item.category || 'Electric Vehicle'}
+            </span>
+            {(item.modelCode || item.slug) && (
+              <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#50D9FF] bg-blue-500/15 px-2 py-0.5 rounded-md border border-blue-500/30">
+                {item.modelCode || item.slug.toUpperCase()}
+              </span>
+            )}
+          </div>
 
           {isBookable ? (
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
@@ -91,49 +103,78 @@ export default function BikeCard({ bike, vehicle, onBookClick }: BikeCardProps) 
             {item.tagline || item.shortDescription || item.headline || ''}
           </p>
 
+          {/* Colour Variants Swatches */}
+          {Array.isArray(item.colors) && item.colors.length > 0 && (
+            <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-white/5">
+              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider font-semibold">
+                {item.colors.length} {item.colors.length === 1 ? 'Colour' : 'Colours'}:
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {item.colors.slice(0, 5).map((col: any, idx: number) => (
+                  <span
+                    key={idx}
+                    className="w-3.5 h-3.5 rounded-full border border-white/40 shadow-sm transition-transform hover:scale-125"
+                    style={{ backgroundColor: col.hex || '#267DFF' }}
+                    title={col.name}
+                  />
+                ))}
+                {item.colors.length > 5 && (
+                  <span className="text-[9px] text-[#50D9FF] font-bold">+{item.colors.length - 5}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Clean 3-Metric Specifications Grid in Midnight Pill */}
-          <div className="mt-4 grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl bg-white/5 border border-white/10 text-center">
-            <div>
-              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                Range
-              </span>
-              <span className="text-sm font-bold text-[#F7FAFF]">
-                {rangeVal ? `${rangeVal} ` : '— '}<span className="text-[10px] font-normal text-[#AAB7C8]">km</span>
-              </span>
-            </div>
+          {(rangeVal || speedVal || battVal || item.payloadCapacityKg) ? (
+            <div className="mt-4 grid grid-cols-3 gap-2 py-3 px-3.5 rounded-xl bg-white/5 border border-white/10 text-center">
+              <div>
+                <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                  {(item.category || '').toUpperCase() === 'UTILITY' ? 'Payload' : 'Range'}
+                </span>
+                <span className="text-sm font-bold text-[#F7FAFF]">
+                  {(item.category || '').toUpperCase() === 'UTILITY' && item.payloadCapacityKg
+                    ? `${item.payloadCapacityKg} `
+                    : rangeVal ? `${rangeVal} ` : 'TBA '}
+                  <span className="text-[10px] font-normal text-[#AAB7C8]">
+                    {(item.category || '').toUpperCase() === 'UTILITY' && item.payloadCapacityKg ? 'kg' : 'km'}
+                  </span>
+                </span>
+              </div>
 
-            <div className="border-x border-white/10">
-              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                Top Speed
-              </span>
-              <span className="text-sm font-bold text-[#F7FAFF]">
-                {speedVal ? `${speedVal} ` : '— '}<span className="text-[10px] font-normal text-[#AAB7C8]">km/h</span>
-              </span>
-            </div>
+              <div className="border-x border-white/10">
+                <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                  Top Speed
+                </span>
+                <span className="text-sm font-bold text-[#F7FAFF]">
+                  {speedVal ? `${speedVal} ` : 'TBA '}<span className="text-[10px] font-normal text-[#AAB7C8]">km/h</span>
+                </span>
+              </div>
 
-            <div>
-              <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-                Battery
-              </span>
-              <span className="text-sm font-bold text-[#F7FAFF]">
-                {battVal ? `${battVal} ` : '— '}<span className="text-[10px] font-normal text-[#AAB7C8]">kWh</span>
-              </span>
+              <div>
+                <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
+                  Battery
+                </span>
+                <span className="text-sm font-bold text-[#F7FAFF]">
+                  {battVal ? `${battVal} ` : 'TBA '}<span className="text-[10px] font-normal text-[#AAB7C8]">kWh</span>
+                </span>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         {/* Pricing & Booking Action */}
         <div className="pt-4 border-t border-white/10 flex items-center justify-between">
           <div>
             <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-medium">
-              Ex-Showroom
+              {priceINR ? 'Ex-Showroom' : 'Pricing'}
             </span>
             <div className="text-lg font-black text-[#F7FAFF]">
               {priceINR
                 ? `₹${priceINR.toLocaleString('en-IN')}`
-                : item.formattedSellingPrice || 'Showcase Preview'}
+                : 'Contact for Price'}
             </div>
-            {item.estimatedOnRoadINR && (
+            {priceINR && item.estimatedOnRoadINR && (
               <span className="text-[10px] text-[#AAB7C8] block">
                 Est. On-Road ₹{item.estimatedOnRoadINR.toLocaleString('en-IN')}
               </span>

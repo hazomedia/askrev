@@ -360,6 +360,7 @@ enum ProductCategory {
   BIKE
   CYCLE
   JEEP
+  UTILITY
 }
 
 enum ProductStatus {
@@ -395,7 +396,7 @@ model Product {
   powertrain              String?
 
   // Structured specifications and custom styling (JSON arrays)
-  colors                  Json?           // Array of { name, hex, accentHex?, description }
+  colors                  Json?           // Array of { name, hex, accentHex?, description, images?, primaryImage?, sku?, isAvailable? }
   specifications          Json?           // Array of { label, value, sub? }
   highlights              Json?           // Array of string highlights
 
@@ -403,6 +404,23 @@ model Product {
   images                  Json?           // Array of { url, publicId?, isPrimary, order, caption? }
   heroImage               String?
   thumbnailImage          String?
+
+  // Homepage Hero Placement
+  isHero                  Boolean         @default(false)
+  heroMobileImage         String?
+  heroHeading             String?
+  heroDescription         String?
+  heroCtaText             String?
+  heroCtaLink             String?
+  heroSlideOrder          Int?
+
+  // Internal OEM & Supplier Traceability (strictly internal for warranty, service, and compliance)
+  oemManufacturer         String?         // e.g. "Harsil", "Eko Tejas", "Rilox"
+  oemModelName            String?         // e.g. "Leo", "Sport", "Jatayu", "Retro Classic", "Tri-Star", "3W Loader"
+  oemReference            String?         // e.g. "PriceSheet-60V-2026", "FactorySpec-Batch1"
+  internalNotes           String?         @db.Text
+  slugAliases             String[]        @default([]) // Safe redirects from legacy slugs (e.g. "harsil-leo")
+  isRebranded             Boolean         @default(true)
 
   // Catalog status & ordering
   isFeatured              Boolean         @default(false)
@@ -419,6 +437,7 @@ model Product {
   @@index([category])
   @@index([status])
   @@index([isFeatured])
+  @@index([isHero])
   @@index([displayOrder])
   @@index([slug])
 }

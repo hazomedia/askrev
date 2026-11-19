@@ -237,7 +237,11 @@ export interface ProductColorItem {
   name: string;
   hex: string;
   accentHex?: string;
-  description: string;
+  description?: string;
+  images?: ProductImageItem[];
+  primaryImage?: string;
+  sku?: string;
+  isAvailable?: boolean;
 }
 
 export interface ProductSpecificationItem {
@@ -285,6 +289,20 @@ export interface ProductItem {
   images?: ProductImageItem[] | null;
   heroImage?: string | null;
   thumbnailImage?: string | null;
+  isHero: boolean;
+  heroMobileImage?: string | null;
+  heroHeading?: string | null;
+  heroDescription?: string | null;
+  heroCtaText?: string | null;
+  heroCtaLink?: string | null;
+  heroSlideOrder?: number | null;
+  oemManufacturer?: string | null;
+  oemModelName?: string | null;
+  oemReference?: string | null;
+  internalNotes?: string | null;
+  slugAliases?: string[];
+  isRebranded?: boolean;
+  rebrandingNotes?: string | null;
   isFeatured: boolean;
   status: ProductStatus;
   displayOrder: number;

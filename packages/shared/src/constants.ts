@@ -41,6 +41,7 @@ export enum ProductCategory {
   BIKE = 'BIKE',
   CYCLE = 'CYCLE',
   JEEP = 'JEEP',
+  UTILITY = 'UTILITY',
 }
 
 export enum ProductStatus {

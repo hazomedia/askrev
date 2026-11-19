@@ -93,6 +93,45 @@ export class UpdateProductDto implements Partial<CreateProductDto> {
   thumbnailImage?: string;
 
   @IsOptional()
+  isHero?: boolean;
+
+  @IsOptional()
+  heroMobileImage?: string;
+
+  @IsOptional()
+  heroHeading?: string;
+
+  @IsOptional()
+  heroDescription?: string;
+
+  @IsOptional()
+  heroCtaText?: string;
+
+  @IsOptional()
+  heroCtaLink?: string;
+
+  @IsOptional()
+  heroSlideOrder?: number;
+
+  @IsOptional()
+  oemManufacturer?: string;
+
+  @IsOptional()
+  oemModelName?: string;
+
+  @IsOptional()
+  oemReference?: string;
+
+  @IsOptional()
+  internalNotes?: string;
+
+  @IsOptional()
+  slugAliases?: string[];
+
+  @IsOptional()
+  isRebranded?: boolean;
+
+  @IsOptional()
   isFeatured?: boolean;
 
   @IsOptional()

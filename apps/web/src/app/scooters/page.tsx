@@ -7,7 +7,8 @@ import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import BikeCard from '../../components/BikeCard';
 import BookingModal from '../../components/BookingModal';
-import { fetchPublishedCatalog, getStoredUser } from '../../lib/api';
+import AdminPreviewBanner from '../../components/AdminPreviewBanner';
+import { fetchPublishedCatalog, getStoredUser, isAdminPreviewActive } from '../../lib/api';
 
 export default function ScootersPage() {
   const [scooters, setScooters] = useState<any[]>([]);
@@ -21,7 +22,8 @@ export default function ScootersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchPublishedCatalog({ category: 'SCOOTER' });
+      const isPreview = isAdminPreviewActive();
+      const data = await fetchPublishedCatalog({ category: 'SCOOTER', preview: isPreview });
       setScooters(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.warn('Scooters catalog load notice:', err.message);
@@ -34,6 +36,13 @@ export default function ScootersPage() {
   useEffect(() => {
     setCurrentUser(getStoredUser());
     loadScooters();
+
+    const handlePreviewChange = () => {
+      loadScooters();
+    };
+
+    window.addEventListener('askrev_preview_change', handlePreviewChange);
+    return () => window.removeEventListener('askrev_preview_change', handlePreviewChange);
   }, []);
 
   const handleOpenBooking = (vehicle: any) => {
@@ -45,6 +54,7 @@ export default function ScootersPage() {
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+      <AdminPreviewBanner onToggle={() => loadScooters()} />
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 w-full">

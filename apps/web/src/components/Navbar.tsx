@@ -94,6 +94,17 @@ export default function Navbar() {
             >
               Jeeps
             </Link>
+
+            <Link
+              href="/utility"
+              className={`text-sm tracking-normal transition-colors py-1 ${
+                pathname === '/utility'
+                  ? 'text-[#50D9FF] font-bold border-b-2 border-[#267DFF]'
+                  : 'text-[#AAB7C8] hover:text-[#F7FAFF] font-medium'
+              }`}
+            >
+              Utility
+            </Link>
           </nav>
 
           {/* User Account / Auth & Book CTA */}
@@ -230,6 +241,16 @@ export default function Navbar() {
               }`}
             >
               Electric Jeeps
+            </Link>
+
+            <Link
+              href="/utility"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                pathname === '/utility' ? 'bg-[#267DFF]/20 text-[#50D9FF]' : 'text-[#AAB7C8] hover:text-white'
+              }`}
+            >
+              Utility Vehicles
             </Link>
           </nav>
 

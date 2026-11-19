@@ -23,61 +23,158 @@ import BookingModal from '../components/BookingModal';
 import VerticalRoad from '../components/VerticalRoad';
 import MobileBackgroundRoad from '../components/MobileBackgroundRoad';
 import GroundMist from '../components/GroundMist';
-import { fetchApi, fetchPublishedCatalog, getStoredUser } from '../lib/api';
+import AdminPreviewBanner from '../components/AdminPreviewBanner';
+import {
+  fetchApi,
+  fetchPublishedCatalog,
+  fetchHeroSlides,
+  getStoredUser,
+  isAdminPreviewActive,
+} from '../lib/api';
 import {
   ELECTRIC_SCOOTERS,
   ELECTRIC_MOTORCYCLES,
   ELECTRIC_CYCLES,
   ELECTRIC_JEEPS,
+  ELECTRIC_UTILITY,
   ALL_CATALOG_VEHICLES,
   Vehicle,
 } from '../lib/catalog';
 
+const LEGACY_DEMO_SLUGS = new Set([
+  'thunder-pro',
+  'scooter-s1-air',
+  'terramax-4x4',
+  'apex-sport',
+  'terramax-urban',
+  'scooter-s1-pro',
+  'city-cruise',
+  'aerotrek-c1',
+  'aerotrek-trail',
+]);
+
 export default function HomePage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [selectedCategoryTab, setSelectedCategoryTab] = useState<'all' | 'scooters' | 'bikes' | 'cycles' | 'jeeps'>('bikes');
+  const [selectedCategoryTab, setSelectedCategoryTab] = useState<'all' | 'scooters' | 'bikes' | 'cycles' | 'jeeps' | 'utility'>('scooters');
   const [bookingVehicle, setBookingVehicle] = useState<any | null>(null);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  // 4 Featured Hero Vehicles baseline across categories (Motorcycle, Scooter, Cycle, Jeep)
+  // Real ASKR EV Fleet Hero Showcase baseline across categories (Scooter, Motorcycle, Utility, Jeep)
   const initialHeroSlides = [
     {
-      vehicle: ELECTRIC_MOTORCYCLES[0], // ASKR Thunder Pro
-      headline: 'Pure Torque. Zero Compromise.',
-      subline: 'High-torque urban electric streetfighter powered by permanent magnet synchronous mid-drive motor with instant 78 Nm wheel torque.',
-      primaryBadge: 'Flagship Electric Streetfighter • Bookings Open',
-      image: '/images/vehicles/dark/hero-motorcycle-dark.jpg',
+      vehicle: {
+        id: 'askr-ev-s01',
+        name: 'ASKR EV S01',
+        modelCode: 'ASKR-EV-S01',
+        category: 'SCOOTER',
+        categoryLabel: 'Electric Scooter',
+        brand: 'ASKR EV',
+        manufacturer: 'ASKR EV Mobility',
+        tagline: 'All-Electric Urban Commuter Fleet',
+        heroImage: '/images/real/branded/askr-s01-commuter-lineup.jpg',
+        imageUrl: '/images/real/branded/askr-s01-commuter-lineup.jpg',
+        exShowroomPriceINR: 49000,
+        sellingPriceINR: 49000,
+        rangeKm: 85,
+        topSpeedKmh: 50,
+        batteryCapacityKwh: 1.9,
+      },
+      headline: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+      subline: 'Discover ASKR EV\'s range of electric scooters, motorcycles and utility vehicles. Explore modern designs and find the right electric vehicle for your journey.',
+      primaryBadge: 'ASKR EV Real Fleet • Commercial & Commuter Mobility',
+      image: '/images/real/branded/askr-s01-commuter-lineup.jpg',
+      mobileImage: '/images/real/branded/askr-s01-commuter-lineup.jpg',
+      ctaText: 'Explore ASKR EV S01',
+      ctaLink: '/bikes/askr-ev-s01?preview=true',
       ambientGlow: 'rgba(38, 125, 255, 0.35)',
       ambientCyan: 'rgba(80, 217, 255, 0.18)',
     },
     {
-      vehicle: ELECTRIC_SCOOTERS[0], // ASKR S1 Pro
-      headline: 'The Revolution in Electric Mobility.',
-      subline: 'Hyper-performance connected electric scooter with 195 km IDC range, 120 km/h top speed, and MoveOS intelligent telemetry.',
-      primaryBadge: 'Flagship Connected Scooter • Showroom Showcase',
-      image: '/images/vehicles/dark/hero-scooter-dark.jpg',
-      ambientGlow: 'rgba(38, 125, 255, 0.30)',
-      ambientCyan: 'rgba(80, 217, 255, 0.15)',
+      vehicle: {
+        id: 'askr-ev-b01',
+        name: 'ASKR EV B01',
+        modelCode: 'ASKR-EV-B01',
+        category: 'BIKE',
+        categoryLabel: 'Electric Motorcycle',
+        brand: 'ASKR EV',
+        manufacturer: 'ASKR EV Mobility',
+        tagline: 'High-Performance Electric Sports Motorcycle',
+        heroImage: '/images/real/branded/askr-b01-racing-front.jpg',
+        imageUrl: '/images/real/branded/askr-b01-racing-front.jpg',
+        exShowroomPriceINR: null,
+        sellingPriceINR: null,
+        rangeKm: 140,
+        topSpeedKmh: 105,
+        batteryCapacityKwh: 4.8,
+      },
+      headline: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+      subline: 'Track-grade trellis chassis, inverted front telescopic forks, and instant high-torque electric powertrain.',
+      primaryBadge: 'ASKR EV Real Fleet • Electric Motorcycle',
+      image: '/images/real/branded/askr-b01-racing-front.jpg',
+      mobileImage: '/images/real/branded/askr-b01-racing-front.jpg',
+      ctaText: 'Explore ASKR EV B01',
+      ctaLink: '/bikes/askr-ev-b01?preview=true',
+      ambientGlow: 'rgba(38, 125, 255, 0.35)',
+      ambientCyan: 'rgba(80, 217, 255, 0.18)',
     },
     {
-      vehicle: ELECTRIC_CYCLES[0], // ASKR AeroTrek C1
-      headline: 'Ride Light. Go Further.',
-      subline: 'Ultralight hydroformed carbon e-bike with integrated downtube battery module and silent high-efficiency torque-assist motor.',
-      primaryBadge: 'Urban E-Bike Prototype • 85 km Assisted Range',
-      image: '/images/vehicles/dark/hero-cycle-dark.jpg',
-      ambientGlow: 'rgba(13, 148, 136, 0.28)',
-      ambientCyan: 'rgba(94, 234, 212, 0.14)',
+      vehicle: {
+        id: 'askr-ev-u01',
+        name: 'ASKR EV U01',
+        modelCode: 'ASKR-EV-U01',
+        category: 'UTILITY',
+        categoryLabel: 'Electric Utility',
+        brand: 'ASKR EV',
+        manufacturer: 'ASKR EV Mobility',
+        tagline: 'Commercial Cargo Loader Rickshaw',
+        heroImage: '/images/real/branded/askr-u01-commercial-loader.jpg',
+        imageUrl: '/images/real/branded/askr-u01-commercial-loader.jpg',
+        exShowroomPriceINR: 63000,
+        sellingPriceINR: 63000,
+        payloadCapacityKg: 800,
+        rangeKm: 90,
+        topSpeedKmh: 35,
+        batteryCapacityKwh: 3.2,
+      },
+      headline: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+      subline: 'Engineered for logistics, cargo hauling, and industrial operations with 800 kg heavy-duty payload.',
+      primaryBadge: 'ASKR EV Real Fleet • Commercial Cargo Loader',
+      image: '/images/real/branded/askr-u01-commercial-loader.jpg',
+      mobileImage: '/images/real/branded/askr-u01-commercial-loader.jpg',
+      ctaText: 'Explore ASKR EV U01',
+      ctaLink: '/bikes/askr-ev-u01?preview=true',
+      ambientGlow: 'rgba(234, 179, 8, 0.28)',
+      ambientCyan: 'rgba(59, 130, 246, 0.20)',
     },
     {
-      vehicle: ELECTRIC_JEEPS[0], // ASKR TerraMax 4x4
-      headline: 'Built for the Extraordinary.',
-      subline: 'Dual-motor all-wheel electric drive adventure vehicle with 380 km expedition range and structural titanium underbody armor.',
-      primaryBadge: 'Overland 4x4 EV Concept • 450 Nm Dual AWD',
-      image: '/images/vehicles/dark/hero-jeep-dark.jpg',
+      vehicle: {
+        id: 'askr-ev-j01',
+        name: 'ASKR EV J01',
+        modelCode: 'ASKR-EV-J01',
+        category: 'JEEP',
+        categoryLabel: 'Electric 4x4 Jeep',
+        brand: 'ASKR EV',
+        manufacturer: 'ASKR EV Mobility',
+        tagline: 'All-Terrain 4x4 Electric Off-Road Jeep',
+        heroImage: '/images/real/branded/askr-j01-monster-front.jpg',
+        imageUrl: '/images/real/branded/askr-j01-monster-front.jpg',
+        exShowroomPriceINR: null,
+        sellingPriceINR: null,
+        rangeKm: 120,
+        topSpeedKmh: 65,
+        batteryCapacityKwh: 7.2,
+      },
+      headline: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+      subline: 'All-terrain all-electric adventure vehicle with full steel roll cage and high-traction off-road capability.',
+      primaryBadge: 'ASKR EV Real Fleet • 4x4 Off-Road Adventure',
+      image: '/images/real/branded/askr-j01-monster-front.jpg',
+      mobileImage: '/images/real/branded/askr-j01-monster-front.jpg',
+      ctaText: 'Explore ASKR EV J01',
+      ctaLink: '/bikes/askr-ev-j01?preview=true',
       ambientGlow: 'rgba(37, 99, 235, 0.35)',
       ambientCyan: 'rgba(99, 102, 241, 0.18)',
     },
@@ -89,46 +186,71 @@ export default function HomePage() {
     setLoadingProducts(true);
     setCatalogError(null);
     try {
-      const data = await fetchPublishedCatalog();
-      if (Array.isArray(data)) {
-        setProducts(data);
-        const featured = data.filter((p: any) => p.isFeatured);
-        if (featured.length > 0) {
-          const updatedSlides = featured.map((p: any) => {
-            const cat = (p.category || '').toUpperCase();
-            const defaultImg =
-              cat === 'SCOOTER'
-                ? '/images/vehicles/dark/hero-scooter-dark.jpg'
-                : cat === 'CYCLE'
-                ? '/images/vehicles/dark/hero-cycle-dark.jpg'
-                : cat === 'JEEP'
-                ? '/images/vehicles/dark/hero-jeep-dark.jpg'
-                : '/images/vehicles/dark/hero-motorcycle-dark.jpg';
-            const ambientGlow =
-              cat === 'CYCLE'
-                ? 'rgba(13, 148, 136, 0.28)'
-                : cat === 'JEEP'
-                ? 'rgba(37, 99, 235, 0.35)'
-                : 'rgba(38, 125, 255, 0.35)';
-            const ambientCyan =
-              cat === 'CYCLE'
-                ? 'rgba(94, 234, 212, 0.14)'
-                : cat === 'JEEP'
-                ? 'rgba(99, 102, 241, 0.18)'
-                : 'rgba(80, 217, 255, 0.18)';
+      const isPreview = isAdminPreviewActive();
+      const [catalogRes, heroRes] = await Promise.allSettled([
+        fetchPublishedCatalog({ preview: isPreview }),
+        fetchHeroSlides(isPreview),
+      ]);
 
-            return {
-              vehicle: p,
-              headline: p.tagline || (cat === 'SCOOTER' ? 'The Revolution in Electric Mobility.' : 'Pure Torque. Zero Compromise.'),
-              subline: p.shortDescription || p.fullDescription || 'High-efficiency connected electric vehicle engineered by ASKR EV Mobility.',
-              primaryBadge: p.statusBadge ? `${p.name} • ${p.statusBadge}` : `${p.categoryLabel || 'EV'} Showcase`,
-              image: p.heroImage || defaultImg,
-              ambientGlow,
-              ambientCyan,
-            };
-          });
-          setHeroSlides(updatedSlides);
-        }
+      const rawData = catalogRes.status === 'fulfilled' && Array.isArray(catalogRes.value) ? catalogRes.value : [];
+      if (catalogRes.status === 'rejected') {
+        throw catalogRes.reason;
+      }
+      // In Admin Preview mode, strictly exclude legacy demo models
+      const data = isPreview ? rawData.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawData;
+      setProducts(data);
+
+      const rawHero =
+        heroRes.status === 'fulfilled' && Array.isArray(heroRes.value) && heroRes.value.length > 0
+          ? heroRes.value
+          : data.filter((p: any) => p.isHero || p.isFeatured);
+
+      const heroCandidates = isPreview ? rawHero.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawHero;
+
+      if (heroCandidates.length > 0) {
+        const updatedSlides = heroCandidates.map((p: any) => {
+          const cat = (p.category || '').toUpperCase();
+          const defaultImg =
+            cat === 'SCOOTER'
+              ? (p.heroImage || '/images/real/branded/askr-s01-commuter-lineup.jpg')
+              : cat === 'CYCLE'
+                ? (p.heroImage || '/images/vehicles/dark/hero-cycle-dark.jpg')
+                : cat === 'JEEP'
+                  ? (p.heroImage || '/images/real/branded/askr-j01-monster-front.jpg')
+                  : cat === 'UTILITY'
+                    ? (p.heroImage || '/images/real/branded/askr-u01-commercial-loader.jpg')
+                    : (p.heroImage || '/images/real/branded/askr-b01-racing-front.jpg');
+          const ambientGlow =
+            cat === 'CYCLE'
+              ? 'rgba(13, 148, 136, 0.28)'
+              : cat === 'JEEP'
+                ? 'rgba(37, 99, 235, 0.35)'
+                : cat === 'UTILITY'
+                  ? 'rgba(234, 179, 8, 0.28)'
+                  : 'rgba(38, 125, 255, 0.35)';
+          const ambientCyan =
+            cat === 'CYCLE'
+              ? 'rgba(94, 234, 212, 0.14)'
+              : cat === 'JEEP'
+                ? 'rgba(99, 102, 241, 0.18)'
+                : cat === 'UTILITY'
+                  ? 'rgba(59, 130, 246, 0.20)'
+                  : 'rgba(80, 217, 255, 0.18)';
+
+          return {
+            vehicle: p,
+            headline: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+            subline: p.heroDescription || p.tagline || 'Discover ASKR EV\'s range of electric scooters, motorcycles and utility vehicles. Explore modern designs and find the right electric vehicle for your journey.',
+            primaryBadge: p.statusBadge ? `${p.name} • ${p.statusBadge}` : `ASKR EV Real Fleet • ${p.categoryLabel || 'EV'}`,
+            image: p.heroImage || defaultImg,
+            mobileImage: p.heroMobileImage || p.heroImage || defaultImg,
+            ctaText: p.heroCtaText || `Explore ${p.name}`,
+            ctaLink: p.heroCtaLink || `/bikes/${p.modelCode || p.slug}${isPreview ? '?preview=true' : ''}`,
+            ambientGlow,
+            ambientCyan,
+          };
+        });
+        setHeroSlides(updatedSlides);
       }
     } catch (err: any) {
       console.warn('Live catalog fetch notice:', err.message);
@@ -142,6 +264,13 @@ export default function HomePage() {
   useEffect(() => {
     setCurrentUser(getStoredUser());
     loadCatalog();
+
+    const handlePreviewChange = () => {
+      loadCatalog();
+    };
+
+    window.addEventListener('askrev_preview_change', handlePreviewChange);
+    return () => window.removeEventListener('askrev_preview_change', handlePreviewChange);
   }, []);
 
   // Auto-advance hero slider every 7.5 seconds
@@ -163,17 +292,24 @@ export default function HomePage() {
 
   const getFilteredVehicles = () => {
     if (!products || products.length === 0) return [];
+    const isPreview = isAdminPreviewActive();
+    const baseList = isPreview
+      ? products.filter((p) => !LEGACY_DEMO_SLUGS.has(p.slug))
+      : products;
+
     switch (selectedCategoryTab) {
       case 'scooters':
-        return products.filter((p) => (p.category || '').toUpperCase() === 'SCOOTER');
+        return baseList.filter((p) => (p.category || '').toUpperCase() === 'SCOOTER');
       case 'bikes':
-        return products.filter((p) => (p.category || '').toUpperCase() === 'BIKE');
+        return baseList.filter((p) => (p.category || '').toUpperCase() === 'BIKE');
       case 'cycles':
-        return products.filter((p) => (p.category || '').toUpperCase() === 'CYCLE');
+        return baseList.filter((p) => (p.category || '').toUpperCase() === 'CYCLE');
       case 'jeeps':
-        return products.filter((p) => (p.category || '').toUpperCase() === 'JEEP');
+        return baseList.filter((p) => (p.category || '').toUpperCase() === 'JEEP');
+      case 'utility':
+        return baseList.filter((p) => (p.category || '').toUpperCase() === 'UTILITY');
       default:
-        return products;
+        return baseList;
     }
   };
 
@@ -191,6 +327,7 @@ export default function HomePage() {
 
       {/* Main Content Wrapper (Leaves reserved track space on desktop for Vertical Road) */}
       <div className="relative z-10 w-full lg:pr-[144px] xl:pr-[156px] 2xl:pr-[168px] transition-all">
+        <AdminPreviewBanner onToggle={() => loadCatalog()} />
         <Navbar />
 
         {/* =========================================================================
@@ -245,8 +382,8 @@ export default function HomePage() {
                 {/* Primary Vehicle Image */}
                 <div className="relative z-10 w-full h-full flex items-center justify-center p-3">
                   <img
-                    key={`mobile-${activeSlide.image}`}
-                    src={activeSlide.image}
+                    key={`mobile-${activeSlide.mobileImage || activeSlide.image}`}
+                    src={activeSlide.mobileImage || activeSlide.image}
                     alt={activeVehicle.name}
                     className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in rounded-xl"
                   />
@@ -284,11 +421,10 @@ export default function HomePage() {
                     <button
                       key={`mob-dot-${slide.vehicle.id}`}
                       onClick={() => setCurrentSlideIndex(idx)}
-                      className={`h-1.5 rounded-full transition-all ${
-                        currentSlideIndex === idx
+                      className={`h-1.5 rounded-full transition-all ${currentSlideIndex === idx
                           ? 'w-5 bg-[#267DFF] shadow-[0_0_8px_rgba(38,125,255,0.8)]'
                           : 'w-1.5 bg-white/30'
-                      }`}
+                        }`}
                       aria-label={`Go to slide ${idx + 1}`}
                     />
                   ))}
@@ -314,7 +450,7 @@ export default function HomePage() {
                     <span className="text-xl xs:text-2xl font-black text-[#F7FAFF] tracking-tight">
                       {activeVehicle.exShowroomPriceINR
                         ? `₹${activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
-                        : 'Showcase Preview'}
+                        : 'Contact for Price'}
                     </span>
                   </div>
                   <span className="text-[10px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
@@ -327,7 +463,13 @@ export default function HomePage() {
                       Range
                     </span>
                     <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
+                      {activeVehicle.rangeKm ? (
+                        <>
+                          {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
+                        </>
+                      ) : (
+                        'TBA'
+                      )}
                     </span>
                   </div>
 
@@ -336,7 +478,13 @@ export default function HomePage() {
                       Speed
                     </span>
                     <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
+                      {activeVehicle.topSpeedKmh ? (
+                        <>
+                          {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
+                        </>
+                      ) : (
+                        'TBA'
+                      )}
                     </span>
                   </div>
 
@@ -345,16 +493,26 @@ export default function HomePage() {
                       Battery
                     </span>
                     <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
+                      {activeVehicle.batteryCapacityKwh ? (
+                        <>
+                          {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
+                        </>
+                      ) : (
+                        'TBA'
+                      )}
                     </span>
                   </div>
 
                   <div className="text-center border-l border-white/10 pl-1">
                     <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                      0-40 km/h
+                      {(activeVehicle.category || '').toLowerCase() === 'utility' ? 'Payload' : '0-40 km/h'}
                     </span>
                     <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.acceleration0to40 || '3.2 sec'}
+                      {(activeVehicle.category || '').toLowerCase() === 'utility'
+                        ? activeVehicle.payloadCapacityKg
+                          ? `${activeVehicle.payloadCapacityKg} kg`
+                          : 'Heavy Duty'
+                        : activeVehicle.acceleration0to40 || '3.2 sec'}
                     </span>
                   </div>
                 </div>
@@ -363,28 +521,19 @@ export default function HomePage() {
               {/* 6. Primary CTA and Secondary CTA */}
               <div className="pt-1 flex flex-col xs:flex-row items-center gap-2.5 w-full">
                 <Link
-                  href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
+                  href={activeSlide.ctaLink || '/bikes'}
                   className="w-full py-3 px-5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.35)] flex items-center justify-center gap-1.5"
                 >
-                  <span>Explore {activeVehicle.name}</span>
+                  <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
 
-                {activeVehicle.isBookable ? (
-                  <button
-                    onClick={() => handleOpenBooking(activeVehicle)}
-                    className="w-full py-3 px-5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10 flex items-center justify-center"
-                  >
-                    Book Now
-                  </button>
-                ) : (
-                  <Link
-                    href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
-                    className="w-full py-3 px-5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10 flex items-center justify-center"
-                  >
-                    View Specifications
-                  </Link>
-                )}
+                <button
+                  onClick={() => handleOpenBooking(activeVehicle)}
+                  className="w-full py-3 px-5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                >
+                  Enquire Now
+                </button>
               </div>
             </div>
 
@@ -420,7 +569,7 @@ export default function HomePage() {
                   <span className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
                     {activeVehicle.exShowroomPriceINR
                       ? `₹${activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}`
-                      : 'Showcase Preview'}
+                      : 'Contact for Price'}
                   </span>
                   <span className="text-xs text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
                 </div>
@@ -432,7 +581,13 @@ export default function HomePage() {
                       Range
                     </span>
                     <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
+                      {activeVehicle.rangeKm ? (
+                        <>
+                          {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
+                        </>
+                      ) : (
+                        'TBA'
+                      )}
                     </span>
                   </div>
 
@@ -441,7 +596,13 @@ export default function HomePage() {
                       Top Speed
                     </span>
                     <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
+                      {activeVehicle.topSpeedKmh ? (
+                        <>
+                          {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
+                        </>
+                      ) : (
+                        'TBA'
+                      )}
                     </span>
                   </div>
 
@@ -450,16 +611,30 @@ export default function HomePage() {
                       Battery
                     </span>
                     <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
+                      {activeVehicle.batteryCapacityKwh ? (
+                        <>
+                          {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
+                        </>
+                      ) : (
+                        'TBA'
+                      )}
                     </span>
                   </div>
 
                   <div className="border-l border-white/10 pl-3">
                     <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                      {activeVehicle.category === 'cycles' ? '0-25 km/h' : '0-40 km/h'}
+                      {(activeVehicle.category || '').toLowerCase() === 'utility'
+                        ? 'Payload'
+                        : (activeVehicle.category || '').toLowerCase() === 'cycles'
+                          ? '0-25 km/h'
+                          : '0-40 km/h'}
                     </span>
                     <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
-                      {activeVehicle.acceleration0to40 || '3.2 sec'}
+                      {(activeVehicle.category || '').toLowerCase() === 'utility'
+                        ? activeVehicle.payloadCapacityKg
+                          ? `${activeVehicle.payloadCapacityKg} kg`
+                          : 'Heavy Duty'
+                        : activeVehicle.acceleration0to40 || '3.2 sec'}
                     </span>
                   </div>
                 </div>
@@ -467,28 +642,19 @@ export default function HomePage() {
                 {/* Action Buttons */}
                 <div className="pt-2 flex flex-wrap items-center gap-3.5">
                   <Link
-                    href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
+                    href={activeSlide.ctaLink || '/bikes'}
                     className="px-7 py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)] hover:shadow-[0_0_35px_rgba(38,125,255,0.6)] flex items-center gap-2 group"
                   >
-                    <span>Explore {activeVehicle.name}</span>
+                    <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                   </Link>
 
-                  {activeVehicle.isBookable ? (
-                    <button
-                      onClick={() => handleOpenBooking(activeVehicle)}
-                      className="px-7 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10"
-                    >
-                      Book Now
-                    </button>
-                  ) : (
-                    <Link
-                      href={`/bikes/${activeVehicle.modelCode || activeVehicle.slug}`}
-                      className="px-7 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10"
-                    >
-                      View Specifications
-                    </Link>
-                  )}
+                  <button
+                    onClick={() => handleOpenBooking(activeVehicle)}
+                    className="px-7 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] text-xs sm:text-sm font-semibold tracking-wide transition-colors bg-white/5 hover:bg-white/10"
+                  >
+                    Enquire Now
+                  </button>
                 </div>
               </div>
 
@@ -539,11 +705,10 @@ export default function HomePage() {
                       <button
                         key={slide.vehicle.id}
                         onClick={() => setCurrentSlideIndex(idx)}
-                        className={`h-2 rounded-full transition-all ${
-                          currentSlideIndex === idx
+                        className={`h-2 rounded-full transition-all ${currentSlideIndex === idx
                             ? 'w-8 bg-[#267DFF] shadow-[0_0_10px_rgba(38,125,255,0.6)]'
                             : 'w-2 bg-white/20 hover:bg-white/40'
-                        }`}
+                          }`}
                         aria-label={`Go to slide ${idx + 1}: ${slide.vehicle.name}`}
                       />
                     ))}
@@ -587,46 +752,52 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center gap-2 bg-[#101827] p-1.5 rounded-full border border-white/10">
               <button
                 onClick={() => setSelectedCategoryTab('scooters')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
-                  selectedCategoryTab === 'scooters'
+                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'scooters'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
-                }`}
+                  }`}
               >
                 Scooters
               </button>
 
               <button
                 onClick={() => setSelectedCategoryTab('bikes')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
-                  selectedCategoryTab === 'bikes'
+                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'bikes'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
-                }`}
+                  }`}
               >
                 Bikes
               </button>
 
               <button
                 onClick={() => setSelectedCategoryTab('cycles')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
-                  selectedCategoryTab === 'cycles'
+                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'cycles'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
-                }`}
+                  }`}
               >
                 Cycles
               </button>
 
               <button
                 onClick={() => setSelectedCategoryTab('jeeps')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${
-                  selectedCategoryTab === 'jeeps'
+                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'jeeps'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
-                }`}
+                  }`}
               >
                 Jeeps
+              </button>
+
+              <button
+                onClick={() => setSelectedCategoryTab('utility')}
+                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'utility'
+                    ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
+                    : 'text-[#AAB7C8] hover:text-white'
+                  }`}
+              >
+                Utility
               </button>
             </div>
           </div>
@@ -651,8 +822,15 @@ export default function HomePage() {
                 </button>
               </div>
             ) : getFilteredVehicles().length === 0 ? (
-              <div className="col-span-full py-16 text-center text-[#AAB7C8] text-xs">
-                No vehicles currently published in this category.
+              <div className="col-span-full py-16 px-6 text-center rounded-2xl bg-white/5 border border-white/10 space-y-2">
+                <div className="text-sm font-bold text-white">
+                  No {selectedCategoryTab.toUpperCase()} models in current real fleet review
+                </div>
+                <p className="text-xs text-[#AAB7C8] max-w-md mx-auto">
+                  {selectedCategoryTab === 'cycles'
+                    ? 'No electric cycle models are currently registered in the active ASKR EV imported real fleet. Explore our electric scooters, motorcycles, utility vehicles, and 4x4 jeeps.'
+                    : `No vehicles currently available under the ${selectedCategoryTab} category.`}
+                </p>
               </div>
             ) : (
               getFilteredVehicles().map((veh) => (
@@ -675,7 +853,8 @@ export default function HomePage() {
 
         {/* =========================================================================
             ENGINEERING & TECHNOLOGY (Midnight Dark Showcase)
-            PMSM Motors, IP67 Lithium-Ion BMS, Smart MoveOS, Fast Wallbox
+            Verified Platform Highlights: Electric Motor Architecture, Battery Safety,
+            Digital Instrumentation, Everyday Domestic Charging
             ========================================================================= */}
         <section
           className="engineering-section-bg py-20 border-y border-white/10"
@@ -698,9 +877,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-blue-500/15 text-[#50D9FF] flex items-center justify-center font-bold text-lg border border-blue-500/20">
                   <Zap className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">PMSM Powertrain</h3>
+                <h3 className="text-lg font-bold text-[#F7FAFF]">High-Efficiency Electric Drive</h3>
                 <p className="text-xs text-[#AAB7C8] leading-relaxed">
-                  Permanent Magnet Synchronous Motors delivering up to 94% system efficiency and instant torque from zero RPM.
+                  Precision-engineered electric motor architecture delivering smooth, zero-emission torque with minimal maintenance requirements.
                 </p>
               </div>
 
@@ -708,9 +887,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center font-bold text-lg border border-emerald-500/20">
                   <BatteryCharging className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">IP67 Battery Shield</h3>
+                <h3 className="text-lg font-bold text-[#F7FAFF]">Advanced Battery Protection</h3>
                 <p className="text-xs text-[#AAB7C8] leading-relaxed">
-                  Sealed aluminium battery enclosures with active thermal balancing, water immersion protection, and fire-retardant cells.
+                  Robust lithium and graphene battery pack configurations equipped with intelligent battery monitoring and thermal safeguards.
                 </p>
               </div>
 
@@ -718,9 +897,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-bold text-lg border border-purple-500/20">
                   <Gauge className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">MoveOS Telemetry</h3>
+                <h3 className="text-lg font-bold text-[#F7FAFF]">Digital Driver Console</h3>
                 <p className="text-xs text-[#AAB7C8] leading-relaxed">
-                  Integrated touch displays with real-time turn-by-turn navigation, proximity keyless phone unlock, and over-the-air updates.
+                  Illuminated digital instrumentation providing real-time speed, trip tracking, and battery health at a glance.
                 </p>
               </div>
 
@@ -728,7 +907,7 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold text-lg border border-amber-500/20">
                   <Clock className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">Everyday Charging</h3>
+                <h3 className="text-lg font-bold text-[#F7FAFF]">Everyday 15A Recharging</h3>
                 <p className="text-xs text-[#AAB7C8] leading-relaxed">
                   Plug into any standard 15A home socket or fast-charging network for convenient, low-cost overnight recharges.
                 </p>

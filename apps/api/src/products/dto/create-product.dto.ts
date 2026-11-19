@@ -27,6 +27,22 @@ export class ProductColorDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsArray()
+  @IsOptional()
+  images?: ProductImageDto[];
+
+  @IsString()
+  @IsOptional()
+  primaryImage?: string;
+
+  @IsString()
+  @IsOptional()
+  sku?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isAvailable?: boolean;
 }
 
 export class ProductSpecificationDto {
@@ -201,7 +217,61 @@ export class CreateProductDto {
 
   @IsBoolean()
   @IsOptional()
+  isHero?: boolean;
+
+  @IsString()
+  @IsOptional()
+  heroMobileImage?: string;
+
+  @IsString()
+  @IsOptional()
+  heroHeading?: string;
+
+  @IsString()
+  @IsOptional()
+  heroDescription?: string;
+
+  @IsString()
+  @IsOptional()
+  heroCtaText?: string;
+
+  @IsString()
+  @IsOptional()
+  heroCtaLink?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  heroSlideOrder?: number;
+
+  @IsBoolean()
+  @IsOptional()
   isFeatured?: boolean;
+
+  @IsString()
+  @IsOptional()
+  oemManufacturer?: string;
+
+  @IsString()
+  @IsOptional()
+  oemModelName?: string;
+
+  @IsString()
+  @IsOptional()
+  oemReference?: string;
+
+  @IsString()
+  @IsOptional()
+  internalNotes?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  slugAliases?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  isRebranded?: boolean;
 
   @IsEnum(ProductStatus)
   @IsOptional()

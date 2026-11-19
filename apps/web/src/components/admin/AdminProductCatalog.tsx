@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   Package,
   Plus,
@@ -26,6 +27,7 @@ import {
   BatteryCharging,
   Gauge,
   Tag,
+  Sparkles,
 } from 'lucide-react';
 import { fetchApi, uploadProductImageApi } from '../../lib/api';
 
@@ -33,7 +35,7 @@ interface ProductItem {
   id: string;
   name: string;
   slug: string;
-  category: 'SCOOTER' | 'BIKE' | 'CYCLE' | 'JEEP';
+  category: 'SCOOTER' | 'BIKE' | 'CYCLE' | 'JEEP' | 'UTILITY';
   categoryLabel: string;
   brand: string;
   tagline?: string;
@@ -51,15 +53,37 @@ interface ProductItem {
   acceleration?: string;
   warranty?: string;
   powertrain?: string;
-  colors?: { name: string; hex: string; accentHex?: string; description: string }[];
+  colors?: {
+    name: string;
+    hex: string;
+    accentHex?: string;
+    description?: string;
+    images?: { url: string; isPrimary?: boolean; order?: number }[];
+    primaryImage?: string;
+    sku?: string;
+    isAvailable?: boolean;
+  }[];
   specifications?: { label: string; value: string; sub?: string }[];
   highlights?: string[];
   images?: { url: string; isPrimary: boolean; order: number; caption?: string }[];
   heroImage?: string;
   thumbnailImage?: string;
+  isHero?: boolean;
+  heroMobileImage?: string | null;
+  heroHeading?: string | null;
+  heroDescription?: string | null;
+  heroCtaText?: string | null;
+  heroCtaLink?: string | null;
+  heroSlideOrder?: number | null;
   isFeatured: boolean;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   displayOrder: number;
+  oemManufacturer?: string | null;
+  oemModelName?: string | null;
+  oemReference?: string | null;
+  internalNotes?: string | null;
+  slugAliases?: string[];
+  isRebranded?: boolean;
 }
 
 export function AdminProductCatalog() {
@@ -75,7 +99,7 @@ export function AdminProductCatalog() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'CREATE' | 'EDIT'>('CREATE');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [modalTab, setModalTab] = useState<'basic' | 'specs' | 'images' | 'colors' | 'publish'>('basic');
+  const [modalTab, setModalTab] = useState<'basic' | 'specs' | 'images' | 'colors' | 'hero' | 'oem' | 'publish'>('basic');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -100,11 +124,24 @@ export function AdminProductCatalog() {
     acceleration: '',
     warranty: '',
     powertrain: '',
+    isHero: false,
+    heroMobileImage: '',
+    heroHeading: '',
+    heroDescription: '',
+    heroCtaText: '',
+    heroCtaLink: '',
+    heroSlideOrder: '',
     isFeatured: false,
     status: 'PUBLISHED',
     displayOrder: 1,
+    oemManufacturer: '',
+    oemModelName: '',
+    oemReference: '',
+    internalNotes: '',
+    slugAliases: '',
+    isRebranded: true,
     images: [] as { url: string; isPrimary: boolean; order: number; caption?: string }[],
-    colors: [] as { name: string; hex: string; description: string }[],
+    colors: [] as any[],
     specifications: [] as { label: string; value: string; sub?: string }[],
     highlights: [] as string[],
   });
@@ -180,6 +217,18 @@ export function AdminProductCatalog() {
     }
   };
 
+  const handleToggleHero = async (product: ProductItem) => {
+    try {
+      const res: any = await fetchApi(`/admin/products/${product.id}/hero`, {
+        method: 'PATCH',
+      });
+      showFeedback('success', `'${product.name}' hero placement: ${res.isHero ? 'ACTIVE' : 'OFF'}`);
+      loadProducts();
+    } catch (err: any) {
+      showFeedback('error', err.message || 'Failed to toggle hero');
+    }
+  };
+
   const handleArchive = async (product: ProductItem) => {
     if (!confirm(`Are you sure you want to archive '${product.name}'? It will no longer appear on public pages.`)) {
       return;
@@ -248,9 +297,22 @@ export function AdminProductCatalog() {
       acceleration: '',
       warranty: '',
       powertrain: '',
+      isHero: false,
+      heroMobileImage: '',
+      heroHeading: '',
+      heroDescription: '',
+      heroCtaText: '',
+      heroCtaLink: '',
+      heroSlideOrder: '',
       isFeatured: false,
       status: 'PUBLISHED',
       displayOrder: (products.length || 0) + 1,
+      oemManufacturer: '',
+      oemModelName: '',
+      oemReference: '',
+      internalNotes: '',
+      slugAliases: '',
+      isRebranded: true,
       images: [],
       colors: [],
       specifications: [],
@@ -283,9 +345,22 @@ export function AdminProductCatalog() {
       acceleration: product.acceleration || '',
       warranty: product.warranty || '',
       powertrain: product.powertrain || '',
+      isHero: Boolean(product.isHero),
+      heroMobileImage: product.heroMobileImage || '',
+      heroHeading: product.heroHeading || '',
+      heroDescription: product.heroDescription || '',
+      heroCtaText: product.heroCtaText || '',
+      heroCtaLink: product.heroCtaLink || '',
+      heroSlideOrder: product.heroSlideOrder !== null && product.heroSlideOrder !== undefined ? String(product.heroSlideOrder) : '',
       isFeatured: Boolean(product.isFeatured),
       status: product.status || 'PUBLISHED',
       displayOrder: product.displayOrder || 1,
+      oemManufacturer: product.oemManufacturer || '',
+      oemModelName: product.oemModelName || '',
+      oemReference: product.oemReference || '',
+      internalNotes: product.internalNotes || '',
+      slugAliases: Array.isArray(product.slugAliases) ? product.slugAliases.join(', ') : '',
+      isRebranded: product.isRebranded ?? true,
       images: Array.isArray(product.images) ? [...product.images] : [],
       colors: Array.isArray(product.colors) ? [...product.colors] : [],
       specifications: Array.isArray(product.specifications) ? [...product.specifications] : [],
@@ -471,6 +546,13 @@ export function AdminProductCatalog() {
         acceleration: form.acceleration,
         warranty: form.warranty,
         powertrain: form.powertrain,
+        isHero: Boolean(form.isHero),
+        heroMobileImage: form.heroMobileImage || null,
+        heroHeading: form.heroHeading || null,
+        heroDescription: form.heroDescription || null,
+        heroCtaText: form.heroCtaText || null,
+        heroCtaLink: form.heroCtaLink || null,
+        heroSlideOrder: form.heroSlideOrder !== '' ? Number(form.heroSlideOrder) : null,
         isFeatured: form.isFeatured,
         status: form.status,
         displayOrder: Number(form.displayOrder) || 1,
@@ -480,6 +562,12 @@ export function AdminProductCatalog() {
         colors: form.colors || [],
         specifications: form.specifications || [],
         highlights: form.highlights || [],
+        oemManufacturer: form.oemManufacturer?.trim() || null,
+        oemModelName: form.oemModelName?.trim() || null,
+        oemReference: form.oemReference?.trim() || null,
+        internalNotes: form.internalNotes?.trim() || null,
+        slugAliases: form.slugAliases ? form.slugAliases.split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean) : [],
+        isRebranded: Boolean(form.isRebranded),
       };
 
       if (modalMode === 'CREATE') {
@@ -530,6 +618,17 @@ export function AdminProductCatalog() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
+            <a
+              href="/?preview=true"
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all border border-slate-300 flex items-center gap-2"
+              title="Open Public Showroom in Admin Preview Mode"
+            >
+              <Eye className="w-4 h-4 text-blue-600" />
+              <span>Preview Showroom</span>
+            </a>
+
             <button
               onClick={openCreateModal}
               className="px-4 py-2.5 rounded-xl bg-[#165DAD] hover:bg-[#124B8C] text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2"
@@ -564,11 +663,10 @@ export function AdminProductCatalog() {
       {/* Feedback Banner */}
       {feedbackMsg && (
         <div
-          className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between ${
-            feedbackMsg.type === 'success'
+          className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between ${feedbackMsg.type === 'success'
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
               : 'bg-rose-50 text-rose-800 border-rose-200'
-          }`}
+            }`}
         >
           <span>{feedbackMsg.text}</span>
           <button onClick={() => setFeedbackMsg(null)}>
@@ -587,15 +685,15 @@ export function AdminProductCatalog() {
             { id: 'BIKE', label: 'Motorcycles' },
             { id: 'CYCLE', label: 'Cycles' },
             { id: 'JEEP', label: 'Jeeps' },
+            { id: 'UTILITY', label: 'Utility' },
           ].map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategoryFilter(cat.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
-                categoryFilter === cat.id
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${categoryFilter === cat.id
                   ? 'bg-[#165DAD] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+                }`}
             >
               {cat.label}
             </button>
@@ -651,6 +749,7 @@ export function AdminProductCatalog() {
                   <th className="py-3 px-4">Category</th>
                   <th className="py-3 px-4">Pricing (INR)</th>
                   <th className="py-3 px-4">Specifications</th>
+                  <th className="py-3 px-4 text-center">Hero</th>
                   <th className="py-3 px-4 text-center">Featured</th>
                   <th className="py-3 px-4 text-center">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -693,11 +792,26 @@ export function AdminProductCatalog() {
                           )}
                         </div>
                         <div>
-                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
                             <span>{p.name}</span>
                             <span className="text-[10px] font-normal text-slate-400">({p.brand})</span>
+                            {p.oemManufacturer && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 text-purple-700 border border-purple-200"
+                                title={`Original Supplier: ${p.oemManufacturer} ${p.oemModelName || ''} (Internal Compliance Traceability)`}
+                              >
+                                OEM: {p.oemManufacturer} {p.oemModelName ? `• ${p.oemModelName}` : ''}
+                              </span>
+                            )}
                           </div>
-                          <div className="text-[11px] text-slate-500 truncate max-w-xs">{p.tagline || p.slug}</div>
+                          <div className="text-[11px] text-slate-500 truncate max-w-xs">
+                            {p.tagline || p.slug}
+                            {p.slugAliases && p.slugAliases.length > 0 && (
+                              <span className="text-[9px] text-slate-400 ml-1.5 font-mono" title={`Legacy URLs redirecting here: ${p.slugAliases.join(', ')}`}>
+                                (alias: {p.slugAliases[0]})
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -723,7 +837,9 @@ export function AdminProductCatalog() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-slate-400 italic">Price on request</span>
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          Contact for Price
+                        </span>
                       )}
                     </td>
 
@@ -751,15 +867,28 @@ export function AdminProductCatalog() {
                       </div>
                     </td>
 
+                    {/* Hero Slider Toggle */}
+                    <td className="py-3 px-4 text-center">
+                      <button
+                        onClick={() => handleToggleHero(p)}
+                        className={`p-1.5 rounded-lg transition-colors ${p.isHero
+                            ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 ring-1 ring-blue-300'
+                            : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'
+                          }`}
+                        title={p.isHero ? 'Active in Homepage Hero Slider (Click to disable)' : 'Place in Homepage Hero Slider'}
+                      >
+                        <Sparkles className={`w-4 h-4 ${p.isHero ? 'fill-blue-500 text-blue-600' : ''}`} />
+                      </button>
+                    </td>
+
                     {/* Featured Toggle */}
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => handleToggleFeatured(p)}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          p.isFeatured
+                        className={`p-1.5 rounded-lg transition-colors ${p.isFeatured
                             ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
                             : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'
-                        }`}
+                          }`}
                         title={p.isFeatured ? 'Featured on Homepage (Click to disable)' : 'Mark as Featured on Homepage'}
                       >
                         <Star className={`w-4 h-4 ${p.isFeatured ? 'fill-amber-500' : ''}`} />
@@ -770,19 +899,17 @@ export function AdminProductCatalog() {
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => handleToggleStatus(p)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
-                          p.status === 'PUBLISHED'
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${p.status === 'PUBLISHED'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                             : p.status === 'DRAFT'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200'
-                        }`}
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200'
+                          }`}
                         title={`Click to switch between Published and Draft`}
                       >
                         <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            p.status === 'PUBLISHED' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                          }`}
+                          className={`w-1.5 h-1.5 rounded-full ${p.status === 'PUBLISHED' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                            }`}
                         />
                         <span>{p.status}</span>
                       </button>
@@ -791,6 +918,15 @@ export function AdminProductCatalog() {
                     {/* Actions */}
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <Link
+                          href={`/bikes/${p.slug}?preview=true`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 transition-colors"
+                          title="Preview in Showroom"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </Link>
                         <button
                           onClick={() => openEditModal(p)}
                           className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-[#165DAD] hover:border-blue-300 transition-colors"
@@ -850,17 +986,18 @@ export function AdminProductCatalog() {
                 { id: 'basic', label: '1. Basic & Pricing' },
                 { id: 'specs', label: '2. Performance Specs' },
                 { id: 'images', label: `3. Photos (${form.images?.length || 0})` },
-                { id: 'colors', label: `4. Colors & Details` },
-                { id: 'publish', label: '5. Publishing' },
+                { id: 'colors', label: `4. Colors & Variants (${form.colors?.length || 0})` },
+                { id: 'hero', label: '5. Hero Placement' },
+                { id: 'oem', label: '6. OEM Traceability' },
+                { id: 'publish', label: '7. Publishing' },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setModalTab(tab.id as any)}
-                  className={`py-2.5 px-3 border-b-2 text-xs font-bold transition-all whitespace-nowrap ${
-                    modalTab === tab.id
+                  className={`py-2.5 px-3 border-b-2 text-xs font-bold transition-all whitespace-nowrap ${modalTab === tab.id
                       ? 'border-[#165DAD] text-[#165DAD]'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -908,6 +1045,7 @@ export function AdminProductCatalog() {
                         <option value="BIKE">Electric Motorcycle</option>
                         <option value="CYCLE">Electric Cycle</option>
                         <option value="JEEP">Electric 4x4 Jeep</option>
+                        <option value="UTILITY">Electric Utility Vehicle</option>
                       </select>
                     </div>
                     <div>
@@ -934,10 +1072,13 @@ export function AdminProductCatalog() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">Selling Price (Ex-Showroom ₹)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-slate-700">Selling Price (Ex-Showroom ₹)</label>
+                        <span className="text-[10px] text-slate-400">Leave empty for "Contact for Price"</span>
+                      </div>
                       <input
                         type="number"
-                        placeholder="e.g. 129999"
+                        placeholder="e.g. 129999 (or empty)"
                         value={form.sellingPriceINR}
                         onChange={(e) => setForm({ ...form, sellingPriceINR: e.target.value })}
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 font-bold"
@@ -1145,11 +1286,10 @@ export function AdminProductCatalog() {
                         {form.images.map((img: any, i: number) => (
                           <div
                             key={i}
-                            className={`p-2.5 rounded-xl border relative flex flex-col justify-between gap-2 ${
-                              img.isPrimary
+                            className={`p-2.5 rounded-xl border relative flex flex-col justify-between gap-2 ${img.isPrimary
                                 ? 'border-[#165DAD] bg-blue-50/40 shadow-xs'
                                 : 'border-slate-200 bg-white'
-                            }`}
+                              }`}
                           >
                             <div className="h-28 rounded-lg bg-slate-900 overflow-hidden flex items-center justify-center">
                               <img src={img.url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
@@ -1160,11 +1300,10 @@ export function AdminProductCatalog() {
                                 <button
                                   type="button"
                                   onClick={() => handleSetPrimaryImage(i)}
-                                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                    img.isPrimary
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${img.isPrimary
                                       ? 'bg-[#165DAD] text-white'
                                       : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                  }`}
+                                    }`}
                                 >
                                   {img.isPrimary ? 'Primary (Hero)' : 'Make Primary'}
                                 </button>
@@ -1248,14 +1387,84 @@ export function AdminProductCatalog() {
                       {form.colors?.map((c: any, i: number) => (
                         <div
                           key={i}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50"
+                          className="flex flex-col gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50 min-w-[260px]"
                         >
-                          <span className="w-3.5 h-3.5 rounded-full border border-black/10" style={{ backgroundColor: c.hex }} />
-                          <span className="font-bold text-slate-800">{c.name}</span>
-                          <span className="text-[10px] text-slate-400">({c.description})</span>
-                          <button type="button" onClick={() => handleRemoveColor(i)} className="text-slate-400 hover:text-rose-500">
-                            <X className="w-3 h-3" />
-                          </button>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-4 h-4 rounded-full border border-black/20" style={{ backgroundColor: c.hex }} />
+                              <span className="font-bold text-slate-800">{c.name}</span>
+                            </div>
+                            <button type="button" onClick={() => handleRemoveColor(i)} className="text-slate-400 hover:text-rose-500">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          {c.description && <div className="text-[11px] text-slate-500">{c.description}</div>}
+
+                          {/* Variant Specific Image Selection */}
+                          <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                              Variant-Specific Image
+                            </label>
+                            {form.images && form.images.length > 0 ? (
+                              <select
+                                value={c.primaryImage || (c.images && c.images[0]?.url) || ''}
+                                onChange={(e) => {
+                                  const selectedUrl = e.target.value;
+                                  setForm((prev: any) => {
+                                    const updatedColors = [...(prev.colors || [])];
+                                    updatedColors[i] = {
+                                      ...updatedColors[i],
+                                      primaryImage: selectedUrl,
+                                      images: selectedUrl ? [{ url: selectedUrl, isPrimary: true, order: 1 }] : [],
+                                    };
+                                    return { ...prev, colors: updatedColors };
+                                  });
+                                }}
+                                className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 bg-white"
+                              >
+                                <option value="">-- Use Default Model Gallery --</option>
+                                {form.images.map((img: any, imgIdx: number) => (
+                                  <option key={imgIdx} value={img.url}>
+                                    Photo #{imgIdx + 1} {img.caption ? `(${img.caption})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder="Image URL for this colour"
+                                value={c.primaryImage || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setForm((prev: any) => {
+                                    const updatedColors = [...(prev.colors || [])];
+                                    updatedColors[i] = {
+                                      ...updatedColors[i],
+                                      primaryImage: val,
+                                      images: val ? [{ url: val, isPrimary: true, order: 1 }] : [],
+                                    };
+                                    return { ...prev, colors: updatedColors };
+                                  });
+                                }}
+                                className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200"
+                              />
+                            )}
+
+                            {(c.primaryImage || (c.images && c.images[0]?.url)) && (
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="w-8 h-8 rounded bg-slate-900 overflow-hidden shrink-0">
+                                  <img
+                                    src={c.primaryImage || c.images[0]?.url}
+                                    alt={c.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Variant photo linked
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1350,18 +1559,198 @@ export function AdminProductCatalog() {
                 </div>
               )}
 
-              {/* TAB 5: PUBLISHING */}
+              {/* TAB 5: HERO PLACEMENT */}
+              {modalTab === 'hero' && (
+                <div className="space-y-5">
+                  <div className="p-4 rounded-xl border border-slate-200 space-y-3 bg-blue-50/30">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.isHero}
+                        onChange={(e) => setForm({ ...form, isHero: e.target.checked })}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="font-bold text-slate-800 text-sm">Feature in Homepage Hero Slider</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 pl-6.5">
+                      When enabled, this vehicle model will be featured in the cinematic hero carousel at the top of the homepage.
+                    </p>
+                  </div>
+
+                  {form.isHero && (
+                    <div className="space-y-4 p-4 rounded-xl border border-slate-200 bg-white">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Hero Heading / Headline</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Pure Electric Torque. Zero Compromise."
+                          value={form.heroHeading}
+                          onChange={(e) => setForm({ ...form, heroHeading: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 font-semibold"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Leave empty to use the vehicle's standard tagline.</p>
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">Hero Subheading / Description</label>
+                        <textarea
+                          rows={2}
+                          placeholder="e.g. High-torque urban electric streetfighter powered by permanent magnet synchronous mid-drive motor..."
+                          value={form.heroDescription}
+                          onChange={(e) => setForm({ ...form, heroDescription: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">CTA Button Text</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Book Test Ride / Explore Specs"
+                            value={form.heroCtaText}
+                            onChange={(e) => setForm({ ...form, heroCtaText: e.target.value })}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">CTA Target Link</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. /bikes/thunder-pro (default auto)"
+                            value={form.heroCtaLink}
+                            onChange={(e) => setForm({ ...form, heroCtaLink: e.target.value })}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Mobile Hero Image (Optional)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. /images/vehicles/dark/hero-mobile.jpg"
+                            value={form.heroMobileImage}
+                            onChange={(e) => setForm({ ...form, heroMobileImage: e.target.value })}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">Defaults to desktop primary photo if left empty.</p>
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Hero Slide Order</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 1, 2, 3..."
+                            value={form.heroSlideOrder}
+                            onChange={(e) => setForm({ ...form, heroSlideOrder: e.target.value })}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 6: INTERNAL OEM TRACEABILITY */}
+              {modalTab === 'oem' && (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/50 space-y-1">
+                    <div className="flex items-center gap-2 text-purple-900 font-bold text-sm">
+                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      <span>Internal Supplier & OEM Compliance Traceability</span>
+                    </div>
+                    <p className="text-[11px] text-purple-700 leading-relaxed">
+                      This information is strictly reserved for Super Admin inspection (warranty, service, procurement, and legal compliance).
+                      It is never disclosed to customer-facing showroom pages, metadata, or public catalog APIs.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.isRebranded}
+                        onChange={(e) => setForm({ ...form, isRebranded: e.target.checked })}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="font-bold text-slate-800 text-xs">Authorized ASKR EV Rebrand</span>
+                    </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">OEM / Supplier Manufacturer</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Harsil, Eko Tejas, Rilox, Jatayu EV"
+                          value={form.oemManufacturer}
+                          onChange={(e) => setForm({ ...form, oemManufacturer: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">OEM Original Model Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Leo, Sport, 3W Commercial Loader"
+                          value={form.oemModelName}
+                          onChange={(e) => setForm({ ...form, oemModelName: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">OEM Reference / Batch Identifier</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Batch-H01-PriceSheet-Sage, FactorySpec-Batch1"
+                        value={form.oemReference}
+                        onChange={(e) => setForm({ ...form, oemReference: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Legacy URL Slug Aliases (Comma-separated)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. harsil-leo, harsil-scooter"
+                        value={form.slugAliases}
+                        onChange={(e) => setForm({ ...form, slugAliases: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500 font-mono text-[11px]"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Any customer visiting these old URLs will be automatically routed to this ASKR EV product without broken links.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Internal Notes & Compliance Records</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Internal notes regarding distributor authorization, supplier agreement, warranty obligations, or MLM commission rules..."
+                        value={form.internalNotes}
+                        onChange={(e) => setForm({ ...form, internalNotes: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 7: PUBLISHING */}
               {modalTab === 'publish' && (
                 <div className="space-y-5">
                   <div className="p-4 rounded-xl border border-slate-200 space-y-3 bg-slate-50/50">
                     <label className="font-bold text-slate-800 block">Catalog Publication Status</label>
                     <div className="grid grid-cols-2 gap-3">
                       <label
-                        className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
-                          form.status === 'PUBLISHED'
+                        className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${form.status === 'PUBLISHED'
                             ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
                             : 'bg-white border-slate-200 text-slate-600'
-                        }`}
+                          }`}
                       >
                         <input
                           type="radio"
@@ -1379,11 +1768,10 @@ export function AdminProductCatalog() {
                       </label>
 
                       <label
-                        className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
-                          form.status === 'DRAFT'
+                        className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${form.status === 'DRAFT'
                             ? 'bg-amber-50 border-amber-300 text-amber-800 font-bold'
                             : 'bg-white border-slate-200 text-slate-600'
-                        }`}
+                          }`}
                       >
                         <input
                           type="radio"
@@ -1441,14 +1829,30 @@ export function AdminProductCatalog() {
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-6 py-2 rounded-xl bg-[#165DAD] hover:bg-[#124B8C] text-white font-bold shadow-xs flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  <span>{modalMode === 'CREATE' ? 'Create & Publish Vehicle' : 'Save Changes'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      setForm((prev: any) => ({ ...prev, status: 'DRAFT' }));
+                      setTimeout(() => {
+                        const fakeEvent = { preventDefault: () => { } } as any;
+                        handleFormSubmit(fakeEvent);
+                      }, 50);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs transition-colors"
+                  >
+                    Save as Draft
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-2 rounded-xl bg-[#165DAD] hover:bg-[#124B8C] text-white font-bold shadow-xs flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
+                    <span>{modalMode === 'CREATE' ? 'Create & Publish' : 'Save Changes'}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

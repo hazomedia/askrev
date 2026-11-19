@@ -15,7 +15,8 @@ import {
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import BikeCard from '../../components/BikeCard';
-import { fetchPublishedCatalog } from '../../lib/api';
+import AdminPreviewBanner from '../../components/AdminPreviewBanner';
+import { fetchPublishedCatalog, isAdminPreviewActive } from '../../lib/api';
 
 export default function CyclesPage() {
   const [cycles, setCycles] = useState<any[]>([]);
@@ -26,7 +27,8 @@ export default function CyclesPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchPublishedCatalog({ category: 'CYCLE' });
+      const isPreview = isAdminPreviewActive();
+      const data = await fetchPublishedCatalog({ category: 'CYCLE', preview: isPreview });
       setCycles(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.warn('Cycles catalog fetch notice:', err.message);
@@ -38,12 +40,20 @@ export default function CyclesPage() {
 
   useEffect(() => {
     loadCycles();
+
+    const handlePreviewChange = () => {
+      loadCycles();
+    };
+
+    window.addEventListener('askrev_preview_change', handlePreviewChange);
+    return () => window.removeEventListener('askrev_preview_change', handlePreviewChange);
   }, []);
 
   const featured = cycles.find((c) => c.isFeatured) || cycles[0];
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+      <AdminPreviewBanner onToggle={() => loadCycles()} />
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 w-full">

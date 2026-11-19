@@ -12,8 +12,12 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Req,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
+import { JwtService } from '@nestjs/jwt';
 import { ProductsService } from './products.service';
 import { StorageService } from './storage.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -25,32 +29,122 @@ import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole, ProductStatus } from '@askrev/shared';
+import { getJwtAccessSecret, isAccessTokenRevoked } from '../auth/jwt-secrets';
 
 // =============================================================================
 // 1. PUBLIC SHOWROOM CATALOG CONTROLLER (/api/catalog)
 // =============================================================================
 @Controller('catalog')
 export class CatalogPublicController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  /**
+   * Cryptographically verifies if the incoming request originates from an
+   * authenticated administrator (SUPER_ADMIN or ADMIN).
+   * Checks both HttpOnly session cookies and Authorization Bearer headers.
+   */
+  private async verifyAdminCaller(req: Request): Promise<boolean> {
+    try {
+      let token = '';
+      const authHeader = req.headers?.authorization || '';
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.slice(7).trim();
+      } else if (req.cookies) {
+        token = req.cookies['askrev_access_token'] || req.cookies['askrev_admin_session'] || '';
+      }
+
+      if (!token || isAccessTokenRevoked(token)) {
+        return false;
+      }
+
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: getJwtAccessSecret(),
+      });
+
+      if (!payload || !payload.sub) {
+        return false;
+      }
+
+      const role = (payload.role || '').toUpperCase();
+      return (
+        role === UserRole.SUPER_ADMIN ||
+        role === UserRole.ADMIN_OPERATIONS ||
+        role === 'ADMIN'
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private setNoCacheHeaders(res: Response) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
 
   @Get()
-  async getPublishedCatalog(@Query() query: PublicCatalogQueryDto) {
-    return this.productsService.getPublishedCatalog(query);
+  async getPublishedCatalog(
+    @Query() query: PublicCatalogQueryDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setNoCacheHeaders(res);
+    const wantsPreview = query?.preview === 'true' || req.query?.preview === 'true';
+    const isAdmin = wantsPreview ? await this.verifyAdminCaller(req) : false;
+    return this.productsService.getPublishedCatalog(query, isAdmin);
   }
 
   @Get('featured')
-  async getFeaturedCatalog() {
-    return this.productsService.getPublishedCatalog({ featured: true });
+  async getFeaturedCatalog(
+    @Query('preview') preview: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setNoCacheHeaders(res);
+    const wantsPreview = preview === 'true';
+    const isAdmin = wantsPreview ? await this.verifyAdminCaller(req) : false;
+    return this.productsService.getPublishedCatalog({ featured: true }, isAdmin);
+  }
+
+  @Get('hero')
+  async getHeroSlides(
+    @Query('preview') preview: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setNoCacheHeaders(res);
+    const wantsPreview = preview === 'true';
+    const isAdmin = wantsPreview ? await this.verifyAdminCaller(req) : false;
+    return this.productsService.getHeroSlides(isAdmin);
   }
 
   @Get('category/:category')
-  async getByCategory(@Param('category') category: string) {
-    return this.productsService.getPublishedByCategory(category);
+  async getByCategory(
+    @Param('category') category: string,
+    @Query('preview') preview: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setNoCacheHeaders(res);
+    const wantsPreview = preview === 'true';
+    const isAdmin = wantsPreview ? await this.verifyAdminCaller(req) : false;
+    return this.productsService.getPublishedByCategory(category, isAdmin);
   }
 
   @Get(':slug')
-  async getProductBySlug(@Param('slug') slug: string) {
-    return this.productsService.getPublishedProductBySlug(slug);
+  async getProductBySlug(
+    @Param('slug') slug: string,
+    @Query('preview') preview: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setNoCacheHeaders(res);
+    const wantsPreview = preview === 'true';
+    const isAdmin = wantsPreview ? await this.verifyAdminCaller(req) : false;
+    return this.productsService.getPublishedProductBySlug(slug, isAdmin);
   }
 }
 
@@ -122,6 +216,11 @@ export class ProductsAdminController {
   @Patch(':id/featured')
   async toggleFeatured(@Param('id') id: string, @CurrentUser() user: any) {
     return this.productsService.toggleFeatured(id, user?.memberId || user?.id);
+  }
+
+  @Patch(':id/hero')
+  async toggleHero(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.productsService.toggleHero(id, user?.memberId || user?.id);
   }
 
   @Patch('reorder')

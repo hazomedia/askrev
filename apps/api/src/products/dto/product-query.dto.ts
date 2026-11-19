@@ -13,6 +13,10 @@ export class PublicCatalogQueryDto {
   featured?: boolean;
 
   @IsOptional()
+  @IsString()
+  preview?: string;
+
+  @IsOptional()
   @Type(() => Number)
   limit?: number;
 }

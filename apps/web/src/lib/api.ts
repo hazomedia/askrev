@@ -179,7 +179,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     try {
       const errData = await response.json();
       errorMessage = errData.message || errorMessage;
-    } catch {}
+    } catch { }
     throw new Error(errorMessage);
   }
 
@@ -219,7 +219,7 @@ export async function uploadProductImageApi(
     try {
       const err = await response.json();
       errMessage = err.message || errMessage;
-    } catch {}
+    } catch { }
     throw new Error(errMessage);
   }
 
@@ -237,16 +237,62 @@ export async function deleteProductImageApi(url: string): Promise<{ deleted: boo
 }
 
 /**
- * Public catalog fetcher with dynamic live revalidation
+ * Check if the stored session belongs to an administrative user
  */
-export async function fetchPublishedCatalog(params?: { category?: string; featured?: boolean }): Promise<any[]> {
+export function isAdminUser(): boolean {
+  if (typeof window === 'undefined') return false;
+  const user = getStoredUser();
+  if (!user) return false;
+  const role = (user.role || '').toUpperCase();
+  return role === 'SUPER_ADMIN' || role === 'ADMIN_OPERATIONS' || role === 'ADMIN';
+}
+
+/**
+ * Determine whether Admin Preview Mode is currently active
+ */
+export function isAdminPreviewActive(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.search.includes('preview=true')) return true;
+  if (isAdminUser()) {
+    const pref = sessionStorage.getItem('askrev_admin_preview');
+    return pref !== 'false'; // Defaults to active for administrators
+  }
+  return false;
+}
+
+/**
+ * Toggle Admin Preview Mode on or off
+ */
+export function setAdminPreviewActive(active: boolean) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem('askrev_admin_preview', active ? 'true' : 'false');
+  window.dispatchEvent(new Event('askrev_preview_change'));
+}
+
+/**
+ * Public catalog fetcher with dynamic live revalidation and authenticated draft preview support
+ */
+export async function fetchPublishedCatalog(params?: {
+  category?: string;
+  featured?: boolean;
+  preview?: boolean;
+}): Promise<any[]> {
   const query = new URLSearchParams();
   if (params?.category) query.append('category', params.category);
   if (params?.featured) query.append('featured', 'true');
+  if (params?.preview) query.append('preview', 'true');
   const qs = query.toString() ? `?${query.toString()}` : '';
+
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const res = await fetch(`${API_BASE}/catalog${qs}`, {
     cache: 'no-store',
+    credentials: 'include',
+    headers,
   });
 
   if (!res.ok) {
@@ -256,9 +302,42 @@ export async function fetchPublishedCatalog(params?: { category?: string; featur
   return res.json();
 }
 
-export async function fetchProductBySlug(slug: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/catalog/${encodeURIComponent(slug)}`, {
+/**
+ * Public hero slides fetcher with authenticated draft preview support
+ */
+export async function fetchHeroSlides(preview: boolean = false): Promise<any[]> {
+  const qs = preview ? '?preview=true' : '';
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}/catalog/hero${qs}`, {
     cache: 'no-store',
+    credentials: 'include',
+    headers,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch hero slides: ${res.status} ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchProductBySlug(slug: string, preview: boolean = false): Promise<any> {
+  const qs = preview ? '?preview=true' : '';
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}/catalog/${encodeURIComponent(slug)}${qs}`, {
+    cache: 'no-store',
+    credentials: 'include',
+    headers,
   });
 
   if (!res.ok) {

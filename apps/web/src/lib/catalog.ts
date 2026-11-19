@@ -3,6 +3,10 @@ export interface VehicleColor {
   hex: string;
   accentHex?: string;
   description: string;
+  images?: (string | { url: string; order?: number })[];
+  primaryImage?: string;
+  sku?: string;
+  isAvailable?: boolean;
 }
 
 export interface VehicleSpec {
@@ -27,7 +31,7 @@ export interface Vehicle {
   manufacturer: string;
   name: string;
   tagline: string;
-  category: 'scooters' | 'bikes' | 'cycles' | 'jeeps';
+  category: 'scooters' | 'bikes' | 'cycles' | 'jeeps' | 'utility';
   categoryLabel: string;
   isConcept: boolean;
   isBookable: boolean;
@@ -36,20 +40,27 @@ export interface Vehicle {
   estimatedOnRoadINR: number | null;
   bookingAmountINR: number | null;
   voucherRedeemLimitINR: number | null;
-  batteryCapacityKwh: number;
-  rangeKm: number;
-  topSpeedKmh: number;
-  acceleration0to40: string;
-  chargingTimeHours: number;
-  motorPowerPeak: string;
-  warranty: string;
+  batteryCapacityKwh?: number | null;
+  rangeKm?: number | null;
+  topSpeedKmh?: number | null;
+  acceleration0to40?: string;
+  chargingTimeHours?: number | null;
+  motorPowerPeak?: string;
+  warranty?: string;
   imageUrl: string;
   galleryImages: string[];
   colors: VehicleColor[];
   specs: VehicleSpec[];
   variants?: VehicleVariant[];
   highlights: string[];
-  powertrain: string;
+  powertrain?: string;
+  isHero?: boolean;
+  heroMobileImage?: string | null;
+  heroHeading?: string | null;
+  heroDescription?: string | null;
+  heroCtaText?: string | null;
+  heroCtaLink?: string | null;
+  heroSlideOrder?: number | null;
 }
 
 // -----------------------------------------------------------------------------
@@ -511,12 +522,120 @@ export const ELECTRIC_JEEPS: Vehicle[] = [
   },
 ];
 
+// -----------------------------------------------------------------------------
+// ELECTRIC UTILITY VEHICLES (Commercial Loaders & Cargo Scooters)
+// -----------------------------------------------------------------------------
+export const ELECTRIC_UTILITY: Vehicle[] = [
+  {
+    id: 'askr-ev-u01',
+    slug: 'askr-ev-u01',
+    modelCode: 'ASKR-EV-U01',
+    manufacturer: 'ASKR EV Mobility',
+    name: 'ASKR EV U01',
+    tagline: 'Heavy-Duty Electric 3-Wheel Commercial Loader & Flatbed Trolley',
+    category: 'utility',
+    categoryLabel: 'Electric Utility Vehicle',
+    isConcept: false,
+    isBookable: false,
+    statusBadge: 'Showroom Showcase',
+    exShowroomPriceINR: 63000,
+    estimatedOnRoadINR: 71000,
+    bookingAmountINR: null,
+    voucherRedeemLimitINR: null,
+    batteryCapacityKwh: 3.8,
+    rangeKm: 140,
+    topSpeedKmh: 40,
+    acceleration0to40: '4.8 sec',
+    chargingTimeHours: 4.5,
+    motorPowerPeak: '1000 Watts High-Torque Motor',
+    warranty: '3-Year Motor & Battery Warranty',
+    imageUrl: '/images/real/branded/askr-u01-commercial-loader.jpg',
+    galleryImages: [
+      '/images/real/branded/askr-u01-commercial-loader.jpg',
+      '/images/real/branded/askr-u01-loader-crop.jpg',
+    ],
+    powertrain: '1000W Differential Drive • 28-inch Heavy Axle',
+    colors: [
+      {
+        name: 'Industrial Blue Cargo',
+        hex: '#1E3A8A',
+        accentHex: '#38BDF8',
+        description: 'Durable commercial blue cabin with powder-coated steel cargo bed',
+        images: ['/images/real/branded/askr-u01-commercial-loader.jpg'],
+        primaryImage: '/images/real/branded/askr-u01-commercial-loader.jpg',
+      },
+    ],
+    specs: [
+      { label: 'Payload Capacity', value: '500 kg', sub: 'Tested Load Rating' },
+      { label: 'Trolley Dimensions', value: '36 x 28 inch', sub: 'Flatbed Cargo Bay' },
+      { label: 'Motor Power', value: '1000 Watts', sub: 'High-Torque Differential' },
+      { label: 'Max Range', value: '140 km', sub: '60V 105Ah Lithium Pack' },
+    ],
+    highlights: [
+      'Engineered for industrial intra-city delivery, logistics, and warehouse cargo movement',
+      'Payload rating of up to 500 kg with reinforced high-tensile steel chassis',
+      'Dual battery chemistry options: Graphene and high-density Lithium packs',
+    ],
+  },
+  {
+    id: 'askr-ev-u02',
+    slug: 'askr-ev-u02',
+    modelCode: 'ASKR-EV-U02',
+    manufacturer: 'ASKR EV Mobility',
+    name: 'ASKR EV U02',
+    tagline: 'Dual-Disc Heavy Commercial Last-Mile Delivery Electric Scooter',
+    category: 'utility',
+    categoryLabel: 'Electric Utility Vehicle',
+    isConcept: false,
+    isBookable: false,
+    statusBadge: 'Showroom Showcase',
+    exShowroomPriceINR: 48000,
+    estimatedOnRoadINR: 54000,
+    bookingAmountINR: null,
+    voucherRedeemLimitINR: null,
+    batteryCapacityKwh: 2.5,
+    rangeKm: 80,
+    topSpeedKmh: 50,
+    acceleration0to40: '4.2 sec',
+    chargingTimeHours: 3.5,
+    motorPowerPeak: '1200 Watts High-Torque Hub Motor',
+    warranty: '3-Year Commercial Warranty',
+    imageUrl: '/images/real/branded/askr-u02-cargo-delivery.jpg',
+    galleryImages: [
+      '/images/real/branded/askr-u02-cargo-delivery.jpg',
+    ],
+    powertrain: 'High-Efficiency Direct Hub Motor • 3 Pairs Rear Shockers',
+    colors: [
+      {
+        name: 'Commercial Grey Delivery',
+        hex: '#475569',
+        accentHex: '#F59E0B',
+        description: 'Hard-wearing industrial matte grey finish with high-visibility accents',
+        images: ['/images/real/branded/askr-u02-cargo-delivery.jpg'],
+        primaryImage: '/images/real/branded/askr-u02-cargo-delivery.jpg',
+      },
+    ],
+    specs: [
+      { label: 'Payload Capacity', value: '180 kg', sub: 'Dual Luggage Deck' },
+      { label: 'Braking System', value: 'Dual Disc', sub: 'Hydraulic Front & Rear' },
+      { label: 'Top Speed', value: '45-50 km/h', sub: 'City Transit Speed' },
+      { label: 'Suspension', value: '3 Pairs Rear', sub: '6 Shock Absorbers Total' },
+    ],
+    highlights: [
+      'Specialized 6-rear-shock absorber configuration to absorb heavy courier loads',
+      'Dual hydraulic disc brakes for stopping safety under maximum payload',
+      'Spacious flat floorboard plus front basket and extended rear cargo rack',
+    ],
+  },
+];
+
 // Complete fleet
 export const ALL_CATALOG_VEHICLES: Vehicle[] = [
   ...ELECTRIC_SCOOTERS,
   ...ELECTRIC_MOTORCYCLES,
   ...ELECTRIC_CYCLES,
   ...ELECTRIC_JEEPS,
+  ...ELECTRIC_UTILITY,
 ];
 
 export function getVehicleBySlugOrCode(slugOrCode: string): Vehicle | undefined {

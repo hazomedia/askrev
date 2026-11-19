@@ -13,6 +13,8 @@ function mapCategory(cat: string): ProductCategory {
       return ProductCategory.CYCLE;
     case 'jeeps':
       return ProductCategory.JEEP;
+    case 'utility':
+      return ProductCategory.UTILITY;
     default:
       return ProductCategory.BIKE;
   }
@@ -95,6 +97,14 @@ export async function seedProducts() {
         heroImage: v.imageUrl,
         thumbnailImage: v.imageUrl,
         isFeatured,
+        isHero: isFeatured,
+        heroHeading: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+        heroDescription:
+          "Discover ASKR EV's range of electric scooters, motorcycles and utility vehicles. Explore modern designs and find the right electric vehicle for your journey.",
+        heroCtaText: 'Explore Vehicles',
+        heroCtaLink: '/bikes',
+        heroMobileImage: v.imageUrl,
+        heroSlideOrder: isFeatured ? displayOrder : null,
         status: ProductStatus.PUBLISHED,
         displayOrder,
         evBikeId: linkedEvBikeId,
@@ -126,6 +136,14 @@ export async function seedProducts() {
         heroImage: v.imageUrl,
         thumbnailImage: v.imageUrl,
         isFeatured,
+        isHero: isFeatured,
+        heroHeading: 'DRIVE THE FUTURE. DRIVE ELECTRIC.',
+        heroDescription:
+          "Discover ASKR EV's range of electric scooters, motorcycles and utility vehicles. Explore modern designs and find the right electric vehicle for your journey.",
+        heroCtaText: 'Explore Vehicles',
+        heroCtaLink: '/bikes',
+        heroMobileImage: v.imageUrl,
+        heroSlideOrder: isFeatured ? displayOrder : null,
         status: ProductStatus.PUBLISHED,
         displayOrder,
         evBikeId: linkedEvBikeId,

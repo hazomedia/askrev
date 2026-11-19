@@ -14,13 +14,13 @@ import { ProductCategory, ProductStatus, paiseToRupees } from '@askrev/shared';
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Helper: Formats a Prisma Product entity for API response.
    * Converts integer paise BigInt fields into INR rupees numbers.
    */
-  private formatProduct(p: any) {
+  private formatProduct(p: any, isAdmin: boolean = false) {
     if (!p) return null;
 
     const sellingINR = p.sellingPricePaise ? paiseToRupees(p.sellingPricePaise) : null;
@@ -28,7 +28,15 @@ export class ProductsService {
     const bookingINR = p.bookingAmountPaise ? paiseToRupees(p.bookingAmountPaise) : null;
     const heroImg = p.heroImage || (p.images && p.images[0] ? p.images[0].url : '');
 
-    return {
+    const specsList = Array.isArray(p.specifications) ? p.specifications : [];
+    const payloadSpec = specsList.find((s: any) => /load capacity|payload/i.test(s.label || ''));
+    let payloadCapacityKg: number | null = null;
+    if (payloadSpec?.value) {
+      const match = String(payloadSpec.value).match(/\d+/);
+      if (match) payloadCapacityKg = parseInt(match[0], 10);
+    }
+
+    const result: any = {
       id: p.id,
       name: p.name,
       slug: p.slug,
@@ -60,6 +68,7 @@ export class ProductsService {
       acceleration: p.acceleration,
       warranty: p.warranty,
       powertrain: p.powertrain,
+      payloadCapacityKg,
       colors: p.colors || [],
       specifications: p.specifications || [],
       specs: p.specifications || [],
@@ -68,15 +77,35 @@ export class ProductsService {
       heroImage: heroImg,
       imageUrl: heroImg,
       thumbnailImage: p.thumbnailImage || heroImg,
+      isHero: p.isHero ?? false,
+      heroMobileImage: p.heroMobileImage || null,
+      heroHeading: p.heroHeading || null,
+      heroDescription: p.heroDescription || null,
+      heroCtaText: p.heroCtaText || null,
+      heroCtaLink: p.heroCtaLink || null,
+      heroSlideOrder: p.heroSlideOrder ?? null,
       isBookable: Boolean(p.bookingAmountPaise && BigInt(p.bookingAmountPaise) > 0n),
       statusBadge: p.bookingAmountPaise && BigInt(p.bookingAmountPaise) > 0n ? 'Bookings Open' : 'Showroom Showcase',
       isFeatured: p.isFeatured,
       status: p.status,
       displayOrder: p.displayOrder,
+      slugAliases: p.slugAliases || [],
+      isRebranded: p.isRebranded ?? true,
       evBikeId: p.evBikeId,
       createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
       updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString(),
     };
+
+    // Internal OEM & Supplier Traceability strictly scoped to Admin views
+    // Never leaked in customer-facing showroom or public API responses
+    if (isAdmin) {
+      result.oemManufacturer = p.oemManufacturer || null;
+      result.oemModelName = p.oemModelName || null;
+      result.oemReference = p.oemReference || null;
+      result.internalNotes = p.internalNotes || null;
+    }
+
+    return result;
   }
 
   private getCategoryLabel(category: string): string {
@@ -89,6 +118,8 @@ export class ProductsService {
         return 'Electric Cycle';
       case 'JEEP':
         return 'Electric 4x4 Jeep';
+      case 'UTILITY':
+        return 'Electric Utility Vehicle';
       default:
         return 'Electric Vehicle';
     }
@@ -101,6 +132,7 @@ export class ProductsService {
     if (clean === 'BIKE' || clean === 'BIKES' || clean === 'MOTORCYCLE' || clean === 'MOTORCYCLES') return ProductCategory.BIKE;
     if (clean === 'CYCLE' || clean === 'CYCLES' || clean === 'BICYCLE') return ProductCategory.CYCLE;
     if (clean === 'JEEP' || clean === 'JEEPS' || clean === '4X4') return ProductCategory.JEEP;
+    if (clean === 'UTILITY' || clean === 'UTILITIES' || clean === 'LOADER' || clean === 'COMMERCIAL') return ProductCategory.UTILITY;
     return undefined;
   }
 
@@ -136,10 +168,30 @@ export class ProductsService {
   // PUBLIC SHOWROOM CATALOG METHODS
   // ===========================================================================
 
-  async getPublishedCatalog(query?: PublicCatalogQueryDto) {
-    const where: any = {
-      status: ProductStatus.PUBLISHED,
-    };
+  // 9 Legacy demo vehicle slugs preserved for production compatibility but strictly
+  // excluded from authenticated Real Fleet Preview Presentation
+  public static readonly LEGACY_DEMO_SLUGS = [
+    'thunder-pro',
+    'scooter-s1-air',
+    'terramax-4x4',
+    'apex-sport',
+    'terramax-urban',
+    'scooter-s1-pro',
+    'city-cruise',
+    'aerotrek-c1',
+    'aerotrek-trail',
+  ];
+
+  async getPublishedCatalog(query?: PublicCatalogQueryDto, includeDrafts: boolean = false) {
+    const where: any = {};
+
+    if (!includeDrafts) {
+      where.status = ProductStatus.PUBLISHED;
+    } else {
+      // In authenticated Real Fleet Admin Preview, display real imported models and exclude legacy demos
+      where.status = { in: [ProductStatus.PUBLISHED, ProductStatus.DRAFT] };
+      where.slug = { notIn: ProductsService.LEGACY_DEMO_SLUGS };
+    }
 
     if (query?.category) {
       const catEnum = this.mapCategoryEnum(query.category);
@@ -154,47 +206,116 @@ export class ProductsService {
 
     const products = await this.prisma.product.findMany({
       where,
-      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
+      orderBy: [
+        // In preview mode, list draft real models first
+        ...(includeDrafts ? [{ status: 'asc' as const }] : []),
+        { displayOrder: 'asc' },
+        { createdAt: 'desc' },
+      ],
       take: query?.limit ? Number(query.limit) : undefined,
     });
 
-    return products.map((p) => this.formatProduct(p));
+    return products.map((p) => this.formatProduct(p, includeDrafts));
   }
 
-  async getPublishedProductBySlug(slugOrId: string) {
+  async getPublishedProductBySlug(slugOrId: string, preview: boolean = false) {
+    const where: any = {
+      OR: [
+        { slug: slugOrId.toLowerCase() },
+        { id: slugOrId },
+        { evBike: { modelCode: slugOrId.toUpperCase() } },
+        { slugAliases: { has: slugOrId.toLowerCase() } },
+      ],
+    };
+
+    if (!preview) {
+      where.status = ProductStatus.PUBLISHED;
+    }
+
     const product = await this.prisma.product.findFirst({
-      where: {
-        OR: [
-          { slug: slugOrId.toLowerCase() },
-          { id: slugOrId },
-          { evBike: { modelCode: slugOrId.toUpperCase() } },
-        ],
-        status: ProductStatus.PUBLISHED,
-      },
+      where,
     });
 
     if (!product) {
-      throw new NotFoundException(`Product '${slugOrId}' not found or is not published`);
+      throw new NotFoundException(`Product '${slugOrId}' not found${preview ? '' : ' or is not published'}`);
     }
 
-    return this.formatProduct(product);
+    return this.formatProduct(product, preview);
   }
 
-  async getPublishedByCategory(categoryStr: string) {
+  async getPublishedByCategory(categoryStr: string, includeDrafts: boolean = false) {
     const catEnum = this.mapCategoryEnum(categoryStr);
     if (!catEnum) {
       throw new BadRequestException(`Invalid vehicle category: '${categoryStr}'`);
     }
 
+    const where: any = {
+      category: catEnum,
+    };
+
+    if (!includeDrafts) {
+      where.status = ProductStatus.PUBLISHED;
+    } else {
+      // In authenticated Real Fleet Admin Preview, exclude legacy demos
+      where.status = { in: [ProductStatus.PUBLISHED, ProductStatus.DRAFT] };
+      where.slug = { notIn: ProductsService.LEGACY_DEMO_SLUGS };
+    }
+
     const products = await this.prisma.product.findMany({
-      where: {
-        category: catEnum,
-        status: ProductStatus.PUBLISHED,
-      },
-      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
+      where,
+      orderBy: [
+        ...(includeDrafts ? [{ status: 'asc' as const }] : []),
+        { displayOrder: 'asc' },
+        { createdAt: 'desc' },
+      ],
     });
 
-    return products.map((p) => this.formatProduct(p));
+    return products.map((p) => this.formatProduct(p, includeDrafts));
+  }
+
+  async getHeroSlides(includeDrafts: boolean = false) {
+    if (!includeDrafts) {
+      const products = await this.prisma.product.findMany({
+        where: {
+          status: ProductStatus.PUBLISHED,
+          OR: [{ isHero: true }, { isFeatured: true }],
+        },
+        orderBy: [{ heroSlideOrder: 'asc' }, { displayOrder: 'asc' }, { createdAt: 'desc' }],
+      });
+
+      return products.map((p) => this.formatProduct(p, false));
+    }
+
+    // In Real Fleet Preview mode, strictly showcase the real ASKR EV vehicle fleet
+    // and completely exclude all 9 legacy demo products
+    const realFleetHeroes = await this.prisma.product.findMany({
+      where: {
+        status: { in: [ProductStatus.PUBLISHED, ProductStatus.DRAFT] },
+        slug: { notIn: ProductsService.LEGACY_DEMO_SLUGS },
+        OR: [{ isHero: true }, { isFeatured: true }],
+      },
+      orderBy: [{ heroSlideOrder: 'asc' }, { displayOrder: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const realDraftModels = await this.prisma.product.findMany({
+      where: {
+        status: { in: [ProductStatus.PUBLISHED, ProductStatus.DRAFT] },
+        slug: { notIn: ProductsService.LEGACY_DEMO_SLUGS },
+      },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'desc' }],
+      take: 12,
+    });
+
+    const seenIds = new Set<string>();
+    const combined: any[] = [];
+    for (const p of [...realFleetHeroes, ...realDraftModels]) {
+      if (!seenIds.has(p.id)) {
+        seenIds.add(p.id);
+        combined.push(p);
+      }
+    }
+
+    return combined.map((p) => this.formatProduct(p, true));
   }
 
   // ===========================================================================
@@ -241,7 +362,7 @@ export class ProductsService {
     ]);
 
     return {
-      items: items.map((p) => this.formatProduct(p)),
+      items: items.map((p) => this.formatProduct(p, true)),
       total,
       page,
       limit,
@@ -264,7 +385,7 @@ export class ProductsService {
       throw new NotFoundException(`Product with ID '${id}' not found`);
     }
 
-    return this.formatProduct(product);
+    return this.formatProduct(product, true);
   }
 
   async createProduct(dto: CreateProductDto, actorId?: string) {
@@ -321,10 +442,23 @@ export class ProductsService {
         images: dto.images ? (dto.images as any) : [],
         heroImage: dto.heroImage || (dto.images && dto.images[0] ? dto.images[0].url : ''),
         thumbnailImage: dto.thumbnailImage || (dto.images && dto.images[0] ? dto.images[0].url : ''),
+        isHero: dto.isHero || false,
+        heroMobileImage: dto.heroMobileImage || null,
+        heroHeading: dto.heroHeading || null,
+        heroDescription: dto.heroDescription || null,
+        heroCtaText: dto.heroCtaText || null,
+        heroCtaLink: dto.heroCtaLink || null,
+        heroSlideOrder: dto.heroSlideOrder ?? null,
         isFeatured: dto.isFeatured || false,
         status: (dto.status as any) || ProductStatus.DRAFT,
         displayOrder,
         evBikeId: dto.evBikeId || null,
+        oemManufacturer: dto.oemManufacturer || null,
+        oemModelName: dto.oemModelName || null,
+        oemReference: dto.oemReference || null,
+        internalNotes: dto.internalNotes || null,
+        slugAliases: dto.slugAliases || [],
+        isRebranded: dto.isRebranded ?? true,
       },
     });
 
@@ -338,7 +472,7 @@ export class ProductsService {
       status: product.status,
     });
 
-    return this.formatProduct(product);
+    return this.formatProduct(product, true);
   }
 
   async updateProduct(id: string, dto: UpdateProductDto, actorId?: string) {
@@ -397,10 +531,23 @@ export class ProductsService {
     if (dto.images !== undefined) data.images = dto.images;
     if (dto.heroImage !== undefined) data.heroImage = dto.heroImage;
     if (dto.thumbnailImage !== undefined) data.thumbnailImage = dto.thumbnailImage;
+    if (dto.isHero !== undefined) data.isHero = dto.isHero;
+    if (dto.heroMobileImage !== undefined) data.heroMobileImage = dto.heroMobileImage;
+    if (dto.heroHeading !== undefined) data.heroHeading = dto.heroHeading;
+    if (dto.heroDescription !== undefined) data.heroDescription = dto.heroDescription;
+    if (dto.heroCtaText !== undefined) data.heroCtaText = dto.heroCtaText;
+    if (dto.heroCtaLink !== undefined) data.heroCtaLink = dto.heroCtaLink;
+    if (dto.heroSlideOrder !== undefined) data.heroSlideOrder = dto.heroSlideOrder;
     if (dto.isFeatured !== undefined) data.isFeatured = dto.isFeatured;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.displayOrder !== undefined) data.displayOrder = dto.displayOrder;
     if (dto.evBikeId !== undefined) data.evBikeId = dto.evBikeId;
+    if (dto.oemManufacturer !== undefined) data.oemManufacturer = dto.oemManufacturer;
+    if (dto.oemModelName !== undefined) data.oemModelName = dto.oemModelName;
+    if (dto.oemReference !== undefined) data.oemReference = dto.oemReference;
+    if (dto.internalNotes !== undefined) data.internalNotes = dto.internalNotes;
+    if (dto.slugAliases !== undefined) data.slugAliases = dto.slugAliases;
+    if (dto.isRebranded !== undefined) data.isRebranded = dto.isRebranded;
 
     const updated = await this.prisma.product.update({
       where: { id },
@@ -415,7 +562,7 @@ export class ProductsService {
       status: updated.status,
     });
 
-    return this.formatProduct(updated);
+    return this.formatProduct(updated, true);
   }
 
   async updateStatus(id: string, status: ProductStatus, actorId?: string) {
@@ -434,7 +581,7 @@ export class ProductsService {
       newStatus: status,
     });
 
-    return this.formatProduct(updated);
+    return this.formatProduct(updated, true);
   }
 
   async toggleFeatured(id: string, actorId?: string) {
@@ -452,7 +599,25 @@ export class ProductsService {
       isFeatured: updated.isFeatured,
     });
 
-    return this.formatProduct(updated);
+    return this.formatProduct(updated, true);
+  }
+
+  async toggleHero(id: string, actorId?: string) {
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Product with ID '${id}' not found`);
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: { isHero: !existing.isHero },
+    });
+
+    await this.recordAuditLog(actorId, 'PRODUCT_HERO_TOGGLE', updated.id, {
+      isHero: updated.isHero,
+    });
+
+    return this.formatProduct(updated, true);
   }
 
   async reorderProducts(items: { id: string; displayOrder: number }[], actorId?: string) {

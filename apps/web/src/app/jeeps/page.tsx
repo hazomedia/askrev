@@ -16,7 +16,8 @@ import {
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import BikeCard from '../../components/BikeCard';
-import { fetchPublishedCatalog } from '../../lib/api';
+import AdminPreviewBanner from '../../components/AdminPreviewBanner';
+import { fetchPublishedCatalog, isAdminPreviewActive } from '../../lib/api';
 
 export default function JeepsPage() {
   const [jeeps, setJeeps] = useState<any[]>([]);
@@ -27,7 +28,8 @@ export default function JeepsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchPublishedCatalog({ category: 'JEEP' });
+      const isPreview = isAdminPreviewActive();
+      const data = await fetchPublishedCatalog({ category: 'JEEP', preview: isPreview });
       setJeeps(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.warn('Jeeps catalog fetch notice:', err.message);
@@ -39,12 +41,20 @@ export default function JeepsPage() {
 
   useEffect(() => {
     loadJeeps();
+
+    const handlePreviewChange = () => {
+      loadJeeps();
+    };
+
+    window.addEventListener('askrev_preview_change', handlePreviewChange);
+    return () => window.removeEventListener('askrev_preview_change', handlePreviewChange);
   }, []);
 
   const featured = jeeps.find((j) => j.isFeatured) || jeeps[0];
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+      <AdminPreviewBanner onToggle={() => loadJeeps()} />
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 w-full">

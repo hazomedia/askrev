@@ -14,7 +14,8 @@ import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import BikeCard from '../../components/BikeCard';
 import BookingModal from '../../components/BookingModal';
-import { fetchPublishedCatalog, getStoredUser } from '../../lib/api';
+import AdminPreviewBanner from '../../components/AdminPreviewBanner';
+import { fetchPublishedCatalog, getStoredUser, isAdminPreviewActive } from '../../lib/api';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 
 export default function BikesPage() {
@@ -28,13 +29,21 @@ export default function BikesPage() {
   useEffect(() => {
     setCurrentUser(getStoredUser());
     loadBikes();
+
+    const handlePreviewChange = () => {
+      loadBikes();
+    };
+
+    window.addEventListener('askrev_preview_change', handlePreviewChange);
+    return () => window.removeEventListener('askrev_preview_change', handlePreviewChange);
   }, []);
 
   const loadBikes = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchPublishedCatalog({ category: 'BIKE' });
+      const isPreview = isAdminPreviewActive();
+      const data = await fetchPublishedCatalog({ category: 'BIKE', preview: isPreview });
       setVehicles(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.warn('Motorcycles catalog fetch notice:', err.message);
@@ -53,6 +62,7 @@ export default function BikesPage() {
 
   return (
     <div className="flex-1 flex flex-col bg-[#080B12] text-[#F7FAFF] min-h-screen">
+      <AdminPreviewBanner onToggle={() => loadBikes()} />
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 w-full">
