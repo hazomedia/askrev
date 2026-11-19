@@ -15,7 +15,7 @@ export function getCsrfToken(): string | null {
  */
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem('askrev_access_token');
+  return sessionStorage.getItem('askrev_admin_access_token') || localStorage.getItem('askrev_access_token');
 }
 
 export function getRefreshToken(): string | null {
@@ -26,7 +26,8 @@ export function getRefreshToken(): string | null {
 /**
  * Session storage handler:
  * CRITICAL SECURITY RULE: Admin credentials are NEVER written to localStorage.
- * Tokens are securely managed by the server in HttpOnly cookies.
+ * Tokens are securely managed by the server in HttpOnly cookies, with optional
+ * session-scoped in-memory storage for active tab API calls.
  */
 export function setAuthSession(token: string, user: any, refreshToken?: string) {
   if (typeof window === 'undefined') return;
@@ -38,6 +39,9 @@ export function setAuthSession(token: string, user: any, refreshToken?: string) 
     localStorage.removeItem('askrev_access_token');
     localStorage.removeItem('askrev_refresh_token');
     localStorage.setItem('askrev_user', JSON.stringify(user));
+    if (token) {
+      sessionStorage.setItem('askrev_admin_access_token', token);
+    }
     return;
   }
 
@@ -52,6 +56,8 @@ export function clearAuthSession() {
   localStorage.removeItem('askrev_access_token');
   localStorage.removeItem('askrev_refresh_token');
   localStorage.removeItem('askrev_user');
+  sessionStorage.removeItem('askrev_admin_access_token');
+  sessionStorage.removeItem('askrev_admin_preview');
 }
 
 export const clearAuth = clearAuthSession;
@@ -283,13 +289,13 @@ export async function fetchPublishedCatalog(params?: {
   if (params?.preview) query.append('preview', 'true');
   const qs = query.toString() ? `?${query.toString()}` : '';
 
-  const token = getAuthToken();
+  let token = getAuthToken();
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}/catalog${qs}`, {
+  let res = await fetch(`${API_BASE}/catalog${qs}`, {
     cache: 'no-store',
     credentials: 'include',
     headers,
@@ -299,7 +305,34 @@ export async function fetchPublishedCatalog(params?: {
     throw new Error(`Failed to fetch catalog from ${API_BASE}/catalog: ${res.status} ${res.statusText}`);
   }
 
-  return res.json();
+  let items = await res.json();
+
+  // If preview was requested and caller is an admin, but the response contained 0 real fleet models
+  // (which happens if the access token cookie silently expired), refresh credentials and retry once
+  if (params?.preview && isAdminUser() && Array.isArray(items)) {
+    const hasRealFleet = items.some((p: any) => p.slug && p.slug.startsWith('askr-ev-'));
+    if (!hasRealFleet) {
+      try {
+        const refreshedToken = await attemptTokenRefresh();
+        if (refreshedToken) {
+          headers['Authorization'] = `Bearer ${refreshedToken}`;
+          sessionStorage.setItem('askrev_admin_access_token', refreshedToken);
+          const retryRes = await fetch(`${API_BASE}/catalog${qs}`, {
+            cache: 'no-store',
+            credentials: 'include',
+            headers,
+          });
+          if (retryRes.ok) {
+            items = await retryRes.json();
+          }
+        }
+      } catch {
+        // Fall back to current response
+      }
+    }
+  }
+
+  return items;
 }
 
 /**

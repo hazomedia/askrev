@@ -30,6 +30,7 @@ import {
   fetchHeroSlides,
   fetchHeroSliderSlides,
   getStoredUser,
+  isAdminUser,
   isAdminPreviewActive,
 } from '../lib/api';
 import {
@@ -188,6 +189,7 @@ export default function HomePage() {
     setCatalogError(null);
     try {
       const isPreview = isAdminPreviewActive();
+      const isAdmin = isAdminUser();
       const [catalogRes, heroSliderRes] = await Promise.allSettled([
         fetchPublishedCatalog({ preview: isPreview }),
         fetchHeroSliderSlides(isPreview),
@@ -197,8 +199,10 @@ export default function HomePage() {
       if (catalogRes.status === 'rejected') {
         throw catalogRes.reason;
       }
-      // In Admin Preview mode, strictly exclude legacy demo models
-      const data = isPreview ? rawData.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawData;
+      // In Admin Preview mode with real fleet models loaded, strictly exclude legacy demo models
+      const hasRealFleet = rawData.some((p: any) => p.slug && p.slug.startsWith('askr-ev-'));
+      const shouldFilterLegacy = isPreview && (isAdmin || hasRealFleet);
+      const data = shouldFilterLegacy ? rawData.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawData;
       setProducts(data);
 
       const rawHeroSlider =
@@ -309,6 +313,85 @@ export default function HomePage() {
   const activeSlide = heroSlides[currentSlideIndex] || heroSlides[0] || initialHeroSlides[0];
   const activeVehicle = activeSlide?.vehicle || initialHeroSlides[0].vehicle;
 
+  // Determine available hero metrics (hide any metric that is unavailable, null, zero, or TBA)
+  const getHeroMetrics = (isMobile: boolean = false) => {
+    const list: Array<{ id: string; label: string; value: React.ReactNode }> = [];
+
+    // Range
+    if (activeSlide?.showRange !== false && activeVehicle?.rangeKm && Number(activeVehicle.rangeKm) > 0) {
+      list.push({
+        id: 'range',
+        label: 'Range',
+        value: (
+          <>
+            {activeVehicle.rangeKm}{' '}
+            <span className={isMobile ? 'text-[9px] font-normal text-[#50D9FF]' : 'text-[10px] font-normal text-[#50D9FF]'}>
+              km
+            </span>
+          </>
+        ),
+      });
+    }
+
+    // Top Speed
+    if (activeSlide?.showTopSpeed !== false && activeVehicle?.topSpeedKmh && Number(activeVehicle.topSpeedKmh) > 0) {
+      list.push({
+        id: 'speed',
+        label: isMobile ? 'Speed' : 'Top Speed',
+        value: (
+          <>
+            {activeVehicle.topSpeedKmh}{' '}
+            <span className={isMobile ? 'text-[9px] font-normal text-[#50D9FF]' : 'text-[10px] font-normal text-[#50D9FF]'}>
+              km/h
+            </span>
+          </>
+        ),
+      });
+    }
+
+    // Battery
+    if (activeSlide?.showBattery !== false && activeVehicle?.batteryCapacityKwh && Number(activeVehicle.batteryCapacityKwh) > 0) {
+      list.push({
+        id: 'battery',
+        label: 'Battery',
+        value: (
+          <>
+            {activeVehicle.batteryCapacityKwh}{' '}
+            <span className={isMobile ? 'text-[9px] font-normal text-[#50D9FF]' : 'text-[10px] font-normal text-[#50D9FF]'}>
+              kWh
+            </span>
+          </>
+        ),
+      });
+    }
+
+    // Specifications / Payload
+    if (activeSlide?.showSpecifications !== false) {
+      const isUtility = (activeVehicle?.category || '').toLowerCase() === 'utility';
+      if (isUtility && activeVehicle?.payloadCapacityKg && Number(activeVehicle.payloadCapacityKg) > 0) {
+        list.push({
+          id: 'payload',
+          label: 'Payload',
+          value: `${activeVehicle.payloadCapacityKg} kg`,
+        });
+      } else if (
+        !isUtility &&
+        activeVehicle?.acceleration0to40 &&
+        typeof activeVehicle.acceleration0to40 === 'string' &&
+        !activeVehicle.acceleration0to40.includes('TBA') &&
+        activeVehicle.acceleration0to40.trim() !== ''
+      ) {
+        list.push({
+          id: 'spec',
+          label: (activeVehicle?.category || '').toLowerCase() === 'cycles' ? '0-25 km/h' : '0-40 km/h',
+          value: activeVehicle.acceleration0to40,
+        });
+      }
+    }
+
+    return list;
+  };
+
   const handleOpenBooking = (vehicle: any) => {
     setBookingVehicle(vehicle);
     setBookingModalOpen(true);
@@ -317,7 +400,10 @@ export default function HomePage() {
   const getFilteredVehicles = () => {
     if (!products || products.length === 0) return [];
     const isPreview = isAdminPreviewActive();
-    const baseList = isPreview
+    const isAdmin = isAdminUser();
+    const hasRealFleet = products.some((p: any) => p.slug && p.slug.startsWith('askr-ev-'));
+    const shouldFilterLegacy = isPreview && (isAdmin || hasRealFleet);
+    const baseList = shouldFilterLegacy
       ? products.filter((p) => !LEGACY_DEMO_SLUGS.has(p.slug))
       : products;
 
@@ -483,76 +569,29 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* Compact Metric Grid */}
-                {(activeSlide.showRange || activeSlide.showTopSpeed || activeSlide.showBattery || activeSlide.showSpecifications) && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 py-2 px-2.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-md backdrop-blur-md">
-                    {activeSlide.showRange && (
-                      <div className="text-center">
-                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                          Range
-                        </span>
-                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {activeVehicle.rangeKm ? (
-                            <>
-                              {activeVehicle.rangeKm} <span className="text-[9px] font-normal text-[#50D9FF]">km</span>
-                            </>
-                          ) : (
-                            'TBA'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {activeSlide.showTopSpeed && (
-                      <div className="text-center border-l border-white/10 pl-1">
-                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                          Speed
-                        </span>
-                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {activeVehicle.topSpeedKmh ? (
-                            <>
-                              {activeVehicle.topSpeedKmh} <span className="text-[9px] font-normal text-[#50D9FF]">km/h</span>
-                            </>
-                          ) : (
-                            'TBA'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {activeSlide.showBattery && (
-                      <div className="text-center border-l border-white/10 pl-1">
-                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                          Battery
-                        </span>
-                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {activeVehicle.batteryCapacityKwh ? (
-                            <>
-                              {activeVehicle.batteryCapacityKwh} <span className="text-[9px] font-normal text-[#50D9FF]">kWh</span>
-                            </>
-                          ) : (
-                            'TBA'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {activeSlide.showSpecifications && (
-                      <div className="text-center border-l border-white/10 pl-1">
-                        <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
-                          {(activeVehicle.category || '').toLowerCase() === 'utility' ? 'Payload' : '0-40 km/h'}
-                        </span>
-                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {(activeVehicle.category || '').toLowerCase() === 'utility'
-                            ? activeVehicle.payloadCapacityKg
-                              ? `${activeVehicle.payloadCapacityKg} kg`
-                              : 'Heavy Duty'
-                            : activeVehicle.acceleration0to40 || '3.2 sec'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Compact Metric Grid (Only render if at least one valid metric is available; never show TBA or placeholders) */}
+                {(() => {
+                  const metrics = getHeroMetrics(true);
+                  if (metrics.length === 0) return null;
+                  const gridColsClass =
+                    metrics.length === 1 ? 'grid-cols-1' :
+                    metrics.length === 2 ? 'grid-cols-2' :
+                    metrics.length === 3 ? 'grid-cols-3' : 'grid-cols-4';
+                  return (
+                    <div className={`grid ${gridColsClass} gap-1.5 py-2 px-2.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-md backdrop-blur-md`}>
+                      {metrics.map((m, idx) => (
+                        <div key={m.id} className={`text-center ${idx > 0 ? 'border-l border-white/10 pl-1' : ''}`}>
+                          <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
+                            {m.label}
+                          </span>
+                          <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
+                            {m.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* 6. Primary CTA and Secondary CTA (Mobile Button Text: 12px) */}
@@ -627,80 +666,29 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* Key Metric Grid in Midnight Glassmorphic Pill (Labels: 10px, Values: 12-13px) */}
-                {(activeSlide.showRange || activeSlide.showTopSpeed || activeSlide.showBattery || activeSlide.showSpecifications) && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-2.5 px-3.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md">
-                    {activeSlide.showRange && (
-                      <div>
-                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                          Range
-                        </span>
-                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {activeVehicle.rangeKm ? (
-                            <>
-                              {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
-                            </>
-                          ) : (
-                            'TBA'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {activeSlide.showTopSpeed && (
-                      <div className="border-l border-white/10 pl-2.5">
-                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                          Top Speed
-                        </span>
-                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {activeVehicle.topSpeedKmh ? (
-                            <>
-                              {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
-                            </>
-                          ) : (
-                            'TBA'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {activeSlide.showBattery && (
-                      <div className="border-l sm:border-l border-white/10 pl-2.5">
-                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                          Battery
-                        </span>
-                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {activeVehicle.batteryCapacityKwh ? (
-                            <>
-                              {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
-                            </>
-                          ) : (
-                            'TBA'
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                    {activeSlide.showSpecifications && (
-                      <div className="border-l border-white/10 pl-2.5">
-                        <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
-                          {(activeVehicle.category || '').toLowerCase() === 'utility'
-                            ? 'Payload'
-                            : (activeVehicle.category || '').toLowerCase() === 'cycles'
-                              ? '0-25 km/h'
-                              : '0-40 km/h'}
-                        </span>
-                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
-                          {(activeVehicle.category || '').toLowerCase() === 'utility'
-                            ? activeVehicle.payloadCapacityKg
-                              ? `${activeVehicle.payloadCapacityKg} kg`
-                              : 'Heavy Duty'
-                            : activeVehicle.acceleration0to40 || '3.2 sec'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Key Metric Grid in Midnight Glassmorphic Pill (Labels: 10px, Values: 12-13px; never show TBA or placeholders) */}
+                {(() => {
+                  const metrics = getHeroMetrics(false);
+                  if (metrics.length === 0) return null;
+                  const gridColsClass =
+                    metrics.length === 1 ? 'grid-cols-1' :
+                    metrics.length === 2 ? 'grid-cols-2' :
+                    metrics.length === 3 ? 'grid-cols-3 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-4';
+                  return (
+                    <div className={`grid ${gridColsClass} gap-2.5 py-2.5 px-3.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md`}>
+                      {metrics.map((m, idx) => (
+                        <div key={m.id} className={idx > 0 ? 'border-l border-white/10 pl-2.5' : ''}>
+                          <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
+                            {m.label}
+                          </span>
+                          <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
+                            {m.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Action Buttons (CTA Button Text: 12-13px) */}
                 <div className="pt-1 flex flex-wrap items-center gap-3">

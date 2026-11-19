@@ -1,11 +1,23 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ShieldCheck, ArrowUpRight } from 'lucide-react';
 import AskrLogo from './AskrLogo';
+import { isAdminPreviewActive, isAdminUser } from '../lib/api';
 
 export default function Footer() {
+  const [isRealFleetPreview, setIsRealFleetPreview] = useState(false);
+
+  useEffect(() => {
+    const checkPreview = () => {
+      setIsRealFleetPreview(isAdminPreviewActive() && isAdminUser());
+    };
+    checkPreview();
+    window.addEventListener('askrev_preview_change', checkPreview);
+    return () => window.removeEventListener('askrev_preview_change', checkPreview);
+  }, []);
+
   return (
     <footer className="bg-gradient-to-r from-[#080B12] via-[#080B12]/95 to-[#080B12]/40 lg:bg-[#080B12]/90 backdrop-blur-md border-t border-white/10 text-[#AAB7C8] text-sm mt-auto relative z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -40,81 +52,159 @@ export default function Footer() {
               Electric Scooters
             </h4>
             <ul className="space-y-2 text-xs">
-              <li>
-                <Link href="/bikes/ASKR-S1-PRO" className="hover:text-[#50D9FF] transition-colors">
-                  ASKR S1 Pro (195 km)
-                </Link>
-              </li>
-              <li>
-                <Link href="/bikes/ASKR-S1-AIR" className="hover:text-[#50D9FF] transition-colors">
-                  ASKR S1 Air (151 km)
-                </Link>
-              </li>
-              <li>
-                <Link href="/scooters" className="text-[#267DFF] font-semibold hover:underline inline-flex items-center gap-1">
-                  <span>Explore Scooters</span>
-                  <ArrowUpRight className="w-3 h-3" />
-                </Link>
-              </li>
+              {isRealFleetPreview ? (
+                <>
+                  <li>
+                    <Link href="/bikes/askr-ev-s01?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV S01 (Urban)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes/askr-ev-s02?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV S02 (Commuter)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes/askr-ev-s03?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV S03 (Performance)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/scooters?preview=true" className="text-[#267DFF] font-semibold hover:underline inline-flex items-center gap-1">
+                      <span>All Scooters (6 Models)</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </Link>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <Link href="/scooters" className="hover:text-[#50D9FF] transition-colors">
+                      Urban Electric Scooters
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/scooters" className="hover:text-[#50D9FF] transition-colors">
+                      Long-Range Commuters
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/scooters" className="text-[#267DFF] font-semibold hover:underline inline-flex items-center gap-1">
+                      <span>Explore Scooters</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </Link>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
 
-          {/* Column 2: Electric Motorcycles */}
+          {/* Column 2: Electric Motorcycles & Utility */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-[#F7FAFF] uppercase tracking-wider">
-              Electric Bikes
+              {isRealFleetPreview ? 'Bikes & Utility' : 'Electric Bikes'}
             </h4>
             <ul className="space-y-2 text-xs">
-              <li>
-                <Link href="/bikes/ASKR-THUNDER-PRO" className="hover:text-[#50D9FF] transition-colors">
-                  ASKR Thunder Pro (135 km)
-                </Link>
-              </li>
-              <li>
-                <Link href="/bikes/ASKR-CITY-CRUISE" className="hover:text-[#50D9FF] transition-colors">
-                  ASKR City Cruise (90 km)
-                </Link>
-              </li>
-              <li>
-                <Link href="/bikes/ASKR-APEX-SPORT" className="hover:text-[#50D9FF] transition-colors">
-                  ASKR Apex Sport (175 km)
-                </Link>
-              </li>
-              <li>
-                <Link href="/bikes" className="text-[#267DFF] font-semibold hover:underline inline-flex items-center gap-1">
-                  <span>Explore Bikes</span>
-                  <ArrowUpRight className="w-3 h-3" />
-                </Link>
-              </li>
+              {isRealFleetPreview ? (
+                <>
+                  <li>
+                    <Link href="/bikes/askr-ev-b01?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV B01 (Sport Motorcycle)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes/askr-ev-u01?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV U01 (Heavy Utility)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes/askr-ev-u02?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV U02 (Delivery Carrier)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes?preview=true" className="text-[#267DFF] font-semibold hover:underline inline-flex items-center gap-1">
+                      <span>Explore Lineup</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </Link>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <Link href="/bikes" className="hover:text-[#50D9FF] transition-colors">
+                      Electric Motorcycles
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/utility" className="hover:text-[#50D9FF] transition-colors">
+                      Electric Utility Vehicles
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes" className="text-[#267DFF] font-semibold hover:underline inline-flex items-center gap-1">
+                      <span>Explore Bikes</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </Link>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
 
-          {/* Column 3: Cycles, Jeeps & Portal */}
+          {/* Column 3: All-Terrain & Account Portal */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-[#F7FAFF] uppercase tracking-wider">
-              Concepts & Portals
+              {isRealFleetPreview ? 'Jeeps & Portal' : 'Showroom & Portal'}
             </h4>
             <ul className="space-y-2 text-xs">
-              <li>
-                <Link href="/cycles" className="hover:text-[#50D9FF] transition-colors">
-                  Electric Cycles (AeroTrek)
-                </Link>
-              </li>
-              <li>
-                <Link href="/jeeps" className="hover:text-[#50D9FF] transition-colors">
-                  Electric Jeeps (TerraMax)
-                </Link>
-              </li>
-              <li>
-                <Link href="/auth/login" className="hover:text-[#50D9FF] transition-colors">
-                  Sign In / Customer Portal
-                </Link>
-              </li>
-              <li>
-                <Link href="/dashboard" className="hover:text-[#50D9FF] transition-colors">
-                  Member Dashboard
-                </Link>
-              </li>
+              {isRealFleetPreview ? (
+                <>
+                  <li>
+                    <Link href="/bikes/askr-ev-j01?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV J01 (4x4 Off-Road)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes/askr-ev-j02?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV J02 (Safari 4x4)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/bikes/askr-ev-j03?preview=true" className="hover:text-[#50D9FF] transition-colors">
+                      ASKR EV J03 (Monster Edition)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/admin" className="hover:text-[#50D9FF] transition-colors">
+                      Admin Portal
+                    </Link>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <Link href="/jeeps" className="hover:text-[#50D9FF] transition-colors">
+                      All-Terrain 4x4 Electric Jeeps
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/cycles" className="hover:text-[#50D9FF] transition-colors">
+                      Electric Commuter Cycles
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/auth/login" className="hover:text-[#50D9FF] transition-colors">
+                      Sign In / Customer Portal
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/dashboard" className="hover:text-[#50D9FF] transition-colors">
+                      Member Dashboard
+                    </Link>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
         </div>
