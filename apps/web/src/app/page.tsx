@@ -360,7 +360,7 @@ export default function HomePage() {
             Photorealistic Large Vehicle, Physical Floor Contact, Atmospheric Mist
             ========================================================================= */}
         <section
-          className="hero-section-bg relative border-b border-white/10 overflow-hidden pt-2 pb-12 sm:pt-4 sm:pb-16 md:pt-14 md:pb-24"
+          className="hero-section-bg relative border-b border-white/10 overflow-hidden pt-2 pb-10 sm:pt-4 sm:pb-12 md:pt-8 md:pb-16"
         >
           {/* Directional Automotive Studio Ambient Backlight Glow */}
           <div
@@ -376,12 +376,12 @@ export default function HomePage() {
                 Visible only on screens < lg breakpoint
                 1. Compact ASKR EV header & badge
                 2. Large premium vehicle image (prominently in initial viewport)
-                3. Short headline
-                4. One-line or two-line description
+                3. Short headline (26-30px)
+                4. Description (13-14px)
                 5. Compact vehicle specifications
-                6. Primary CTA and secondary CTA
+                6. Primary CTA and secondary CTA (12px)
                 ===================================================================== */}
-            <div className="block lg:hidden space-y-4">
+            <div className="block lg:hidden space-y-3.5">
               {/* 1. Compact ASKR EV Header & Category Badge */}
               <div className="flex items-center justify-between gap-2 pt-1">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#101827] border border-blue-500/30 text-[#50D9FF] text-[10px] font-bold tracking-wide shadow-sm">
@@ -394,7 +394,7 @@ export default function HomePage() {
               </div>
 
               {/* 2. Large Premium Vehicle Image Stage (Prominent in initial mobile viewport) */}
-              <div className="relative w-full h-[220px] xs:h-[250px] sm:h-[300px] flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1A]/90 shadow-2xl">
+              <div className="relative w-full h-[220px] xs:h-[250px] sm:h-[280px] flex items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1A]/90 shadow-2xl">
                 {/* Studio Backdrop Glow */}
                 <div
                   className="absolute inset-0 opacity-40 pointer-events-none"
@@ -403,13 +403,13 @@ export default function HomePage() {
                   }}
                 />
 
-                {/* Primary Vehicle Image */}
-                <div className="relative z-10 w-full h-full flex items-center justify-center p-3">
+                {/* Primary Vehicle Image — object-contain to avoid cutting wheels/handlebars */}
+                <div className="relative z-10 w-full h-full flex items-center justify-center p-2.5">
                   <img
                     key={`mobile-${activeSlide.mobileImage || activeSlide.image}`}
                     src={activeSlide.mobileImage || activeSlide.image}
                     alt={activeSlide.mobileAltText || activeVehicle.name}
-                    className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in rounded-xl"
+                    className="max-h-full max-w-full object-contain select-none transition-all duration-700 animate-in fade-in"
                     style={{
                       objectPosition: `${activeSlide.mobileFocalX ?? 50}% ${activeSlide.mobileFocalY ?? 50}%`,
                     }}
@@ -417,7 +417,7 @@ export default function HomePage() {
                 </div>
 
                 {/* Automotive Ground Contact Shadow */}
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-4/5 h-4 pointer-events-none z-12 animate-shadow-scale">
+                <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 w-4/5 h-4 pointer-events-none z-12 animate-shadow-scale">
                   <div className="absolute inset-x-6 top-0.5 bottom-0.5 bg-black/95 rounded-full filter blur-sm" />
                 </div>
 
@@ -458,28 +458,28 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* 3. Short Headline */}
+              {/* 3. Short Headline (Mobile: 26-30px, line height 1.15) */}
               <div className="pt-0.5">
-                <h1 className="text-2xl xs:text-3xl font-black text-[#F7FAFF] tracking-tight leading-tight">
+                <h1 className="text-[26px] xs:text-[28px] sm:text-[30px] font-black text-[#F7FAFF] tracking-tight leading-[1.15]">
                   {activeSlide.headline}
                 </h1>
-                {/* 4. One-Line or Two-Line Description */}
-                <p className="mt-1.5 text-xs xs:text-sm text-[#AAB7C8] font-normal leading-relaxed line-clamp-2">
+                {/* 4. Description (Mobile: 13-14px) */}
+                <p className="mt-1.5 text-[13px] xs:text-[14px] text-[#AAB7C8] font-normal leading-relaxed line-clamp-2">
                   {activeSlide.subline}
                 </p>
               </div>
 
               {/* 5. Compact Vehicle Specifications & Starting Price */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {activeSlide.showPrice !== false && activeVehicle.exShowroomPriceINR && (
                   <div className="flex items-baseline justify-between px-1">
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
-                      <span className="text-xl xs:text-2xl font-black text-[#F7FAFF] tracking-tight">
+                      <span className="text-xl xs:text-[22px] font-black text-[#F7FAFF] tracking-tight">
                         ₹{activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}
                       </span>
                     </div>
-                    <span className="text-[10px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
+                    <span className="text-[9px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
                   </div>
                 )}
 
@@ -491,10 +491,10 @@ export default function HomePage() {
                         <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
                           Range
                         </span>
-                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {activeVehicle.rangeKm ? (
                             <>
-                              {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
+                              {activeVehicle.rangeKm} <span className="text-[9px] font-normal text-[#50D9FF]">km</span>
                             </>
                           ) : (
                             'TBA'
@@ -508,10 +508,10 @@ export default function HomePage() {
                         <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
                           Speed
                         </span>
-                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {activeVehicle.topSpeedKmh ? (
                             <>
-                              {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
+                              {activeVehicle.topSpeedKmh} <span className="text-[9px] font-normal text-[#50D9FF]">km/h</span>
                             </>
                           ) : (
                             'TBA'
@@ -525,10 +525,10 @@ export default function HomePage() {
                         <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
                           Battery
                         </span>
-                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {activeVehicle.batteryCapacityKwh ? (
                             <>
-                              {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
+                              {activeVehicle.batteryCapacityKwh} <span className="text-[9px] font-normal text-[#50D9FF]">kWh</span>
                             </>
                           ) : (
                             'TBA'
@@ -542,7 +542,7 @@ export default function HomePage() {
                         <span className="text-[9px] text-[#AAB7C8] uppercase tracking-wider block font-semibold truncate">
                           {(activeVehicle.category || '').toLowerCase() === 'utility' ? 'Payload' : '0-40 km/h'}
                         </span>
-                        <span className="text-xs xs:text-sm font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[11px] xs:text-[12px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {(activeVehicle.category || '').toLowerCase() === 'utility'
                             ? activeVehicle.payloadCapacityKg
                               ? `${activeVehicle.payloadCapacityKg} kg`
@@ -555,12 +555,12 @@ export default function HomePage() {
                 )}
               </div>
 
-              {/* 6. Primary CTA and Secondary CTA */}
+              {/* 6. Primary CTA and Secondary CTA (Mobile Button Text: 12px) */}
               <div className="pt-1 flex flex-col xs:flex-row items-center gap-2.5 w-full">
                 {activeSlide.primaryCtaEnabled !== false && (
                   <Link
                     href={activeSlide.ctaLink || '/bikes'}
-                    className={`w-full py-3 px-5 rounded-full text-xs font-bold tracking-wide transition-all flex items-center justify-center gap-1.5 ${
+                    className={`w-full py-2.5 px-4 rounded-full text-[12px] font-bold tracking-wide transition-all flex items-center justify-center gap-1.5 ${
                       activeSlide.ctaStyle === 'SECONDARY'
                         ? 'bg-white hover:bg-slate-100 text-slate-900 shadow-md'
                         : activeSlide.ctaStyle === 'OUTLINE'
@@ -576,7 +576,7 @@ export default function HomePage() {
                 {activeSlide.secondaryCtaEnabled && (
                   <Link
                     href={activeSlide.secondaryCtaUrl || '/test-ride'}
-                    className={`w-full py-3 px-5 rounded-full text-xs font-semibold tracking-wide transition-colors flex items-center justify-center ${
+                    className={`w-full py-2.5 px-4 rounded-full text-[12px] font-semibold tracking-wide transition-colors flex items-center justify-center ${
                       activeSlide.secondaryCtaStyle === 'PRIMARY'
                         ? 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white'
                         : activeSlide.secondaryCtaStyle === 'SECONDARY'
@@ -596,49 +596,49 @@ export default function HomePage() {
                 ===================================================================== */}
             <div className="hidden lg:grid lg:grid-cols-12 gap-8 lg:gap-10 items-center">
               {/* Left Content Column */}
-              <div className="lg:col-span-5 space-y-6 text-left z-10">
-                {/* Category / Status Pill */}
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#101827] border border-blue-500/30 text-[#50D9FF] text-xs font-bold tracking-wide shadow-[0_0_15px_rgba(38,125,255,0.15)]">
-                  <span className="w-2 h-2 rounded-full bg-[#50D9FF] animate-pulse" />
+              <div className="lg:col-span-5 space-y-5 text-left z-10">
+                {/* Category / Status Pill (Eyebrow: 10-11px) */}
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#101827] border border-blue-500/30 text-[#50D9FF] text-[10px] sm:text-[11px] font-bold tracking-wide shadow-[0_0_15px_rgba(38,125,255,0.15)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#50D9FF] animate-pulse" />
                   <span>{activeSlide.primaryBadge}</span>
                 </div>
 
-                {/* Model Name & Main Headline */}
+                {/* Model Name & Main Headline (Desktop Heading: 34-40px, line height 1.14) */}
                 <div className="transition-all duration-500">
-                  <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#50D9FF] mb-1.5">
+                  <h2 className="text-[11px] sm:text-[12px] font-extrabold uppercase tracking-widest text-[#50D9FF] mb-1.5">
                     {activeVehicle.name}
                   </h2>
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#F7FAFF] tracking-tight leading-[1.06]">
+                  <h1 className="text-[34px] sm:text-[36px] lg:text-[38px] xl:text-[40px] font-black text-[#F7FAFF] tracking-tight leading-[1.14]">
                     {activeSlide.headline}
                   </h1>
-                  <p className="mt-3.5 text-base sm:text-lg text-[#AAB7C8] font-normal leading-relaxed max-w-xl">
+                  <p className="mt-3 text-[14px] sm:text-[15px] lg:text-[16px] text-[#AAB7C8] font-normal leading-relaxed max-w-xl">
                     {activeSlide.subline}
                   </p>
                 </div>
 
                 {/* Starting Price Display */}
                 {activeSlide.showPrice !== false && activeVehicle.exShowroomPriceINR && (
-                  <div className="pt-1 flex items-baseline gap-2.5">
-                    <span className="text-xs text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
-                    <span className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
+                  <div className="pt-0.5 flex items-baseline gap-2">
+                    <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider font-semibold">Starting at</span>
+                    <span className="text-2xl sm:text-[26px] font-black text-[#F7FAFF] tracking-tight">
                       ₹{activeVehicle.exShowroomPriceINR.toLocaleString('en-IN')}
                     </span>
-                    <span className="text-xs text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
+                    <span className="text-[10px] text-[#AAB7C8]/70 font-medium">Ex-showroom</span>
                   </div>
                 )}
 
-                {/* Key Metric Grid in Midnight Glassmorphic Pill */}
+                {/* Key Metric Grid in Midnight Glassmorphic Pill (Labels: 10px, Values: 12-13px) */}
                 {(activeSlide.showRange || activeSlide.showTopSpeed || activeSlide.showBattery || activeSlide.showSpecifications) && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3.5 px-4 rounded-2xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-2.5 px-3.5 rounded-xl bg-[#101827]/90 border border-white/10 shadow-lg w-full max-w-xl backdrop-blur-md">
                     {activeSlide.showRange && (
                       <div>
                         <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                           Range
                         </span>
-                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {activeVehicle.rangeKm ? (
                             <>
-                              {activeVehicle.rangeKm} <span className="text-xs font-normal text-[#50D9FF]">km</span>
+                              {activeVehicle.rangeKm} <span className="text-[10px] font-normal text-[#50D9FF]">km</span>
                             </>
                           ) : (
                             'TBA'
@@ -648,14 +648,14 @@ export default function HomePage() {
                     )}
 
                     {activeSlide.showTopSpeed && (
-                      <div className="border-l border-white/10 pl-3">
+                      <div className="border-l border-white/10 pl-2.5">
                         <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                           Top Speed
                         </span>
-                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {activeVehicle.topSpeedKmh ? (
                             <>
-                              {activeVehicle.topSpeedKmh} <span className="text-xs font-normal text-[#50D9FF]">km/h</span>
+                              {activeVehicle.topSpeedKmh} <span className="text-[10px] font-normal text-[#50D9FF]">km/h</span>
                             </>
                           ) : (
                             'TBA'
@@ -665,14 +665,14 @@ export default function HomePage() {
                     )}
 
                     {activeSlide.showBattery && (
-                      <div className="border-l sm:border-l border-white/10 pl-3">
+                      <div className="border-l sm:border-l border-white/10 pl-2.5">
                         <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                           Battery
                         </span>
-                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {activeVehicle.batteryCapacityKwh ? (
                             <>
-                              {activeVehicle.batteryCapacityKwh} <span className="text-xs font-normal text-[#50D9FF]">kWh</span>
+                              {activeVehicle.batteryCapacityKwh} <span className="text-[10px] font-normal text-[#50D9FF]">kWh</span>
                             </>
                           ) : (
                             'TBA'
@@ -682,7 +682,7 @@ export default function HomePage() {
                     )}
 
                     {activeSlide.showSpecifications && (
-                      <div className="border-l border-white/10 pl-3">
+                      <div className="border-l border-white/10 pl-2.5">
                         <span className="text-[10px] text-[#AAB7C8] uppercase tracking-wider block font-semibold whitespace-nowrap">
                           {(activeVehicle.category || '').toLowerCase() === 'utility'
                             ? 'Payload'
@@ -690,7 +690,7 @@ export default function HomePage() {
                               ? '0-25 km/h'
                               : '0-40 km/h'}
                         </span>
-                        <span className="text-base sm:text-lg font-bold text-[#F7FAFF] whitespace-nowrap">
+                        <span className="text-[12px] sm:text-[13px] font-bold text-[#F7FAFF] whitespace-nowrap">
                           {(activeVehicle.category || '').toLowerCase() === 'utility'
                             ? activeVehicle.payloadCapacityKg
                               ? `${activeVehicle.payloadCapacityKg} kg`
@@ -702,28 +702,28 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* Action Buttons */}
-                <div className="pt-2 flex flex-wrap items-center gap-3.5">
+                {/* Action Buttons (CTA Button Text: 12-13px) */}
+                <div className="pt-1 flex flex-wrap items-center gap-3">
                   {activeSlide.primaryCtaEnabled !== false && (
                     <Link
                       href={activeSlide.ctaLink || '/bikes'}
-                      className={`px-7 py-3.5 rounded-full text-xs sm:text-sm font-bold tracking-wide transition-all flex items-center gap-2 group ${
+                      className={`px-6 py-2.5 rounded-full text-[12px] sm:text-[13px] font-bold tracking-wide transition-all flex items-center gap-1.5 group ${
                         activeSlide.ctaStyle === 'SECONDARY'
                           ? 'bg-white hover:bg-slate-100 text-slate-900 shadow-md'
                           : activeSlide.ctaStyle === 'OUTLINE'
                           ? 'border border-white/20 hover:border-white text-[#F7FAFF] bg-white/5'
-                          : 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white shadow-[0_0_25px_rgba(38,125,255,0.4)] hover:shadow-[0_0_35px_rgba(38,125,255,0.6)]'
+                          : 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white shadow-[0_0_20px_rgba(38,125,255,0.4)] hover:shadow-[0_0_30px_rgba(38,125,255,0.6)]'
                       }`}
                     >
                       <span>{activeSlide.ctaText || 'Explore Vehicles'}</span>
-                      <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                      <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
                     </Link>
                   )}
 
                   {activeSlide.secondaryCtaEnabled && (
                     <Link
                       href={activeSlide.secondaryCtaUrl || '/test-ride'}
-                      className={`px-7 py-3.5 rounded-full text-xs sm:text-sm font-semibold tracking-wide transition-colors ${
+                      className={`px-6 py-2.5 rounded-full text-[12px] sm:text-[13px] font-semibold tracking-wide transition-colors ${
                         activeSlide.secondaryCtaStyle === 'PRIMARY'
                           ? 'bg-[#267DFF] hover:bg-[#1A6EEB] text-white shadow-[0_0_20px_rgba(38,125,255,0.3)]'
                           : activeSlide.secondaryCtaStyle === 'SECONDARY'
@@ -739,7 +739,7 @@ export default function HomePage() {
 
               {/* Right Column: Large Physically-Grounded Vehicle Stage (Occupies ~60% Visual Area) */}
               <div className="lg:col-span-7 flex flex-col items-center justify-center relative">
-                <div className="relative w-full h-88 sm:h-104 md:h-[460px] flex items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-[#0A0F1A]/80 shadow-2xl">
+                <div className="relative w-full h-80 sm:h-96 md:h-[400px] lg:h-[440px] flex items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-[#0A0F1A]/80 shadow-2xl">
                   {/* Subtle Studio Backdrop Horizon Light */}
                   <div
                     className="absolute inset-0 opacity-40 pointer-events-none"
@@ -748,13 +748,13 @@ export default function HomePage() {
                     }}
                   />
 
-                  {/* Primary Large Vehicle Image (Physically Grounded on Studio Floor) */}
-                  <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
+                  {/* Primary Large Vehicle Image — object-contain to preserve aspect ratio and avoid clipping wheels */}
+                  <div className="relative z-10 w-full h-full flex items-center justify-center p-3 sm:p-4">
                     <img
                       key={activeSlide.image}
                       src={activeSlide.image}
                       alt={activeSlide.desktopAltText || activeVehicle.name}
-                      className="w-full h-full object-cover select-none transition-all duration-700 animate-in fade-in"
+                      className="max-h-full max-w-full object-contain select-none transition-all duration-700 animate-in fade-in"
                       style={{
                         objectPosition: `${activeSlide.desktopFocalX ?? 50}% ${activeSlide.desktopFocalY ?? 50}%`,
                       }}
@@ -762,7 +762,7 @@ export default function HomePage() {
                   </div>
 
                   {/* Realistic Automotive Ground Contact Shadow (Layered Ellipses) */}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4/5 h-6 pointer-events-none z-12 animate-shadow-scale">
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-4/5 h-5 pointer-events-none z-12 animate-shadow-scale">
                     <div className="absolute inset-x-8 top-1 bottom-1 bg-black/90 rounded-full filter blur-md" />
                   </div>
 
@@ -771,25 +771,25 @@ export default function HomePage() {
                 </div>
 
                 {/* Slider Navigation Dots & Controls */}
-                <div className="mt-5 flex items-center gap-3 z-10">
+                <div className="mt-4 flex items-center gap-3 z-10">
                   <button
                     onClick={() =>
                       setCurrentSlideIndex((prev) => (prev - 1 + heroSlides.length) % heroSlides.length)
                     }
-                    className="p-2 rounded-full border border-white/15 hover:border-white/40 bg-[#101827]/80 text-[#F7FAFF] transition-colors"
+                    className="p-1.5 rounded-full border border-white/15 hover:border-white/40 bg-[#101827]/80 text-[#F7FAFF] transition-colors"
                     aria-label="Previous Vehicle"
                   >
-                    <ChevronLeft className="w-4 h-4" />
+                    <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {heroSlides.map((slide, idx) => (
                       <button
                         key={slide.id || slide.vehicle?.id || idx}
                         onClick={() => setCurrentSlideIndex(idx)}
-                        className={`h-2 rounded-full transition-all ${currentSlideIndex === idx
-                            ? 'w-8 bg-[#267DFF] shadow-[0_0_10px_rgba(38,125,255,0.6)]'
-                            : 'w-2 bg-white/20 hover:bg-white/40'
+                        className={`h-1.5 rounded-full transition-all ${currentSlideIndex === idx
+                            ? 'w-7 bg-[#267DFF] shadow-[0_0_10px_rgba(38,125,255,0.6)]'
+                            : 'w-1.5 bg-white/20 hover:bg-white/40'
                           }`}
                         aria-label={`Go to slide ${idx + 1}`}
                       />
@@ -798,10 +798,10 @@ export default function HomePage() {
 
                   <button
                     onClick={() => setCurrentSlideIndex((prev) => (prev + 1) % heroSlides.length)}
-                    className="p-2 rounded-full border border-white/15 hover:border-white/40 bg-[#101827]/80 text-[#F7FAFF] transition-colors"
+                    className="p-1.5 rounded-full border border-white/15 hover:border-white/40 bg-[#101827]/80 text-[#F7FAFF] transition-colors"
                     aria-label="Next Vehicle"
                   >
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -814,27 +814,27 @@ export default function HomePage() {
             Deep Navy / Midnight Black Gradient Stage
             ========================================================================= */}
         <section
-          className="catalog-section-bg py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full rounded-2xl"
+          className="catalog-section-bg py-12 md:py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full rounded-2xl"
         >
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/10">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 pb-6 border-b border-white/10">
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-widest text-[#50D9FF] mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#267DFF] shadow-[0_0_8px_#267DFF]" />
+              <h2 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#50D9FF] mb-1.5 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#267DFF] shadow-[0_0_8px_#267DFF]" />
                 <span>Browse The Lineup</span>
               </h2>
-              <h3 className="text-3xl sm:text-4xl font-extrabold text-[#F7FAFF] tracking-tight">
+              <h3 className="text-[21px] xs:text-[22px] sm:text-[24px] lg:text-[27px] font-extrabold text-[#F7FAFF] tracking-tight leading-tight">
                 Electric Vehicles for Every Journey.
               </h3>
-              <p className="mt-2 text-sm sm:text-base text-[#AAB7C8] max-w-xl">
+              <p className="mt-1.5 text-xs sm:text-[13px] text-[#AAB7C8] max-w-xl leading-relaxed">
                 From zero-emission urban scooters to high-torque electric motorcycles, lightweight commuter cycles, and 4x4 adventure utility vehicles.
               </p>
             </div>
 
             {/* Category Filter Tabs */}
-            <div className="flex flex-wrap items-center gap-2 bg-[#101827] p-1.5 rounded-full border border-white/10">
+            <div className="flex flex-wrap items-center gap-1.5 bg-[#101827] p-1 rounded-full border border-white/10">
               <button
                 onClick={() => setSelectedCategoryTab('scooters')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'scooters'
+                className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'scooters'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
                   }`}
@@ -844,7 +844,7 @@ export default function HomePage() {
 
               <button
                 onClick={() => setSelectedCategoryTab('bikes')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'bikes'
+                className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'bikes'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
                   }`}
@@ -854,7 +854,7 @@ export default function HomePage() {
 
               <button
                 onClick={() => setSelectedCategoryTab('cycles')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'cycles'
+                className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'cycles'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
                   }`}
@@ -864,7 +864,7 @@ export default function HomePage() {
 
               <button
                 onClick={() => setSelectedCategoryTab('jeeps')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'jeeps'
+                className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'jeeps'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
                   }`}
@@ -874,12 +874,22 @@ export default function HomePage() {
 
               <button
                 onClick={() => setSelectedCategoryTab('utility')}
-                className={`px-5 py-2 rounded-full text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'utility'
+                className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'utility'
                     ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
                     : 'text-[#AAB7C8] hover:text-white'
                   }`}
               >
                 Utility
+              </button>
+
+              <button
+                onClick={() => setSelectedCategoryTab('all')}
+                className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold tracking-wide transition-all ${selectedCategoryTab === 'all'
+                    ? 'bg-[#267DFF] text-white shadow-[0_0_15px_rgba(38,125,255,0.4)] font-bold'
+                    : 'text-[#AAB7C8] hover:text-white'
+                  }`}
+              >
+                All
               </button>
             </div>
           </div>
@@ -943,13 +953,13 @@ export default function HomePage() {
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-2xl mx-auto space-y-3 mb-14">
-              <span className="text-xs font-bold uppercase tracking-widest text-[#50D9FF]">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#50D9FF]">
                 Engineering Excellence
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-[#F7FAFF] tracking-tight">
+              <h2 className="text-[21px] xs:text-[22px] sm:text-[24px] lg:text-[27px] font-extrabold text-[#F7FAFF] tracking-tight leading-tight">
                 Designed For Real-World Performance.
               </h2>
-              <p className="text-sm sm:text-base text-[#AAB7C8]">
+              <p className="text-xs sm:text-[13px] text-[#AAB7C8] leading-relaxed max-w-xl mx-auto">
                 Built with precision thermal balancing, high-efficiency motors, and seamless connected telemetry.
               </p>
             </div>
@@ -959,8 +969,8 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-blue-500/15 text-[#50D9FF] flex items-center justify-center font-bold text-lg border border-blue-500/20">
                   <Zap className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">High-Efficiency Electric Drive</h3>
-                <p className="text-xs text-[#AAB7C8] leading-relaxed">
+                <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F7FAFF]">High-Efficiency Electric Drive</h3>
+                <p className="text-[12px] text-[#AAB7C8] leading-relaxed">
                   Precision-engineered electric motor architecture delivering smooth, zero-emission torque with minimal maintenance requirements.
                 </p>
               </div>
@@ -969,8 +979,8 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center font-bold text-lg border border-emerald-500/20">
                   <BatteryCharging className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">Advanced Battery Protection</h3>
-                <p className="text-xs text-[#AAB7C8] leading-relaxed">
+                <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F7FAFF]">Advanced Battery Protection</h3>
+                <p className="text-[12px] text-[#AAB7C8] leading-relaxed">
                   Robust lithium and graphene battery pack configurations equipped with intelligent battery monitoring and thermal safeguards.
                 </p>
               </div>
@@ -979,8 +989,8 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-bold text-lg border border-purple-500/20">
                   <Gauge className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">Digital Driver Console</h3>
-                <p className="text-xs text-[#AAB7C8] leading-relaxed">
+                <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F7FAFF]">Digital Driver Console</h3>
+                <p className="text-[12px] text-[#AAB7C8] leading-relaxed">
                   Illuminated digital instrumentation providing real-time speed, trip tracking, and battery health at a glance.
                 </p>
               </div>
@@ -989,8 +999,8 @@ export default function HomePage() {
                 <div className="w-12 h-12 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold text-lg border border-amber-500/20">
                   <Clock className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#F7FAFF]">Everyday 15A Recharging</h3>
-                <p className="text-xs text-[#AAB7C8] leading-relaxed">
+                <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F7FAFF]">Everyday 15A Recharging</h3>
+                <p className="text-[12px] text-[#AAB7C8] leading-relaxed">
                   Plug into any standard 15A home socket or fast-charging network for convenient, low-cost overnight recharges.
                 </p>
               </div>
@@ -1021,13 +1031,13 @@ export default function HomePage() {
               />
 
               <div className="space-y-3 max-w-xl relative z-10">
-                <span className="text-xs font-bold uppercase tracking-widest text-[#50D9FF]">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#50D9FF]">
                   The Electric Shift
                 </span>
-                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#F7FAFF]">
+                <h2 className="text-[21px] xs:text-[22px] sm:text-[24px] lg:text-[27px] font-extrabold tracking-tight text-[#F7FAFF] leading-tight">
                   Ready to Experience ASKR EV?
                 </h2>
-                <p className="text-sm text-[#AAB7C8] leading-relaxed">
+                <p className="text-xs sm:text-[13px] text-[#AAB7C8] leading-relaxed">
                   Explore our full vehicle showroom, inspect certified specifications, and reserve your electric vehicle online today.
                 </p>
               </div>
@@ -1035,13 +1045,13 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center gap-4 shrink-0 relative z-10">
                 <Link
                   href="/bikes"
-                  className="px-8 py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)]"
+                  className="px-6 py-2.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-[12px] sm:text-[13px] font-bold tracking-wide transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)]"
                 >
                   Explore Showroom
                 </Link>
                 <Link
                   href="/auth/register"
-                  className="px-8 py-3.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] hover:bg-white/10 text-xs sm:text-sm font-semibold tracking-wide transition-colors"
+                  className="px-6 py-2.5 rounded-full border border-white/20 hover:border-white text-[#F7FAFF] hover:bg-white/10 text-[12px] sm:text-[13px] font-semibold tracking-wide transition-colors"
                 >
                   Create Account
                 </Link>
