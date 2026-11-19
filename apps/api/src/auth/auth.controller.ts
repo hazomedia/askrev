@@ -2,8 +2,9 @@ import { Controller, Post, Body, Get, UseGuards, Req, Res } from '@nestjs/common
 import type { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto, VerifyMfaDto, DisableMfaDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, RefreshTokenDto, VerifyMfaDto, DisableMfaDto, ChangePasswordDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CsrfGuard } from './guards/csrf.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 
 @Controller('auth')
@@ -145,5 +146,49 @@ export class AuthController {
   @Post('mfa/disable')
   async disableMfa(@CurrentUser() user: any, @Body() dto: DisableMfaDto) {
     return this.authService.disableMfa(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, CsrfGuard)
+  @Post('change-password')
+  async changePassword(
+    @CurrentUser() user: any,
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const authHeader: string = req.headers?.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : req.cookies?.['askrev_access_token'] || undefined;
+
+    const result = await this.authService.changePassword(user.id, dto, token);
+
+    // Clear session cookies to enforce re-authentication
+    res.clearCookie('askrev_access_token', { path: '/' });
+    res.clearCookie('askrev_refresh_token', { path: '/api/auth' });
+    res.clearCookie('askrev_csrf_token', { path: '/' });
+
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard, CsrfGuard)
+  @Post('revoke-all-sessions')
+  async revokeAllSessions(
+    @CurrentUser() user: any,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const authHeader: string = req.headers?.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : req.cookies?.['askrev_access_token'] || undefined;
+
+    const result = await this.authService.revokeAllSessions(user.id, token);
+
+    res.clearCookie('askrev_access_token', { path: '/' });
+    res.clearCookie('askrev_refresh_token', { path: '/api/auth' });
+    res.clearCookie('askrev_csrf_token', { path: '/' });
+
+    return result;
   }
 }

@@ -37,9 +37,10 @@ import {
   Package,
   Sliders,
 } from 'lucide-react';
-import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
+import { fetchApi, getStoredUser, logoutSession, fetchCurrentUserProfile } from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
+import { AdminSecuritySettings } from '../../components/admin/AdminSecuritySettings';
 
 type AdminTab =
   | 'overview'
@@ -52,7 +53,8 @@ type AdminTab =
   | 'vouchers'
   | 'bookings'
   | 'reconciliation'
-  | 'audit';
+  | 'audit'
+  | 'security';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -150,6 +152,13 @@ export default function AdminPage() {
       return;
     }
     setCurrentUser(stored);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'security') {
+        setActiveTab('security');
+      }
+    }
     loadAllData();
   }, []);
 
@@ -189,6 +198,10 @@ export default function AdminPage() {
       else if (activeTab === 'bookings') await fetchBookings();
       else if (activeTab === 'reconciliation') await fetchReconciliation();
       else if (activeTab === 'audit') await fetchAuditLogs();
+      else if (activeTab === 'security') {
+        const profile = await fetchCurrentUserProfile();
+        if (profile) setCurrentUser(profile);
+      }
       setActionSuccess('Data refreshed successfully.');
       setTimeout(() => setActionSuccess(null), 3000);
     } catch (err: any) {
@@ -569,7 +582,8 @@ export default function AdminPage() {
       count: reconciliation?.status === 'RECONCILED' ? undefined : 1,
       badgeColor: 'bg-red-500 text-white',
     },
-    { id: 'audit', label: 'Audit & Security', icon: ShieldCheck, count: auditTotal },
+    { id: 'audit', label: 'Audit Trail', icon: FileText, count: auditTotal },
+    { id: 'security', label: 'Settings → Security', icon: ShieldCheck },
   ];
 
   if (!currentUser) {
@@ -644,6 +658,19 @@ export default function AdminPage() {
                 title="Refresh current data"
               >
                 <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-[#165DAD]' : ''}`} />
+              </button>
+
+              <button
+                onClick={() => setActiveTab('security')}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg transition-colors ${
+                  activeTab === 'security'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50'
+                }`}
+                title="Account Security & 2FA"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Security</span>
               </button>
 
               <Link
@@ -2623,6 +2650,18 @@ export default function AdminPage() {
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'security' && (
+              <div className="space-y-6">
+                <AdminSecuritySettings
+                  currentUser={currentUser}
+                  onUserUpdated={async () => {
+                    const profile = await fetchCurrentUserProfile();
+                    if (profile) setCurrentUser(profile);
+                  }}
+                />
               </div>
             )}
           </main>

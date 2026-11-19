@@ -67,3 +67,26 @@ export class RefreshTokenDto {
   @IsOptional()
   refreshToken?: string;
 }
+
+export class ChangePasswordDto {
+  @IsString()
+  @IsNotEmpty()
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(12)
+  newPassword: string;
+
+  @IsString()
+  @MinLength(12)
+  confirmPassword: string;
+
+  @IsString()
+  @IsOptional()
+  totpCode?: string;
+
+  @IsString()
+  @IsOptional()
+  recoveryCode?: string;
+}
+

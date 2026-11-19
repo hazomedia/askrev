@@ -528,3 +528,88 @@ export async function adminUploadHeroImage(
 
   return res.json();
 }
+
+/**
+ * =============================================================================
+ * ADMIN ACCOUNT SECURITY & TWO-FACTOR AUTHENTICATION (MFA)
+ * =============================================================================
+ */
+
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+  totpCode?: string;
+  recoveryCode?: string;
+}
+
+export interface SetupMfaResponse {
+  secret: string;
+  otpauthUrl: string;
+  qrCodeDataUrl: string;
+  issuer: string;
+  accountName: string;
+  instructions: string;
+}
+
+export interface EnableMfaResponse {
+  message: string;
+  recoveryCodes: string[];
+}
+
+/**
+ * Change account password with current-password verification, strong policy,
+ * optional MFA challenge, and complete session revocation.
+ */
+export async function authChangePassword(payload: ChangePasswordPayload): Promise<{ message: string; success: boolean }> {
+  return fetchApi<{ message: string; success: boolean }>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Request TOTP MFA setup parameters (Base32 secret, otpauth URL, QR code)
+ */
+export async function authSetupMfa(): Promise<SetupMfaResponse> {
+  return fetchApi<SetupMfaResponse>('/auth/mfa/setup', {
+    method: 'POST',
+  });
+}
+
+/**
+ * Confirm and activate Two-Factor Authentication with 6-digit TOTP code
+ */
+export async function authEnableMfa(code: string, secret?: string): Promise<EnableMfaResponse> {
+  return fetchApi<EnableMfaResponse>('/auth/mfa/enable', {
+    method: 'POST',
+    body: JSON.stringify({ code, secret }),
+  });
+}
+
+/**
+ * Disable Two-Factor Authentication with password and TOTP code verification
+ */
+export async function authDisableMfa(password: string, code: string): Promise<{ message: string }> {
+  return fetchApi<{ message: string }>('/auth/mfa/disable', {
+    method: 'POST',
+    body: JSON.stringify({ password, code }),
+  });
+}
+
+/**
+ * Sign out all active devices and revoke all refresh tokens
+ */
+export async function authRevokeAllSessions(): Promise<{ message: string; success: boolean }> {
+  return fetchApi<{ message: string; success: boolean }>('/auth/revoke-all-sessions', {
+    method: 'POST',
+  });
+}
+
+/**
+ * Fetch latest authenticated user profile
+ */
+export async function fetchCurrentUserProfile(): Promise<any> {
+  return fetchApi<any>('/auth/me');
+}
+

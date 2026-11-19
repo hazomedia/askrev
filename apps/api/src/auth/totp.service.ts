@@ -1,14 +1,21 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class TotpService {
   private readonly base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
+  // Replay protection: tracks consumed codes per user for the 90-second TOTP validity window
+  private readonly consumedCodes = new Map<string, number>();
+
+  // Rate limiting: tracks failed MFA attempts per identity (userId or email/IP)
+  private readonly mfaAttempts = new Map<string, { count: number; resetAt: number }>();
+
   /**
    * Generate a cryptographically secure Base32 secret for TOTP (RFC 6238)
    */
-  generateSecret(length = 20): { secret: string; otpauthUrl: string } {
+  generateSecret(length = 20, email = 'admin@askrevdrive.com'): { secret: string; otpauthUrl: string } {
     const bytes = crypto.randomBytes(length);
     let bits = 0;
     let value = 0;
@@ -28,10 +35,29 @@ export class TotpService {
 
     const secret = output;
     const issuer = encodeURIComponent('ASKR EV');
-    const label = encodeURIComponent('admin@askrevdrive.com');
+    const label = encodeURIComponent(email);
     const otpauthUrl = `otpauth://totp/${issuer}:${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
 
     return { secret, otpauthUrl };
+  }
+
+  /**
+   * Render high-resolution PNG QR Code Data URL from otpauth:// URI
+   */
+  async generateQrCode(otpauthUrl: string): Promise<string> {
+    try {
+      return await QRCode.toDataURL(otpauthUrl, {
+        margin: 2,
+        width: 256,
+        color: {
+          dark: '#000000',
+          light: '#ffffff',
+        },
+        errorCorrectionLevel: 'M',
+      });
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to generate QR code: ${err.message}`);
+    }
   }
 
   /**
@@ -100,6 +126,67 @@ export class TotpService {
   }
 
   /**
+   * Verify TOTP token with replay protection for a specific user ID and action scope
+   */
+  verifyTokenWithReplayProtection(userId: string, secret: string, token: string, window = 1, action = 'auth'): boolean {
+    if (!token || typeof token !== 'string') return false;
+    const cleanToken = token.trim();
+
+    // Check if code has already been consumed for this specific action scope in the current window
+    const replayKey = `${userId}:${action}:${cleanToken}`;
+    const consumedUntil = this.consumedCodes.get(replayKey);
+    if (consumedUntil && consumedUntil > Date.now()) {
+      return false; // Code was already used for this action; prevent replay attack
+    }
+
+    const isValid = this.verifyToken(secret, cleanToken, window);
+    if (isValid) {
+      // Mark code as consumed for 90 seconds (covers current step +/- window)
+      this.consumedCodes.set(replayKey, Date.now() + 90000);
+      this.cleanupExpiredConsumedCodes();
+    }
+    return isValid;
+  }
+
+  private cleanupExpiredConsumedCodes(): void {
+    if (this.consumedCodes.size > 2000) {
+      const now = Date.now();
+      for (const [k, exp] of this.consumedCodes.entries()) {
+        if (exp <= now) this.consumedCodes.delete(k);
+      }
+    }
+  }
+
+  /**
+   * Rate limiting helpers for MFA and password changes
+   */
+  checkRateLimit(key: string, maxAttempts = 5, windowMs = 5 * 60 * 1000): { allowed: boolean; remaining: number } {
+    const now = Date.now();
+    const record = this.mfaAttempts.get(key);
+    if (!record || record.resetAt <= now) {
+      return { allowed: true, remaining: maxAttempts };
+    }
+    if (record.count >= maxAttempts) {
+      return { allowed: false, remaining: 0 };
+    }
+    return { allowed: true, remaining: maxAttempts - record.count };
+  }
+
+  recordFailedAttempt(key: string, windowMs = 5 * 60 * 1000): void {
+    const now = Date.now();
+    const record = this.mfaAttempts.get(key);
+    if (!record || record.resetAt <= now) {
+      this.mfaAttempts.set(key, { count: 1, resetAt: now + windowMs });
+    } else {
+      record.count += 1;
+    }
+  }
+
+  resetRateLimit(key: string): void {
+    this.mfaAttempts.delete(key);
+  }
+
+  /**
    * Generate 8 secure backup recovery codes formatted as XXXX-XXXX-XX
    */
   generateRecoveryCodes(count = 8): string[] {
@@ -149,4 +236,3 @@ export class TotpService {
     return { valid: true, remainingHashedCodes: remaining };
   }
 }
-
