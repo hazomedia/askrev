@@ -29,7 +29,7 @@ import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole, ProductStatus } from '@askrev/shared';
-import { getJwtAccessSecret, getJwtRefreshSecret, isAccessTokenRevoked } from '../auth/jwt-secrets';
+import { getJwtAccessSecret, isAccessTokenRevoked } from '../auth/jwt-secrets';
 
 // =============================================================================
 // 1. PUBLIC SHOWROOM CATALOG CONTROLLER (/api/catalog)
@@ -56,49 +56,24 @@ export class CatalogPublicController {
         token = req.cookies['askrev_access_token'] || req.cookies['askrev_admin_session'] || '';
       }
 
-      if (token && !isAccessTokenRevoked(token)) {
-        try {
-          const payload = await this.jwtService.verifyAsync(token, {
-            secret: getJwtAccessSecret(),
-          });
-
-          if (payload && payload.sub) {
-            const role = (payload.role || '').toUpperCase();
-            if (
-              role === UserRole.SUPER_ADMIN ||
-              role === UserRole.ADMIN_OPERATIONS ||
-              role === 'ADMIN'
-            ) {
-              return true;
-            }
-          }
-        } catch {
-          // Access token expired or invalid; proceed to check refresh token cookie fallback
-        }
+      if (!token || isAccessTokenRevoked(token)) {
+        return false;
       }
 
-      // Refresh Token Fallback: if access token has expired (15m window) but caller
-      // holds a valid admin refresh token cookie (7d window), grant preview access
-      const refreshToken = req.cookies?.['askrev_refresh_token'];
-      if (refreshToken) {
-        try {
-          const refreshPayload = await this.jwtService.verifyAsync(refreshToken, {
-            secret: getJwtRefreshSecret(),
-          });
-          if (refreshPayload && refreshPayload.sub) {
-            const role = (refreshPayload.role || '').toUpperCase();
-            return (
-              role === UserRole.SUPER_ADMIN ||
-              role === UserRole.ADMIN_OPERATIONS ||
-              role === 'ADMIN'
-            );
-          }
-        } catch {
-          return false;
-        }
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: getJwtAccessSecret(),
+      });
+
+      if (!payload || !payload.sub) {
+        return false;
       }
 
-      return false;
+      const role = (payload.role || '').toUpperCase();
+      return (
+        role === UserRole.SUPER_ADMIN ||
+        role === UserRole.ADMIN_OPERATIONS ||
+        role === 'ADMIN'
+      );
     } catch {
       return false;
     }

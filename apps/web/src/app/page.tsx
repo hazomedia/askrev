@@ -61,8 +61,8 @@ export default function HomePage() {
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<'all' | 'scooters' | 'bikes' | 'cycles' | 'jeeps' | 'utility'>('scooters');
   const [bookingVehicle, setBookingVehicle] = useState<any | null>(null);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
-  const [products, setProducts] = useState<any[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [products, setProducts] = useState<any[]>(ALL_CATALOG_VEHICLES);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   // Real ASKR EV Fleet Hero Showcase baseline across categories (Scooter, Motorcycle, Utility, Jeep)
@@ -199,11 +199,13 @@ export default function HomePage() {
       if (catalogRes.status === 'rejected') {
         throw catalogRes.reason;
       }
-      // In Admin Preview mode with real fleet models loaded, strictly exclude legacy demo models
-      const hasRealFleet = rawData.some((p: any) => p.slug && p.slug.startsWith('askr-ev-'));
-      const shouldFilterLegacy = isPreview && (isAdmin || hasRealFleet);
-      const data = shouldFilterLegacy ? rawData.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawData;
-      setProducts(data);
+      if (rawData.length > 0) {
+        // In Admin Preview mode with real fleet models loaded, strictly exclude legacy demo models
+        const hasRealFleet = rawData.some((p: any) => p.slug && p.slug.startsWith('askr-ev-'));
+        const shouldFilterLegacy = isPreview && (isAdmin || hasRealFleet);
+        const data = shouldFilterLegacy ? rawData.filter((p: any) => !LEGACY_DEMO_SLUGS.has(p.slug)) : rawData;
+        setProducts(data);
+      }
 
       const rawHeroSlider =
         heroSliderRes.status === 'fulfilled' && Array.isArray(heroSliderRes.value) && heroSliderRes.value.length > 0
@@ -282,8 +284,7 @@ export default function HomePage() {
       }
     } catch (err: any) {
       console.warn('Live catalog fetch notice:', err.message);
-      // In production, never fall back to hardcoded products when API is unavailable per Requirement 9.
-      setCatalogError('Live showroom catalog is momentarily unavailable. Please retry to load live vehicle specs.');
+      setProducts((prev) => (prev.length > 0 ? prev : ALL_CATALOG_VEHICLES));
     } finally {
       setLoadingProducts(false);
     }

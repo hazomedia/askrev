@@ -154,7 +154,14 @@ export class StorageService {
       return this.uploadToR2(file, objectKey, detected.mime);
     }
 
-    // 5. Fallback to durable local storage
+    // In production, prevent writing uploads to ephemeral server filesystem
+    if (process.env.NODE_ENV === 'production') {
+      throw new BadRequestException(
+        'Persistent cloud storage (Cloudflare R2) is not configured in production. Ephemeral uploads are disabled until R2 credentials are set.'
+      );
+    }
+
+    // 5. Fallback to durable local storage in development/staging
     return this.uploadToLocal(file, objectKey, detected.mime);
   }
 
@@ -191,7 +198,13 @@ export class StorageService {
       return this.uploadToR2(file, objectKey, detected.mime);
     }
 
-    // Local fallback
+    if (process.env.NODE_ENV === 'production') {
+      throw new BadRequestException(
+        'Persistent cloud storage (Cloudflare R2) is not configured in production. Ephemeral hero uploads are disabled until R2 credentials are set.'
+      );
+    }
+
+    // Local fallback in development/staging
     this.ensureUploadDir();
     const basename = path.basename(objectKey);
     const targetPath = path.join(this.heroUploadDir, kind, basename);

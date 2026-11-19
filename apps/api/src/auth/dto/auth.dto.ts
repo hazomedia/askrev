@@ -64,6 +64,6 @@ export class DisableMfaDto {
 
 export class RefreshTokenDto {
   @IsString()
-  @IsNotEmpty()
-  refreshToken: string;
+  @IsOptional()
+  refreshToken?: string;
 }

@@ -47,6 +47,7 @@ playwright-report
 # Backups and Local Dumps
 backups/
 *.sql
+!packages/database/prisma/migrations/**/*.sql
 *.dump
 
 # Local uploads
