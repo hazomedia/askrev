@@ -1,12 +1,29 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
+let inMemoryCsrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null) {
+  inMemoryCsrfToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      sessionStorage.setItem('askrev_csrf_token', token);
+    } else {
+      sessionStorage.removeItem('askrev_csrf_token');
+    }
+  }
+}
+
 /**
- * Retrieve CSRF token from document cookies (double-submit pattern)
+ * Retrieve CSRF token from document cookies or session storage (double-submit pattern)
  */
 export function getCsrfToken(): string | null {
-  if (typeof document === 'undefined') return null;
+  if (typeof window !== 'undefined') {
+    const fromSession = sessionStorage.getItem('askrev_csrf_token') || inMemoryCsrfToken;
+    if (fromSession) return fromSession;
+  }
+  if (typeof document === 'undefined') return inMemoryCsrfToken;
   const match = document.cookie.match(/(?:^|;\s*)askrev_csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  return match ? decodeURIComponent(match[1]) : inMemoryCsrfToken;
 }
 
 /**
@@ -29,8 +46,12 @@ export function getRefreshToken(): string | null {
  * Tokens are securely managed by the server in HttpOnly cookies, with optional
  * session-scoped in-memory storage for active tab API calls.
  */
-export function setAuthSession(token: string, user: any, refreshToken?: string) {
+export function setAuthSession(token: string, user: any, refreshToken?: string, csrfToken?: string) {
   if (typeof window === 'undefined') return;
+
+  if (csrfToken) {
+    setCsrfToken(csrfToken);
+  }
 
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
 
@@ -55,9 +76,12 @@ export function clearAuthSession() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem('askrev_access_token');
   localStorage.removeItem('askrev_refresh_token');
+  localStorage.setItem('askrev_user', '');
   localStorage.removeItem('askrev_user');
   sessionStorage.removeItem('askrev_admin_access_token');
   sessionStorage.removeItem('askrev_admin_preview');
+  sessionStorage.removeItem('askrev_csrf_token');
+  inMemoryCsrfToken = null;
 }
 
 export const clearAuth = clearAuthSession;
@@ -184,7 +208,11 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     let errorMessage = `API error: ${response.status} ${response.statusText}`;
     try {
       const errData = await response.json();
-      errorMessage = errData.message || errorMessage;
+      if (Array.isArray(errData.message)) {
+        errorMessage = errData.message.join('. ');
+      } else if (errData.message) {
+        errorMessage = errData.message;
+      }
     } catch { }
     throw new Error(errorMessage);
   }
@@ -612,5 +640,24 @@ export async function authRevokeAllSessions(): Promise<{ message: string; succes
  */
 export async function fetchCurrentUserProfile(): Promise<any> {
   return fetchApi<any>('/auth/me');
+}
+
+/**
+ * Bulk archive products safely (sets status = ARCHIVED)
+ */
+export async function bulkArchiveProductsApi(ids: string[]): Promise<{ success: boolean; count: number }> {
+  return fetchApi<{ success: boolean; count: number }>('/admin/products/bulk-archive', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
+/**
+ * Safe restore an archived product back to DRAFT status
+ */
+export async function restoreProductApi(id: string): Promise<{ success: boolean; product: any }> {
+  return fetchApi<{ success: boolean; product: any }>(`/admin/products/${id}/restore`, {
+    method: 'PATCH',
+  });
 }
 

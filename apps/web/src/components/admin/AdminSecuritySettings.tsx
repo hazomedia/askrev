@@ -48,6 +48,8 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordTotpCode, setPasswordTotpCode] = useState('');
+  const [passwordRecoveryCode, setPasswordRecoveryCode] = useState('');
+  const [useRecoveryCodeForPassword, setUseRecoveryCodeForPassword] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -96,6 +98,7 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
     if (initialUser) {
       setUser(initialUser);
     }
+    refreshProfile();
   }, [initialUser]);
 
   // Real-time password strength validation rules
@@ -123,9 +126,15 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
       setPasswordError('New password and confirmation do not match.');
       return;
     }
-    if (user?.twoFactorEnabled && !passwordTotpCode.trim()) {
-      setPasswordError('Two-Factor Authentication is active. Please enter your 6-digit authenticator code.');
-      return;
+    if (user?.twoFactorEnabled) {
+      if (useRecoveryCodeForPassword && !passwordRecoveryCode.trim()) {
+        setPasswordError('Please enter your backup recovery code.');
+        return;
+      }
+      if (!useRecoveryCodeForPassword && !passwordTotpCode.trim()) {
+        setPasswordError('Two-Factor Authentication is active. Please enter your 6-digit authenticator code.');
+        return;
+      }
     }
 
     try {
@@ -134,7 +143,8 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
         currentPassword,
         newPassword,
         confirmPassword,
-        totpCode: user?.twoFactorEnabled ? passwordTotpCode.trim() : undefined,
+        totpCode: user?.twoFactorEnabled && !useRecoveryCodeForPassword ? passwordTotpCode.trim() : undefined,
+        recoveryCode: user?.twoFactorEnabled && useRecoveryCodeForPassword ? passwordRecoveryCode.trim() : undefined,
       });
 
       setPasswordSuccess(
@@ -144,6 +154,7 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
       setNewPassword('');
       setConfirmPassword('');
       setPasswordTotpCode('');
+      setPasswordRecoveryCode('');
 
       // Per security specification, all sessions are terminated; redirect to fresh login
       setTimeout(() => {
@@ -151,7 +162,11 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
         router.push('/auth/login');
       }, 2500);
     } catch (err: any) {
-      setPasswordError(err.message || 'Failed to change password. Please verify your current credentials.');
+      const msg = err.message || 'Failed to change password. Please verify your current credentials.';
+      if (msg.includes('MFA_REQUIRED') || msg.includes('Two-Factor')) {
+        setUser((prev: any) => ({ ...prev, twoFactorEnabled: true }));
+      }
+      setPasswordError(msg);
     } finally {
       setChangingPassword(false);
     }
@@ -439,24 +454,48 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
                 )}
               </div>
 
-              {/* TOTP Code Challenge if MFA Enabled */}
+              {/* TOTP / Recovery Code Challenge if MFA Enabled */}
               {user?.twoFactorEnabled && (
-                <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-200 space-y-1.5">
-                  <label className="block text-xs font-semibold text-amber-900">
-                    Two-Factor Authentication Code <span className="text-red-500">*</span>
-                  </label>
+                <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-amber-900">
+                      {useRecoveryCodeForPassword ? 'Backup Recovery Code' : 'Two-Factor Authentication Code'}{' '}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setUseRecoveryCodeForPassword(!useRecoveryCodeForPassword)}
+                      className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 underline"
+                    >
+                      {useRecoveryCodeForPassword ? 'Use 6-Digit App Code' : 'Use Recovery Code'}
+                    </button>
+                  </div>
                   <p className="text-[11px] text-amber-700">
-                    Enter the current 6-digit verification code from your authenticator app to authorize this password change.
+                    {useRecoveryCodeForPassword
+                      ? 'Enter one of your 8-character emergency backup recovery codes.'
+                      : 'Enter the current 6-digit verification code from your authenticator app.'}
                   </p>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={passwordTotpCode}
-                    onChange={(e) => setPasswordTotpCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="000000"
-                    required
-                    className="w-40 text-center font-mono tracking-widest text-sm px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                  />
+                  {useRecoveryCodeForPassword ? (
+                    <input
+                      type="text"
+                      maxLength={12}
+                      value={passwordRecoveryCode}
+                      onChange={(e) => setPasswordRecoveryCode(e.target.value.trim().toUpperCase())}
+                      placeholder="e.g. A1B2C3D4"
+                      required
+                      className="w-48 text-center font-mono tracking-widest text-sm px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={passwordTotpCode}
+                      onChange={(e) => setPasswordTotpCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      required
+                      className="w-40 text-center font-mono tracking-widest text-sm px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                    />
+                  )}
                 </div>
               )}
 

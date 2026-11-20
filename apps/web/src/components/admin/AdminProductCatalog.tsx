@@ -28,8 +28,14 @@ import {
   Gauge,
   Tag,
   Sparkles,
+  RotateCcw,
 } from 'lucide-react';
-import { fetchApi, uploadProductImageApi } from '../../lib/api';
+import {
+  fetchApi,
+  uploadProductImageApi,
+  bulkArchiveProductsApi,
+  restoreProductApi,
+} from '../../lib/api';
 
 interface ProductItem {
   id: string;
@@ -54,6 +60,7 @@ interface ProductItem {
   warranty?: string;
   powertrain?: string;
   colors?: {
+    id?: string;
     name: string;
     hex: string;
     accentHex?: string;
@@ -61,7 +68,9 @@ interface ProductItem {
     images?: { url: string; isPrimary?: boolean; order?: number }[];
     primaryImage?: string;
     sku?: string;
+    priceINR?: number;
     isAvailable?: boolean;
+    isDefault?: boolean;
   }[];
   specifications?: { label: string; value: string; sub?: string }[];
   highlights?: string[];
@@ -146,8 +155,25 @@ export function AdminProductCatalog() {
     highlights: [] as string[],
   });
 
+  // Bulk Archive State
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [bulkArchiveModalOpen, setBulkArchiveModalOpen] = useState(false);
+  const [bulkArchiving, setBulkArchiving] = useState(false);
+
   // Color inputs
-  const [newColor, setNewColor] = useState({ name: '', hex: '#267DFF', description: '' });
+  const [newColor, setNewColor] = useState({
+    id: '',
+    name: '',
+    hex: '#267DFF',
+    accentHex: '',
+    description: '',
+    sku: '',
+    priceINR: '',
+    isAvailable: true,
+    isDefault: false,
+    primaryImage: '',
+    images: [] as { url: string; order?: number }[],
+  });
   // Spec inputs
   const [newSpec, setNewSpec] = useState({ label: '', value: '', sub: '' });
   // Highlight input
@@ -241,6 +267,46 @@ export function AdminProductCatalog() {
       loadProducts();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to archive product');
+    }
+  };
+
+  const handleRestore = async (product: ProductItem) => {
+    try {
+      await restoreProductApi(product.id);
+      showFeedback('success', `Restored '${product.name}' to DRAFT status.`);
+      loadProducts();
+    } catch (err: any) {
+      showFeedback('error', err.message || 'Failed to restore product');
+    }
+  };
+
+  const handleToggleSelectProduct = (id: string) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedProductIds(products.map((p) => p.id));
+    } else {
+      setSelectedProductIds([]);
+    }
+  };
+
+  const handleExecuteBulkArchive = async () => {
+    if (selectedProductIds.length === 0) return;
+    setBulkArchiving(true);
+    try {
+      const res = await bulkArchiveProductsApi(selectedProductIds);
+      showFeedback('success', `Successfully archived ${res.count || selectedProductIds.length} vehicle(s).`);
+      setSelectedProductIds([]);
+      setBulkArchiveModalOpen(false);
+      loadProducts();
+    } catch (err: any) {
+      showFeedback('error', err.message || 'Bulk archive failed');
+    } finally {
+      setBulkArchiving(false);
     }
   };
 
@@ -471,18 +537,78 @@ export function AdminProductCatalog() {
 
   const handleAddColor = () => {
     if (!newColor.name.trim()) return;
-    setForm((prev: any) => ({
-      ...prev,
-      colors: [...(prev.colors || []), { ...newColor }],
-    }));
-    setNewColor({ name: '', hex: '#267DFF', description: '' });
+    const variantId = newColor.id || `var-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const isFirst = !form.colors || form.colors.length === 0;
+    const shouldBeDefault = newColor.isDefault || isFirst;
+
+    setForm((prev: any) => {
+      const existing = (prev.colors || []).map((c: any) => ({
+        ...c,
+        isDefault: shouldBeDefault ? false : c.isDefault,
+      }));
+      return {
+        ...prev,
+        colors: [
+          ...existing,
+          {
+            ...newColor,
+            id: variantId,
+            priceINR: newColor.priceINR ? Number(newColor.priceINR) : undefined,
+            isDefault: shouldBeDefault,
+            isAvailable: newColor.isAvailable ?? true,
+          },
+        ],
+      };
+    });
+    setNewColor({
+      id: '',
+      name: '',
+      hex: '#267DFF',
+      accentHex: '',
+      description: '',
+      sku: '',
+      priceINR: '',
+      isAvailable: true,
+      isDefault: false,
+      primaryImage: '',
+      images: [],
+    });
+  };
+
+  const handleUpdateColor = (idx: number, patch: any) => {
+    setForm((prev: any) => {
+      const updated = [...(prev.colors || [])];
+      if (patch.isDefault) {
+        updated.forEach((c: any, i: number) => {
+          c.isDefault = i === idx;
+        });
+      }
+      updated[idx] = { ...updated[idx], ...patch };
+      return { ...prev, colors: updated };
+    });
+  };
+
+  const handleMoveColor = (idx: number, direction: 'UP' | 'DOWN') => {
+    setForm((prev: any) => {
+      const list = [...(prev.colors || [])];
+      const target = direction === 'UP' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= list.length) return prev;
+      const tmp = list[idx];
+      list[idx] = list[target];
+      list[target] = tmp;
+      return { ...prev, colors: list };
+    });
   };
 
   const handleRemoveColor = (idx: number) => {
-    setForm((prev: any) => ({
-      ...prev,
-      colors: (prev.colors || []).filter((_: any, i: number) => i !== idx),
-    }));
+    setForm((prev: any) => {
+      const filtered = (prev.colors || []).filter((_: any, i: number) => i !== idx);
+      // If we removed the default, set first remaining as default
+      if (filtered.length > 0 && !filtered.some((c: any) => c.isDefault)) {
+        filtered[0].isDefault = true;
+      }
+      return { ...prev, colors: filtered };
+    });
   };
 
   const handleAddSpec = () => {
@@ -726,6 +852,31 @@ export function AdminProductCatalog() {
         </div>
       </div>
 
+      {/* Bulk Action Bar */}
+      {selectedProductIds.length > 0 && (
+        <div className="flex items-center justify-between p-3.5 bg-blue-50 border border-blue-200 rounded-2xl shadow-xs">
+          <div className="flex items-center gap-2 text-xs font-bold text-blue-900">
+            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+            <span>{selectedProductIds.length} vehicle(s) selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedProductIds([])}
+              className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Clear Selection
+            </button>
+            <button
+              onClick={() => setBulkArchiveModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Bulk Archive ({selectedProductIds.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 3. Product Catalog Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
@@ -744,6 +895,15 @@ export function AdminProductCatalog() {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                  <th className="py-3 px-3 w-8 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedProductIds.length === products.length && products.length > 0}
+                      onChange={handleSelectAll}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      title="Select All"
+                    />
+                  </th>
                   <th className="py-3 px-4 w-12 text-center">Order</th>
                   <th className="py-3 px-4">Vehicle Model</th>
                   <th className="py-3 px-4">Category</th>
@@ -758,6 +918,16 @@ export function AdminProductCatalog() {
               <tbody className="divide-y divide-slate-100">
                 {products.map((p, idx) => (
                   <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                    {/* Selection Checkbox */}
+                    <td className="py-3 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductIds.includes(p.id)}
+                        onChange={() => handleToggleSelectProduct(p.id)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
+
                     {/* Order Controls */}
                     <td className="py-3 px-2 text-center">
                       <div className="flex flex-col items-center justify-center">
@@ -934,13 +1104,23 @@ export function AdminProductCatalog() {
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleArchive(p)}
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300 transition-colors"
-                          title="Archive Model"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {p.status === 'ARCHIVED' ? (
+                          <button
+                            onClick={() => handleRestore(p)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 transition-colors"
+                            title="Restore Model to Draft"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleArchive(p)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300 transition-colors"
+                            title="Archive Model"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1350,156 +1530,329 @@ export function AdminProductCatalog() {
               {/* TAB 4: COLORS & DETAILED SPECS */}
               {modalTab === 'colors' && (
                 <div className="space-y-5">
-                  {/* Colors Builder */}
-                  <div className="space-y-3">
-                    <div className="font-bold text-slate-700">Vehicle Color Swatches</div>
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <input
-                        type="color"
-                        value={newColor.hex}
-                        onChange={(e) => setNewColor({ ...newColor, hex: e.target.value })}
-                        className="w-9 h-9 p-0.5 rounded-lg border border-slate-200 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Color Name (e.g. Glacier White)"
-                        value={newColor.name}
-                        onChange={(e) => setNewColor({ ...newColor, name: e.target.value })}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Finish (e.g. Pearl Gloss)"
-                        value={newColor.description}
-                        onChange={(e) => setNewColor({ ...newColor, description: e.target.value })}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200 flex-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddColor}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold"
-                      >
-                        Add Color
-                      </button>
+                  {/* Comprehensive Color Variants & Custom Finish Management */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-slate-800 text-sm">Vehicle Color & Finish Variants</div>
+                        <p className="text-[11px] text-slate-500">
+                          Configure distinct vehicle paint options, custom SKUs, variant pricing, default selections, and dedicated Cloudflare R2 images.
+                        </p>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        {form.colors?.length || 0} variant(s)
+                      </span>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    {/* New Variant Creation Box */}
+                    <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/30 space-y-3">
+                      <div className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add New Color Variant</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        {/* Swatches */}
+                        <div className="sm:col-span-3 flex items-center gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 block mb-1">Color</label>
+                            <input
+                              type="color"
+                              value={newColor.hex}
+                              onChange={(e) => setNewColor({ ...newColor, hex: e.target.value })}
+                              className="w-10 h-9 p-0.5 rounded-lg border border-slate-300 cursor-pointer bg-white"
+                              title="Primary Hex"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 block mb-1">Accent</label>
+                            <input
+                              type="text"
+                              placeholder="#HEX (opt)"
+                              value={newColor.accentHex}
+                              onChange={(e) => setNewColor({ ...newColor, accentHex: e.target.value })}
+                              className="w-20 px-2 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Variant Name */}
+                        <div className="sm:col-span-3">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-1">Variant Name *</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Sapphire Blue"
+                            value={newColor.name}
+                            onChange={(e) => setNewColor({ ...newColor, name: e.target.value })}
+                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white"
+                          />
+                        </div>
+
+                        {/* Variant SKU */}
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-1">Variant SKU</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. S01-BLU"
+                            value={newColor.sku}
+                            onChange={(e) => setNewColor({ ...newColor, sku: e.target.value })}
+                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-mono"
+                          />
+                        </div>
+
+                        {/* Variant Price */}
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500 block mb-1">Price INR (opt)</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 52000"
+                            value={newColor.priceINR}
+                            onChange={(e) => setNewColor({ ...newColor, priceINR: e.target.value })}
+                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-semibold"
+                          />
+                        </div>
+
+                        {/* Add Button */}
+                        <div className="sm:col-span-2">
+                          <button
+                            type="button"
+                            onClick={handleAddColor}
+                            className="w-full py-1.5 px-3 rounded-lg bg-[#165DAD] hover:bg-[#124B8C] text-white text-xs font-bold transition-colors shadow-xs flex items-center justify-center gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Variant</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-4 text-xs pt-1">
+                        <input
+                          type="text"
+                          placeholder="Finish details (e.g. Metallic Gloss, Matte Satin)"
+                          value={newColor.description}
+                          onChange={(e) => setNewColor({ ...newColor, description: e.target.value })}
+                          className="px-3 py-1 text-xs rounded-lg border border-slate-200 bg-white flex-1 min-w-[200px]"
+                        />
+                        <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={newColor.isDefault}
+                            onChange={(e) => setNewColor({ ...newColor, isDefault: e.target.checked })}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="font-semibold text-[11px]">Set as Default</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={newColor.isAvailable}
+                            onChange={(e) => setNewColor({ ...newColor, isAvailable: e.target.checked })}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="font-semibold text-[11px]">In Stock / Available</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Existing Configured Variants List */}
+                    <div className="space-y-3">
                       {form.colors?.map((c: any, i: number) => (
                         <div
-                          key={i}
-                          className="flex flex-col gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50 min-w-[260px]"
+                          key={c.id || i}
+                          className={`p-3.5 rounded-xl border transition-all ${
+                            c.isDefault
+                              ? 'border-blue-300 bg-blue-50/20 shadow-xs'
+                              : 'border-slate-200 bg-white'
+                          }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="w-4 h-4 rounded-full border border-black/20" style={{ backgroundColor: c.hex }} />
-                              <span className="font-bold text-slate-800">{c.name}</span>
-                            </div>
-                            <button type="button" onClick={() => handleRemoveColor(i)} className="text-slate-400 hover:text-rose-500">
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          {c.description && <div className="text-[11px] text-slate-500">{c.description}</div>}
-
-                          {/* Variant Specific Image Selection */}
-                          <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                              Variant-Specific Image
-                            </label>
-                            {form.images && form.images.length > 0 ? (
-                              <select
-                                value={c.primaryImage || (c.images && c.images[0]?.url) || ''}
-                                onChange={(e) => {
-                                  const selectedUrl = e.target.value;
-                                  setForm((prev: any) => {
-                                    const updatedColors = [...(prev.colors || [])];
-                                    updatedColors[i] = {
-                                      ...updatedColors[i],
-                                      primaryImage: selectedUrl,
-                                      images: selectedUrl ? [{ url: selectedUrl, isPrimary: true, order: 1 }] : [],
-                                    };
-                                    return { ...prev, colors: updatedColors };
-                                  });
+                          {/* Variant Card Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className="w-6 h-6 rounded-full border shadow-xs shrink-0"
+                                style={{
+                                  backgroundColor: c.hex,
+                                  borderColor: c.accentHex || 'rgba(0,0,0,0.2)',
+                                  borderWidth: c.accentHex ? '2px' : '1px',
                                 }}
-                                className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 bg-white"
+                              />
+                              <div>
+                                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                  <span>{c.name}</span>
+                                  {c.sku && (
+                                    <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                                      {c.sku}
+                                    </span>
+                                  )}
+                                  {c.isDefault && (
+                                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-bold border border-emerald-200">
+                                      DEFAULT
+                                    </span>
+                                  )}
+                                  {!c.isAvailable && (
+                                    <span className="text-[10px] text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded font-bold border border-rose-200">
+                                      OUT OF STOCK
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  {c.description || 'Standard finish'}
+                                  {c.priceINR ? ` • ₹${Number(c.priceINR).toLocaleString('en-IN')}` : ''}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Reordering & Delete Controls */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleMoveColor(i, 'UP')}
+                                disabled={i === 0}
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 disabled:opacity-20"
+                                title="Move Up"
                               >
-                                <option value="">-- Use Default Model Gallery --</option>
-                                {form.images.map((img: any, imgIdx: number) => (
-                                  <option key={imgIdx} value={img.url}>
-                                    Photo #{imgIdx + 1} {img.caption ? `(${img.caption})` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveColor(i, 'DOWN')}
+                                disabled={i === form.colors.length - 1}
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 disabled:opacity-20"
+                                title="Move Down"
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveColor(i)}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 transition-colors ml-1"
+                                title="Remove Variant"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* In-place Editable Fields */}
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2.5">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Name</label>
                               <input
                                 type="text"
-                                placeholder="Image URL for this colour"
-                                value={c.primaryImage || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setForm((prev: any) => {
-                                    const updatedColors = [...(prev.colors || [])];
-                                    updatedColors[i] = {
-                                      ...updatedColors[i],
-                                      primaryImage: val,
-                                      images: val ? [{ url: val, isPrimary: true, order: 1 }] : [],
-                                    };
-                                    return { ...prev, colors: updatedColors };
-                                  });
-                                }}
-                                className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200"
+                                value={c.name}
+                                onChange={(e) => handleUpdateColor(i, { name: e.target.value })}
+                                className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200"
                               />
-                            )}
-
-                            {(c.primaryImage || (c.images && c.images[0]?.url)) && (
-                              <div className="flex items-center gap-2 mt-1">
-                                <div className="w-8 h-8 rounded bg-slate-900 overflow-hidden shrink-0">
-                                  <img
-                                    src={c.primaryImage || c.images[0]?.url}
-                                    alt={c.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </div>
-                                <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> Variant photo linked
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Direct Variant Photo Upload */}
-                            <div className="pt-1">
-                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-700 cursor-pointer transition-colors">
-                                <Upload className="w-2.5 h-2.5" />
-                                <span>Upload Variant Photo</span>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-400 block mb-0.5">SKU</label>
+                              <input
+                                type="text"
+                                value={c.sku || ''}
+                                onChange={(e) => handleUpdateColor(i, { sku: e.target.value })}
+                                className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Variant Price (INR)</label>
+                              <input
+                                type="number"
+                                placeholder="Uses base price"
+                                value={c.priceINR || ''}
+                                onChange={(e) =>
+                                  handleUpdateColor(i, {
+                                    priceINR: e.target.value ? Number(e.target.value) : undefined,
+                                  })
+                                }
+                                className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 font-semibold"
+                              />
+                            </div>
+                            <div className="flex items-center gap-3 pt-3">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-xs">
                                 <input
-                                  type="file"
-                                  accept="image/jpeg,image/png,image/webp"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    try {
-                                      const res = await uploadProductImageApi(
-                                        file,
-                                        `${form.slug || form.name || 'catalog'}-${c.name}`,
-                                        'variant'
-                                      );
-                                      setForm((prev: any) => {
-                                        const updatedColors = [...(prev.colors || [])];
-                                        updatedColors[i] = {
-                                          ...updatedColors[i],
-                                          primaryImage: res.url,
-                                          images: [{ url: res.url, isPrimary: true, order: 1 }],
-                                        };
-                                        return { ...prev, colors: updatedColors };
-                                      });
-                                      showFeedback('success', `Uploaded variant photo for ${c.name}`);
-                                    } catch (err: any) {
-                                      showFeedback('error', err.message || 'Variant upload failed');
-                                    }
-                                  }}
+                                  type="radio"
+                                  name="defaultVariantRadio"
+                                  checked={Boolean(c.isDefault)}
+                                  onChange={() => handleUpdateColor(i, { isDefault: true })}
+                                  className="text-blue-600"
                                 />
+                                <span className="text-[11px] font-semibold text-slate-700">Default</span>
+                              </label>
+                              <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={c.isAvailable !== false}
+                                  onChange={(e) => handleUpdateColor(i, { isAvailable: e.target.checked })}
+                                  className="rounded border-slate-300 text-blue-600"
+                                />
+                                <span className="text-[11px] font-semibold text-slate-700">In Stock</span>
                               </label>
                             </div>
+                          </div>
+
+                          {/* Variant Photo & Cloudflare R2 Upload */}
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-12 h-10 rounded-lg bg-slate-900 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                                {c.primaryImage ? (
+                                  <img src={c.primaryImage} alt={c.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <ImageIcon className="w-4 h-4 text-slate-500" />
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                {form.images && form.images.length > 0 ? (
+                                  <select
+                                    value={c.primaryImage || ''}
+                                    onChange={(e) => handleUpdateColor(i, { primaryImage: e.target.value })}
+                                    className="px-2 py-1 text-[11px] rounded-lg border border-slate-200 bg-white max-w-xs"
+                                  >
+                                    <option value="">-- Use Default Model Gallery --</option>
+                                    {form.images.map((img: any, imgIdx: number) => (
+                                      <option key={imgIdx} value={img.url}>
+                                        Photo #{imgIdx + 1} {img.caption ? `(${img.caption})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    placeholder="Variant photo URL"
+                                    value={c.primaryImage || ''}
+                                    onChange={(e) => handleUpdateColor(i, { primaryImage: e.target.value })}
+                                    className="px-2 py-1 text-[11px] rounded-lg border border-slate-200 w-52"
+                                  />
+                                )}
+                              </div>
+                            </div>
+
+                            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition-colors shrink-0">
+                              <Upload className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Upload to R2</span>
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  try {
+                                    const res = await uploadProductImageApi(
+                                      file,
+                                      `${form.slug || form.name || 'catalog'}-${c.name.toLowerCase().replace(/\s+/g, '-')}`,
+                                      'variant'
+                                    );
+                                    handleUpdateColor(i, {
+                                      primaryImage: res.url,
+                                      images: [{ url: res.url, isPrimary: true, order: 1 }],
+                                    });
+                                    showFeedback('success', `Uploaded variant photo for '${c.name}'`);
+                                  } catch (err: any) {
+                                    showFeedback('error', err.message || 'Variant upload failed');
+                                  }
+                                }}
+                              />
+                            </label>
                           </div>
                         </div>
                       ))}
@@ -1891,6 +2244,60 @@ export function AdminProductCatalog() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Bulk Archive Confirmation Modal */}
+      {bulkArchiveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Bulk Archive Confirmation</h3>
+                <p className="text-[11px] text-slate-500">Remove selected vehicles from public showroom</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to archive <strong>{selectedProductIds.length}</strong> selected vehicle models?
+            </p>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl max-h-36 overflow-y-auto space-y-1">
+              {products
+                .filter((p) => selectedProductIds.includes(p.id))
+                .map((p) => (
+                  <div key={p.id} className="text-[11px] font-semibold text-slate-800 flex items-center justify-between">
+                    <span>{p.name} ({p.brand})</span>
+                    <span className="text-[10px] text-slate-500 uppercase">{p.category}</span>
+                  </div>
+                ))}
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Archived models will no longer appear on public customer-facing pages. Product records and Cloudflare R2 images are safely preserved and can be restored at any time.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setBulkArchiveModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkArchiving}
+                onClick={handleExecuteBulkArchive}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+              >
+                {bulkArchiving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{bulkArchiving ? 'Archiving...' : `Confirm Archive (${selectedProductIds.length})`}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

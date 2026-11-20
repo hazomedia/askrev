@@ -44,7 +44,7 @@ export default function LoginPage() {
       });
 
       // Secure session: Admin tokens are stored strictly in HttpOnly cookies, never localStorage
-      setAuthSession(data.tokens?.accessToken, data.user, data.tokens?.refreshToken);
+      setAuthSession(data.tokens?.accessToken, data.user, data.tokens?.refreshToken, data.csrfToken);
 
       if (['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(data.user.role)) {
         router.push('/admin');

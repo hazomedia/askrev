@@ -240,6 +240,25 @@ export class ProductsAdminController {
     return this.productsService.reorderProducts(items, user?.memberId || user?.id);
   }
 
+  @Post('bulk-archive')
+  async bulkArchive(
+    @Body('ids') ids: string[],
+    @CurrentUser() user: any
+  ) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('ids array is required');
+    }
+    return this.productsService.bulkArchive(ids, user?.memberId || user?.id);
+  }
+
+  @Patch(':id/restore')
+  async restoreProduct(
+    @Param('id') id: string,
+    @CurrentUser() user: any
+  ) {
+    return this.productsService.restoreProduct(id, user?.memberId || user?.id);
+  }
+
   @Delete(':id')
   async deleteProduct(
     @Param('id') id: string,

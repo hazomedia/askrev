@@ -70,15 +70,22 @@ export default function BikeDetailPage() {
   const currentColor =
     vehicle?.colors && vehicle.colors[selectedColorIndex]
       ? vehicle.colors[selectedColorIndex]
-      : { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' };
+      : vehicle?.colors?.[0] || { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' };
 
   // Compute active gallery images based on selected colour variant:
   const activeGalleryImages: string[] = React.useMemo(() => {
-    if (currentColor?.images && Array.isArray(currentColor.images) && currentColor.images.length > 0) {
-      return currentColor.images.map((img: any) => (typeof img === 'string' ? img : img?.url || '')).filter(Boolean);
-    }
+    const list: string[] = [];
     if (currentColor?.primaryImage) {
-      return [currentColor.primaryImage];
+      list.push(currentColor.primaryImage);
+    }
+    if (currentColor?.images && Array.isArray(currentColor.images)) {
+      currentColor.images.forEach((img: any) => {
+        const u = typeof img === 'string' ? img : img?.url;
+        if (u && !list.includes(u)) list.push(u);
+      });
+    }
+    if (list.length > 0) {
+      return list;
     }
     if (Array.isArray(vehicle?.galleryImages) && vehicle.galleryImages.length > 0) {
       return vehicle.galleryImages;
@@ -106,6 +113,15 @@ export default function BikeDetailPage() {
       const product = await fetchProductBySlug(target, isPreview);
       if (product && product.id) {
         setVehicle(product);
+        if (Array.isArray(product.colors) && product.colors.length > 0) {
+          const defIdx = product.colors.findIndex((c: any) => c.isDefault && c.isAvailable !== false);
+          if (defIdx >= 0) {
+            setSelectedColorIndex(defIdx);
+          } else {
+            const firstAvail = product.colors.findIndex((c: any) => c.isAvailable !== false);
+            setSelectedColorIndex(firstAvail >= 0 ? firstAvail : 0);
+          }
+        }
         setLoading(false);
         return;
       }
@@ -124,6 +140,10 @@ export default function BikeDetailPage() {
     const staticMatch = getVehicleBySlugOrCode(target);
     if (staticMatch) {
       setVehicle(staticMatch);
+      if (Array.isArray(staticMatch.colors) && staticMatch.colors.length > 0) {
+        const defIdx = staticMatch.colors.findIndex((c: any) => c.isDefault && c.isAvailable !== false);
+        setSelectedColorIndex(defIdx >= 0 ? defIdx : 0);
+      }
       setLoading(false);
       return;
     }
@@ -209,7 +229,12 @@ export default function BikeDetailPage() {
 
   const activeImageSrc = activeGalleryImages[activeGalleryIndex] || activeGalleryImages[0];
   const hasMetrics = Boolean(vehicle.rangeKm || vehicle.topSpeedKmh || vehicle.batteryCapacityKwh || vehicle.chargingTimeHours);
-  const priceDisplay = vehicle.sellingPriceINR || vehicle.exShowroomPriceINR;
+  const priceDisplay =
+    currentColor?.priceINR && Number(currentColor.priceINR) > 0
+      ? Number(currentColor.priceINR)
+      : (vehicle.sellingPriceINR || vehicle.exShowroomPriceINR);
+  const activeSku = currentColor?.sku || vehicle.modelCode || vehicle.slug;
+  const isOutOfStock = currentColor?.isAvailable === false;
 
   // Category breadcrumb link
   const categoryHref =
@@ -307,25 +332,55 @@ export default function BikeDetailPage() {
                         Finish:
                       </span>
                       <div className="flex items-center gap-2">
-                        {vehicle.colors.map((c: any, idx: number) => (
-                          <button
-                            key={c.name}
-                            onClick={() => setSelectedColorIndex(idx)}
-                            className={`w-7 h-7 rounded-full transition-transform border ${selectedColorIndex === idx
-                                ? 'scale-125 border-white ring-2 ring-[#267DFF] shadow-sm'
-                                : 'border-white/20 hover:scale-110'
+                        {vehicle.colors.map((c: any, idx: number) => {
+                          const isSelected = selectedColorIndex === idx;
+                          const isAvail = c.isAvailable !== false;
+                          return (
+                            <button
+                              key={c.id || c.name || idx}
+                              onClick={() => setSelectedColorIndex(idx)}
+                              className={`relative w-8 h-8 rounded-full transition-transform border flex items-center justify-center ${
+                                isSelected
+                                  ? 'scale-125 border-white ring-2 ring-[#267DFF] shadow-lg'
+                                  : isAvail
+                                  ? 'border-white/20 hover:scale-110 opacity-90'
+                                  : 'border-white/10 opacity-40 hover:opacity-75'
                               }`}
-                            style={{ backgroundColor: c.hex }}
-                            title={c.name}
-                            aria-label={`Select ${c.name}`}
-                          />
-                        ))}
+                              style={{
+                                backgroundColor: c.hex,
+                                borderColor: c.accentHex ? c.accentHex : isSelected ? '#ffffff' : 'rgba(255,255,255,0.2)',
+                              }}
+                              title={`${c.name}${c.sku ? ` (${c.sku})` : ''}${!isAvail ? ' - Out of Stock' : ''}`}
+                              aria-label={`Select ${c.name}`}
+                            >
+                              {!isAvail && (
+                                <span className="absolute inset-0 flex items-center justify-center">
+                                  <span className="w-full h-0.5 bg-rose-500 rotate-45 transform" />
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
                     <div className="text-xs text-right">
-                      <span className="font-bold text-[#F7FAFF]">{currentColor.name}</span>
-                      <span className="text-[#AAB7C8] block text-[11px]">{currentColor.description}</span>
+                      <div className="flex items-center gap-2 justify-end">
+                        <span className="font-bold text-[#F7FAFF]">{currentColor.name}</span>
+                        {currentColor.sku && (
+                          <span className="font-mono text-[10px] text-[#50D9FF] bg-blue-500/10 px-1.5 py-0.5 rounded">
+                            {currentColor.sku}
+                          </span>
+                        )}
+                        {currentColor.isDefault && (
+                          <span className="text-[10px] text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded font-semibold">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[#AAB7C8] block text-[11px]">
+                        {currentColor.description || (isOutOfStock ? 'Out of stock' : 'In stock')}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -334,8 +389,15 @@ export default function BikeDetailPage() {
               {/* Right Column: Pricing, Specs & Booking Action */}
               <div className="lg:col-span-5 space-y-6">
                 <div>
-                  <div className="text-xs font-bold text-[#50D9FF] uppercase tracking-wider mb-1">
-                    {vehicle.manufacturer || vehicle.brand || 'ASKR EV Mobility'} • {vehicle.modelCode || vehicle.slug}
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-[#50D9FF] uppercase tracking-wider mb-1">
+                    <span>{vehicle.manufacturer || vehicle.brand || 'ASKR EV Mobility'}</span>
+                    <span>•</span>
+                    <span className="font-mono">{activeSku}</span>
+                    {isOutOfStock && (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        Variant Unavailable
+                      </span>
+                    )}
                   </div>
                   <h1 className="text-3xl sm:text-4xl font-black text-[#F7FAFF] tracking-tight">
                     {vehicle.name}
@@ -633,6 +695,7 @@ export default function BikeDetailPage() {
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           user={userProfile}
+          initialVariant={currentColor}
           onSuccess={() => setModalOpen(false)}
         />
       )}

@@ -133,5 +133,60 @@ describe('ProductsService', () => {
     expect(result.count).toBe(2);
     expect(prismaMock.$transaction).toHaveBeenCalled();
   });
+
+  it('should bulk archive products and create audit logs', async () => {
+    prismaMock.product.updateMany = vi.fn().mockResolvedValue({ count: 2 });
+    prismaMock.auditLog.create = vi.fn().mockResolvedValue({});
+
+    const result = await service.bulkArchive(['p-1', 'p-2'], 'ADMIN-USER-1');
+    expect(result.success).toBe(true);
+    expect(result.count).toBe(2);
+    expect(prismaMock.product.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['p-1', 'p-2'] } },
+      data: { status: ProductStatus.ARCHIVED },
+    });
+    expect(prismaMock.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('should restore an archived product back to DRAFT', async () => {
+    prismaMock.product.findUnique.mockResolvedValue({
+      id: 'p-archived',
+      name: 'Archived Bike',
+      status: ProductStatus.ARCHIVED,
+      category: ProductCategory.BIKE,
+    });
+    prismaMock.product.update.mockResolvedValue({
+      id: 'p-archived',
+      name: 'Archived Bike',
+      status: ProductStatus.DRAFT,
+      category: ProductCategory.BIKE,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await service.restoreProduct('p-archived', 'ADMIN-USER-1');
+    expect(result.success).toBe(true);
+    expect(result.product.status).toBe(ProductStatus.DRAFT);
+    expect(prismaMock.product.update).toHaveBeenCalledWith({
+      where: { id: 'p-archived' },
+      data: { status: ProductStatus.DRAFT },
+    });
+    expect(prismaMock.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('should block deletion if product is bound to hero slides', async () => {
+    prismaMock.product.findUnique.mockResolvedValue({
+      id: 'p-hero',
+      name: 'Hero Scooter',
+      evBikeId: null,
+    });
+    prismaMock.homepageHeroSlide = {
+      count: vi.fn().mockResolvedValue(1),
+    };
+
+    await expect(service.deleteProduct('p-hero', true, 'ADMIN-USER-1')).rejects.toThrow(
+      /Cannot permanently delete product/
+    );
+  });
 });
 

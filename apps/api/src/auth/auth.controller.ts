@@ -11,6 +11,23 @@ import { CurrentUser } from './decorators/current-user.decorator';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  private getCookieOptions(req: Request) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const hostname = (req?.hostname || (req?.headers?.host ? String(req.headers.host) : '')).toLowerCase();
+    const isAskrDomain = hostname.includes('askrevdrive.com');
+
+    const options: any = {
+      secure: isProduction,
+      sameSite: isAskrDomain ? 'lax' : (isProduction ? 'none' : 'lax'),
+    };
+
+    if (isAskrDomain && isProduction) {
+      options.domain = '.askrevdrive.com';
+    }
+
+    return options;
+  }
+
   @Post('register')
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
@@ -19,35 +36,33 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ) {
     const result = await this.authService.login(dto);
 
     // Set secure HttpOnly cookies for browser sessions
-    const isProduction = process.env.NODE_ENV === 'production';
     const csrfToken = crypto.randomBytes(32).toString('hex');
+    const cookieOpts = this.getCookieOptions(req);
 
     res.cookie('askrev_access_token', result.tokens.accessToken, {
+      ...cookieOpts,
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
       path: '/',
       maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
     res.cookie('askrev_refresh_token', result.tokens.refreshToken, {
+      ...cookieOpts,
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
       path: '/api/auth',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     // Double-submit CSRF token (readable by JavaScript to attach as X-CSRF-Token)
     res.cookie('askrev_csrf_token', csrfToken, {
+      ...cookieOpts,
       httpOnly: false,
-      secure: isProduction,
-      sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -69,29 +84,26 @@ export class AuthController {
     const refreshToken = dto?.refreshToken || req.cookies?.['askrev_refresh_token'];
     const result = await this.authService.refresh(refreshToken);
 
-    const isProduction = process.env.NODE_ENV === 'production';
     const csrfToken = crypto.randomBytes(32).toString('hex');
+    const cookieOpts = this.getCookieOptions(req);
 
     res.cookie('askrev_access_token', result.tokens.accessToken, {
+      ...cookieOpts,
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
       path: '/',
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie('askrev_refresh_token', result.tokens.refreshToken, {
+      ...cookieOpts,
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
       path: '/api/auth',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.cookie('askrev_csrf_token', csrfToken, {
+      ...cookieOpts,
       httpOnly: false,
-      secure: isProduction,
-      sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -116,10 +128,11 @@ export class AuthController {
       ? authHeader.slice(7).trim()
       : req.cookies?.['askrev_access_token'] || undefined;
 
+    const cookieOpts = this.getCookieOptions(req);
     // Clear all session cookies
-    res.clearCookie('askrev_access_token', { path: '/' });
-    res.clearCookie('askrev_refresh_token', { path: '/api/auth' });
-    res.clearCookie('askrev_csrf_token', { path: '/' });
+    res.clearCookie('askrev_access_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_refresh_token', { ...cookieOpts, path: '/api/auth' });
+    res.clearCookie('askrev_csrf_token', { ...cookieOpts, path: '/' });
 
     return this.authService.logout(user.id, token);
   }
@@ -163,10 +176,11 @@ export class AuthController {
 
     const result = await this.authService.changePassword(user.id, dto, token);
 
+    const cookieOpts = this.getCookieOptions(req);
     // Clear session cookies to enforce re-authentication
-    res.clearCookie('askrev_access_token', { path: '/' });
-    res.clearCookie('askrev_refresh_token', { path: '/api/auth' });
-    res.clearCookie('askrev_csrf_token', { path: '/' });
+    res.clearCookie('askrev_access_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_refresh_token', { ...cookieOpts, path: '/api/auth' });
+    res.clearCookie('askrev_csrf_token', { ...cookieOpts, path: '/' });
 
     return result;
   }
@@ -185,9 +199,10 @@ export class AuthController {
 
     const result = await this.authService.revokeAllSessions(user.id, token);
 
-    res.clearCookie('askrev_access_token', { path: '/' });
-    res.clearCookie('askrev_refresh_token', { path: '/api/auth' });
-    res.clearCookie('askrev_csrf_token', { path: '/' });
+    const cookieOpts = this.getCookieOptions(req);
+    res.clearCookie('askrev_access_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_refresh_token', { ...cookieOpts, path: '/api/auth' });
+    res.clearCookie('askrev_csrf_token', { ...cookieOpts, path: '/' });
 
     return result;
   }

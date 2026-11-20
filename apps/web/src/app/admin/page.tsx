@@ -559,6 +559,15 @@ export default function AdminPage() {
     });
   }, [reconciliation, reconciliationSearch]);
 
+  const handleSelectTab = (tab: AdminTab) => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+    if (typeof window !== 'undefined') {
+      const url = tab === 'overview' ? '/admin' : `/admin?tab=${tab}`;
+      window.history.replaceState(null, '', url);
+    }
+  };
+
   const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'hero-slider', label: 'Hero Slider', icon: Sliders },
@@ -661,7 +670,7 @@ export default function AdminPage() {
               </button>
 
               <button
-                onClick={() => setActiveTab('security')}
+                onClick={() => handleSelectTab('security')}
                 className={`flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg transition-colors ${
                   activeTab === 'security'
                     ? 'bg-indigo-50 text-indigo-700'
@@ -746,10 +755,7 @@ export default function AdminPage() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setMobileMenuOpen(false);
-                  }}
+                  onClick={() => handleSelectTab(item.id)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${
                     isActive
                       ? 'bg-blue-50 text-[#165DAD] font-bold shadow-xs'

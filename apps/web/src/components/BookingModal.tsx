@@ -9,6 +9,7 @@ interface BookingModalProps {
   onClose: () => void;
   user?: any | null;
   onSuccess?: () => void;
+  initialVariant?: any;
 }
 
 export default function BookingModal({
@@ -17,6 +18,7 @@ export default function BookingModal({
   onClose,
   user,
   onSuccess,
+  initialVariant,
 }: BookingModalProps) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -25,6 +27,16 @@ export default function BookingModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  const availableVariants = React.useMemo(() => {
+    if (bike?.colors && Array.isArray(bike.colors) && bike.colors.length > 0) {
+      return bike.colors;
+    }
+    if (bike?.variants && Array.isArray(bike.variants) && bike.variants.length > 0) {
+      return bike.variants;
+    }
+    return [];
+  }, [bike]);
+
   useEffect(() => {
     if (!isOpen) {
       setSubmitted(false);
@@ -32,10 +44,19 @@ export default function BookingModal({
       setFullName('');
       setPhone('');
       setCity('');
-    } else if (bike?.variants && bike.variants.length > 0) {
-      setSelectedVariant(bike.variants[0].name);
+    } else {
+      if (initialVariant?.name) {
+        setSelectedVariant(initialVariant.name);
+      } else if (typeof initialVariant === 'string' && initialVariant) {
+        setSelectedVariant(initialVariant);
+      } else if (availableVariants.length > 0) {
+        const defaultVar = availableVariants.find((v: any) => v.isDefault && v.isAvailable !== false) || availableVariants[0];
+        setSelectedVariant(defaultVar.name);
+      } else {
+        setSelectedVariant('Standard Edition');
+      }
     }
-  }, [isOpen, bike]);
+  }, [isOpen, initialVariant, availableVariants]);
 
   if (!isOpen || !bike) return null;
 
@@ -223,15 +244,15 @@ export default function BookingModal({
                     <label className="text-xs font-semibold text-[#AAB7C8] block mb-1">
                       Preferred Variant
                     </label>
-                    {bike.variants && bike.variants.length > 0 ? (
+                    {availableVariants && availableVariants.length > 0 ? (
                       <select
                         value={selectedVariant}
                         onChange={(e) => setSelectedVariant(e.target.value)}
                         className="w-full px-3 py-2.5 rounded-xl bg-[#080B12] border border-white/15 focus:border-[#267DFF] focus:outline-none text-xs text-[#F7FAFF]"
                       >
-                        {bike.variants.map((v: any) => (
-                          <option key={v.name} value={v.name} className="bg-[#101827]">
-                            {v.name}
+                        {availableVariants.map((v: any) => (
+                          <option key={v.id || v.name} value={v.name} className="bg-[#101827]">
+                            {v.name} {v.sku ? `(${v.sku})` : ''} {v.priceINR ? `— ₹${Number(v.priceINR).toLocaleString('en-IN')}` : ''} {!v.isAvailable && v.isAvailable !== undefined ? '(Out of Stock)' : ''}
                           </option>
                         ))}
                       </select>

@@ -641,6 +641,40 @@ export class ProductsService {
     return { success: true, count: items.length };
   }
 
+  async bulkArchive(ids: string[], actorId?: string) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('A non-empty array of product IDs is required for bulk archival');
+    }
+
+    const result = await this.prisma.product.updateMany({
+      where: { id: { in: ids } },
+      data: { status: ProductStatus.ARCHIVED },
+    });
+
+    await this.recordAuditLog(actorId, 'PRODUCT_BULK_ARCHIVE', null, {
+      requestedCount: ids.length,
+      archivedCount: result.count,
+      productIds: ids,
+    });
+
+    return { success: true, count: result.count };
+  }
+
+  async restoreProduct(id: string, actorId?: string) {
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Product with ID '${id}' not found`);
+    }
+
+    const restored = await this.prisma.product.update({
+      where: { id },
+      data: { status: ProductStatus.DRAFT },
+    });
+
+    await this.recordAuditLog(actorId, 'PRODUCT_RESTORE', id, { name: existing.name });
+    return { success: true, product: this.formatProduct(restored) };
+  }
+
   async deleteProduct(id: string, permanent: boolean = false, actorId?: string) {
     const existing = await this.prisma.product.findUnique({ where: { id } });
     if (!existing) {
@@ -648,6 +682,28 @@ export class ProductsService {
     }
 
     if (permanent) {
+      // Safety check: Prevent deletion if linked to active bookings via EvBike
+      if (existing.evBikeId) {
+        const bookingCount = await this.prisma.evBooking.count({
+          where: { bikeId: existing.evBikeId },
+        });
+        if (bookingCount > 0) {
+          throw new BadRequestException(
+            `Cannot permanently delete product '${existing.name}': Referenced by ${bookingCount} customer booking(s). Please archive the product instead.`
+          );
+        }
+      }
+
+      // Safety check: Prevent deletion if linked to hero slider slides
+      const heroSlideCount = await this.prisma.homepageHeroSlide.count({
+        where: { linkedProductId: id },
+      });
+      if (heroSlideCount > 0) {
+        throw new BadRequestException(
+          `Cannot permanently delete product '${existing.name}': Linked to ${heroSlideCount} homepage hero slide(s). Please unbind or archive instead.`
+        );
+      }
+
       await this.prisma.product.delete({ where: { id } });
       await this.recordAuditLog(actorId, 'PRODUCT_DELETE_PERMANENT', id, { name: existing.name });
       return { success: true, permanent: true, deletedId: id };
