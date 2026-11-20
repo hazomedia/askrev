@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface UploadResult {
@@ -23,6 +23,7 @@ export class StorageService {
   private readonly uploadDir = path.resolve(process.cwd(), '../web/public/uploads/products');
   private readonly heroUploadDir = path.resolve(process.cwd(), '../web/public/uploads/hero');
   private s3Client: S3Client | null = null;
+  private bucketName = '';
   private isR2Configured = false;
 
   constructor(private readonly prisma: PrismaService) {
@@ -34,9 +35,9 @@ export class StorageService {
     const accountId = process.env.R2_ACCOUNT_ID?.trim();
     const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
     const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
-    const bucketName = process.env.R2_BUCKET_NAME?.trim();
+    const bucketName = process.env.R2_BUCKET_NAME?.trim() || 'askrev-media';
 
-    if (accountId && accessKeyId && secretAccessKey && bucketName) {
+    if (accountId && accessKeyId && secretAccessKey) {
       try {
         this.s3Client = new S3Client({
           region: 'auto',
@@ -46,8 +47,9 @@ export class StorageService {
             secretAccessKey,
           },
         });
+        this.bucketName = bucketName;
         this.isR2Configured = true;
-        this.logger.log(`⚡ Cloudflare R2 Free Tier Storage Active (Bucket: ${bucketName})`);
+        this.logger.log(`⚡ Cloudflare R2 Storage Service Active (Bucket: ${bucketName})`);
       } catch (err: any) {
         this.logger.error(`Failed to initialize Cloudflare R2 client: ${err.message}`);
         this.isR2Configured = false;
@@ -58,11 +60,22 @@ export class StorageService {
     }
   }
 
+  public getS3Client(): S3Client | null {
+    return this.s3Client;
+  }
+
+  public getBucketName(): string {
+    return this.bucketName;
+  }
+
+  public isConfigured(): boolean {
+    return this.isR2Configured && this.s3Client !== null;
+  }
+
   private ensureUploadDir() {
     try {
       if (!fs.existsSync(this.uploadDir)) {
         fs.mkdirSync(this.uploadDir, { recursive: true });
-        this.logger.log(`Created product upload directory: ${this.uploadDir}`);
       }
       const heroDesktopDir = path.join(this.heroUploadDir, 'desktop');
       const heroMobileDir = path.join(this.heroUploadDir, 'mobile');
@@ -73,7 +86,7 @@ export class StorageService {
         fs.mkdirSync(heroMobileDir, { recursive: true });
       }
     } catch (err: any) {
-      this.logger.error(`Could not create upload directory: ${err.message}`);
+      this.logger.error(`Could not create local upload directory: ${err.message}`);
     }
   }
 
@@ -81,7 +94,7 @@ export class StorageService {
    * Cryptographic file signature (magic numbers) detection.
    * Prevents MIME-spoofing and malicious file execution.
    */
-  private detectMagicMime(buffer: Buffer): { mime: string; ext: string } | null {
+  public detectMagicMime(buffer: Buffer): { mime: string; ext: string } | null {
     if (!buffer || buffer.length < 12) return null;
 
     // JPEG: FF D8 FF
@@ -123,8 +136,16 @@ export class StorageService {
   /**
    * Upload vehicle photograph with magic byte validation and size enforcement.
    * Direct to Cloudflare R2 when configured, otherwise durable local static storage.
+   *
+   * Structure:
+   * Gallery: vehicles/{slug}/gallery/{uuid}.{ext}
+   * Variants: vehicles/{slug}/variants/{uuid}.{ext}
    */
-  async uploadProductImage(file: Express.Multer.File, slugPrefix = 'catalog'): Promise<UploadResult> {
+  async uploadProductImage(
+    file: Express.Multer.File,
+    slugPrefix = 'catalog',
+    target: 'gallery' | 'variant' | 'variants' = 'gallery'
+  ): Promise<UploadResult> {
     if (!file || !file.buffer) {
       throw new BadRequestException('No image file payload provided');
     }
@@ -144,10 +165,11 @@ export class StorageService {
       );
     }
 
-    // 3. Generate secure, collision-free object key
-    const cleanPrefix = slugPrefix.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 30);
-    const uniqueHash = crypto.randomBytes(8).toString('hex');
-    const objectKey = `products/${cleanPrefix}/${Date.now()}_${uniqueHash}.${detected.ext}`;
+    // 3. Generate secure, collision-free object key matching production structure
+    const cleanPrefix = slugPrefix.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 35) || 'catalog';
+    const subfolder = target === 'variant' || target === 'variants' ? 'variants' : 'gallery';
+    const uuid = crypto.randomUUID();
+    const objectKey = `vehicles/${cleanPrefix}/${subfolder}/${uuid}.${detected.ext}`;
 
     // 4. If Cloudflare R2 is configured, upload to Cloudflare R2
     if (this.isR2Configured && this.s3Client) {
@@ -167,6 +189,10 @@ export class StorageService {
 
   /**
    * Upload hero slide photograph (desktop or mobile) with strict validation.
+   *
+   * Structure:
+   * Desktop: hero/desktop/{uuid}.{ext}
+   * Mobile: hero/mobile/{uuid}.{ext}
    */
   async uploadHeroImage(
     file: Express.Multer.File,
@@ -190,9 +216,8 @@ export class StorageService {
       );
     }
 
-    const cleanPrefix = nameSlug.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 30);
-    const uniqueHash = crypto.randomBytes(8).toString('hex');
-    const objectKey = `hero/${kind}/${cleanPrefix}_${Date.now()}_${uniqueHash}.${detected.ext}`;
+    const uuid = crypto.randomUUID();
+    const objectKey = `hero/${kind}/${uuid}.${detected.ext}`;
 
     if (this.isR2Configured && this.s3Client) {
       return this.uploadToR2(file, objectKey, detected.mime);
@@ -206,7 +231,7 @@ export class StorageService {
 
     // Local fallback in development/staging
     this.ensureUploadDir();
-    const basename = path.basename(objectKey);
+    const basename = `${kind}_${uuid}.${detected.ext}`;
     const targetPath = path.join(this.heroUploadDir, kind, basename);
 
     fs.writeFileSync(targetPath, file.buffer);
@@ -229,21 +254,23 @@ export class StorageService {
     objectKey: string,
     mimeType: string
   ): Promise<UploadResult> {
-    const bucketName = process.env.R2_BUCKET_NAME!;
-    const publicBaseUrl = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
-
     try {
       await this.s3Client!.send(
         new PutObjectCommand({
-          Bucket: bucketName,
+          Bucket: this.bucketName,
           Key: objectKey,
           Body: file.buffer,
           ContentType: mimeType,
-          CacheControl: 'public, max-age=31536000, immutable',
+          CacheControl: 'public, max-age=86400, stale-while-revalidate=3600',
+          Metadata: {
+            originalname: encodeURIComponent(file.originalname),
+            uploadedat: new Date().toISOString(),
+          },
         })
       );
 
-      const url = publicBaseUrl ? `${publicBaseUrl}/${objectKey}` : `https://${bucketName}.r2.cloudflarestorage.com/${objectKey}`;
+      // Stable Railway API media delivery endpoint
+      const url = `/api/media/${objectKey}`;
 
       this.logger.log(`Uploaded image to Cloudflare R2: ${objectKey} (${(file.size / 1024).toFixed(1)} KB)`);
 
@@ -256,7 +283,10 @@ export class StorageService {
         storageProvider: 'cloudflare-r2',
       };
     } catch (err: any) {
-      this.logger.error(`Cloudflare R2 upload error: ${err.message}. Falling back to local storage.`);
+      this.logger.error(`Cloudflare R2 upload error: ${err.message}.`);
+      if (process.env.NODE_ENV === 'production') {
+        throw new BadRequestException(`Cloudflare R2 upload failed: ${err.message}`);
+      }
       return this.uploadToLocal(file, objectKey, mimeType);
     }
   }
@@ -287,10 +317,38 @@ export class StorageService {
   }
 
   /**
-   * Safe deletion: checks if image is referenced by any published product before deleting.
+   * Safe deletion: checks if image is referenced by any product or hero slide before deleting.
+   * Never permits arbitrary object keys or path traversal.
    */
   async safeDeleteImage(imageUrlOrKey: string): Promise<{ deleted: boolean; reason?: string }> {
     if (!imageUrlOrKey) return { deleted: false, reason: 'Empty image identifier' };
+
+    // Strip leading API prefix or path
+    let objectKey = imageUrlOrKey.trim().replace(/^\/?api\/media\/?/, '').replace(/^\/+/, '');
+    if (objectKey.includes('?')) {
+      objectKey = objectKey.split('?')[0];
+    }
+
+    // Validate path safety
+    if (
+      objectKey.includes('..') ||
+      objectKey.includes('\\') ||
+      objectKey.includes('\0') ||
+      !/^[a-zA-Z0-9_\-\./]+$/.test(objectKey)
+    ) {
+      throw new BadRequestException('Invalid object key for deletion');
+    }
+
+    // Only allow deletion within approved media namespaces
+    const isApprovedNamespace =
+      objectKey.startsWith('hero/') ||
+      objectKey.startsWith('vehicles/') ||
+      objectKey.startsWith('products/') ||
+      objectKey.startsWith('test-');
+
+    if (!isApprovedNamespace) {
+      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, test)');
+    }
 
     const normalize = (val: any): string => {
       if (!val) return '';
@@ -298,47 +356,79 @@ export class StorageService {
       return path.basename(str.split('?')[0]);
     };
 
-    const targetBasename = normalize(imageUrlOrKey);
+    const targetBasename = normalize(objectKey);
 
-    // Check if referenced by any published product
-    const publishedProducts = await this.prisma.product.findMany({
-      where: { status: 'PUBLISHED' },
-      select: { id: true, name: true, images: true, heroImage: true, thumbnailImage: true },
+    // 1. Check if referenced by any Product
+    const allProducts = await this.prisma.product.findMany({
+      select: { id: true, name: true, images: true, colors: true, heroImage: true, thumbnailImage: true, heroMobileImage: true },
     });
 
-    const isReferenced = publishedProducts.some((p) => {
-      if (normalize(p.heroImage) === targetBasename || normalize(p.thumbnailImage) === targetBasename) {
+    const isReferencedInProducts = allProducts.some((p) => {
+      if (
+        (p.heroImage && p.heroImage.includes(targetBasename)) ||
+        (p.thumbnailImage && p.thumbnailImage.includes(targetBasename)) ||
+        (p.heroMobileImage && p.heroMobileImage.includes(targetBasename))
+      ) {
         return true;
       }
-      const images = Array.isArray(p.images) ? (p.images as any[]) : [];
-      return images.some((img) => normalize(img) === targetBasename);
+      if (Array.isArray(p.images)) {
+        const matches = (p.images as any[]).some((img) => normalize(img) === targetBasename);
+        if (matches) return true;
+      }
+      if (Array.isArray(p.colors)) {
+        const matchesColor = (p.colors as any[]).some((c) => {
+          if (normalize(c?.primaryImage) === targetBasename) return true;
+          if (Array.isArray(c?.images)) {
+            return c.images.some((img: any) => normalize(img) === targetBasename);
+          }
+          return false;
+        });
+        if (matchesColor) return true;
+      }
+      return false;
     });
 
-    if (isReferenced) {
-      this.logger.warn(`Skipped deletion of ${imageUrlOrKey}: Currently referenced by a published vehicle.`);
-      return { deleted: false, reason: 'Image is referenced by a published vehicle' };
+    if (isReferencedInProducts) {
+      this.logger.warn(`Skipped deletion of ${objectKey}: Referenced by a vehicle product.`);
+      return { deleted: false, reason: 'Image is currently referenced by a vehicle product' };
     }
 
-    // If R2
-    if (this.isR2Configured && this.s3Client && imageUrlOrKey.includes('/products/')) {
+    // 2. Check if referenced by any HomepageHeroSlide
+    const allSlides = await this.prisma.homepageHeroSlide.findMany({
+      select: { id: true, heading: true, desktopImageUrl: true, mobileImageUrl: true },
+    });
+
+    const isReferencedInSlides = allSlides.some((s) => {
+      return (
+        (s.desktopImageUrl && s.desktopImageUrl.includes(targetBasename)) ||
+        (s.mobileImageUrl && s.mobileImageUrl.includes(targetBasename))
+      );
+    });
+
+    if (isReferencedInSlides) {
+      this.logger.warn(`Skipped deletion of ${objectKey}: Referenced by a homepage hero slide.`);
+      return { deleted: false, reason: 'Image is currently referenced by a homepage hero slide' };
+    }
+
+    // 3. Delete from Cloudflare R2
+    if (this.isR2Configured && this.s3Client) {
       try {
-        const key = imageUrlOrKey.split('/products/')[1] ? `products/${imageUrlOrKey.split('/products/')[1]}` : imageUrlOrKey;
         await this.s3Client.send(
           new DeleteObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME!,
-            Key: key,
+            Bucket: this.bucketName,
+            Key: objectKey,
           })
         );
-        this.logger.log(`Deleted image from Cloudflare R2: ${key}`);
+        this.logger.log(`Deleted image from Cloudflare R2: ${objectKey}`);
         return { deleted: true };
       } catch (err: any) {
-        this.logger.error(`Error deleting from R2: ${err.message}`);
+        this.logger.error(`Error deleting from Cloudflare R2: ${err.message}`);
       }
     }
 
-    // Local disk deletion
+    // 4. Fallback: check local disk deletion
     try {
-      const basename = path.basename(imageUrlOrKey);
+      const basename = path.basename(objectKey);
       const filePath = path.join(this.uploadDir, basename);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
@@ -349,6 +439,6 @@ export class StorageService {
       this.logger.error(`Error deleting local image: ${err.message}`);
     }
 
-    return { deleted: false, reason: 'File not found on storage' };
+    return { deleted: false, reason: 'File not found on storage provider' };
   }
 }

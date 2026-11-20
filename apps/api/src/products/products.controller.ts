@@ -169,9 +169,10 @@ export class ProductsAdminController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadProductImage(
     @UploadedFile() file: Express.Multer.File,
-    @Query('slug') slug?: string
+    @Query('slug') slug?: string,
+    @Query('target') target?: 'gallery' | 'variant'
   ) {
-    return this.storageService.uploadProductImage(file, slug);
+    return this.storageService.uploadProductImage(file, slug, target);
   }
 
   @Delete('image')

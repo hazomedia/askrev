@@ -17,7 +17,15 @@ const nextConfig = {
       },
     ];
   },
+  async rewrites() {
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/$/, '');
+    return [
+      {
+        source: '/api/media/:path*',
+        destination: `${apiBase}/media/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
-
