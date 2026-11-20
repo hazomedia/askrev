@@ -197,7 +197,8 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
  */
 export async function uploadProductImageApi(
   file: File,
-  slugPrefix?: string
+  slugPrefix?: string,
+  target: 'gallery' | 'variant' = 'gallery'
 ): Promise<{ url: string; filename: string; storageProvider?: string }> {
   const token = getAuthToken();
   const csrf = getCsrfToken();
@@ -212,7 +213,7 @@ export async function uploadProductImageApi(
     headers['X-CSRF-Token'] = csrf;
   }
 
-  const query = slugPrefix ? `?slug=${encodeURIComponent(slugPrefix)}` : '';
+  const query = `?slug=${encodeURIComponent(slugPrefix || 'catalog')}&target=${target}`;
   const response = await fetch(`${API_BASE}/admin/products/upload-image${query}`, {
     method: 'POST',
     credentials: 'include',

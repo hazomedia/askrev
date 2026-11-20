@@ -1464,6 +1464,42 @@ export function AdminProductCatalog() {
                                 </span>
                               </div>
                             )}
+
+                            {/* Direct Variant Photo Upload */}
+                            <div className="pt-1">
+                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-700 cursor-pointer transition-colors">
+                                <Upload className="w-2.5 h-2.5" />
+                                <span>Upload Variant Photo</span>
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    try {
+                                      const res = await uploadProductImageApi(
+                                        file,
+                                        `${form.slug || form.name || 'catalog'}-${c.name}`,
+                                        'variant'
+                                      );
+                                      setForm((prev: any) => {
+                                        const updatedColors = [...(prev.colors || [])];
+                                        updatedColors[i] = {
+                                          ...updatedColors[i],
+                                          primaryImage: res.url,
+                                          images: [{ url: res.url, isPrimary: true, order: 1 }],
+                                        };
+                                        return { ...prev, colors: updatedColors };
+                                      });
+                                      showFeedback('success', `Uploaded variant photo for ${c.name}`);
+                                    } catch (err: any) {
+                                      showFeedback('error', err.message || 'Variant upload failed');
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
                           </div>
                         </div>
                       ))}
