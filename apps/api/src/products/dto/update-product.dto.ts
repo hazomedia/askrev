@@ -138,6 +138,9 @@ export class UpdateProductDto implements Partial<CreateProductDto> {
   status?: any;
 
   @IsOptional()
+  availability?: any;
+
+  @IsOptional()
   displayOrder?: number;
 
   @IsOptional()

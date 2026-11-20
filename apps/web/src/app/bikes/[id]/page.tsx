@@ -16,6 +16,7 @@ import {
   HelpCircle,
   PhoneCall,
   RotateCcw,
+  FileText,
 } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
@@ -72,32 +73,65 @@ export default function BikeDetailPage() {
       ? vehicle.colors[selectedColorIndex]
       : vehicle?.colors?.[0] || { name: 'Sapphire Blue', hex: '#267DFF', description: 'Primary metallic finish' };
 
+  const productPrimaryImg =
+    (Array.isArray(vehicle?.images) && vehicle.images.find((img: any) => img.isPrimary)?.url) ||
+    vehicle?.heroImage ||
+    vehicle?.imageUrl;
+
+  const sortedGallery = React.useMemo(() => {
+    if (!Array.isArray(vehicle?.images) || vehicle.images.length === 0) {
+      return productPrimaryImg ? [productPrimaryImg] : [];
+    }
+    const list = [...vehicle.images]
+      .sort((a: any, b: any) => {
+        if (a.isPrimary && !b.isPrimary) return -1;
+        if (!a.isPrimary && b.isPrimary) return 1;
+        return (a.order || 0) - (b.order || 0);
+      })
+      .map((img: any) => (typeof img === 'string' ? img : img?.url))
+      .filter(Boolean);
+    return list;
+  }, [vehicle, productPrimaryImg]);
+
   // Compute active gallery images based on selected colour variant:
+  // "Color variant images must override the default primary only when that variant is selected."
+  // "Public Product Page must use the selected primary image on first load. Refresh must preserve the correct primary image."
   const activeGalleryImages: string[] = React.useMemo(() => {
     const list: string[] = [];
-    if (currentColor?.primaryImage) {
+
+    // If a variant is selected AND has an explicit variant photo distinct from the default gallery:
+    const hasVariantSpecificImage =
+      currentColor?.primaryImage &&
+      currentColor.primaryImage !== productPrimaryImg;
+
+    if (hasVariantSpecificImage) {
       list.push(currentColor.primaryImage);
     }
+
     if (currentColor?.images && Array.isArray(currentColor.images)) {
       currentColor.images.forEach((img: any) => {
         const u = typeof img === 'string' ? img : img?.url;
         if (u && !list.includes(u)) list.push(u);
       });
     }
+
     if (list.length > 0) {
+      sortedGallery.forEach((u) => {
+        if (!list.includes(u)) list.push(u);
+      });
       return list;
     }
+
+    if (sortedGallery.length > 0) {
+      return sortedGallery;
+    }
+
     if (Array.isArray(vehicle?.galleryImages) && vehicle.galleryImages.length > 0) {
       return vehicle.galleryImages;
     }
-    if (Array.isArray(vehicle?.images) && vehicle.images.length > 0) {
-      return vehicle.images.map((img: any) => (typeof img === 'string' ? img : img?.url || '')).filter(Boolean);
-    }
-    if (vehicle?.heroImage || vehicle?.imageUrl) {
-      return [vehicle.heroImage || vehicle.imageUrl];
-    }
-    return ['/images/vehicles/dark/thunder-pro.jpg'];
-  }, [currentColor, vehicle]);
+
+    return [productPrimaryImg || '/images/vehicles/dark/thunder-pro.jpg'];
+  }, [currentColor, productPrimaryImg, sortedGallery, vehicle]);
 
   // Reset active gallery image index to 0 whenever color changes:
   useEffect(() => {
@@ -235,6 +269,9 @@ export default function BikeDetailPage() {
       : (vehicle.sellingPriceINR || vehicle.exShowroomPriceINR);
   const activeSku = currentColor?.sku || vehicle.modelCode || vehicle.slug;
   const isOutOfStock = currentColor?.isAvailable === false;
+  const effectiveAvailability =
+    vehicle?.availability ||
+    (vehicle?.isBookable ? 'BOOKING_AVAILABLE' : 'COMING_SOON');
 
   // Category breadcrumb link
   const categoryHref =
@@ -274,21 +311,6 @@ export default function BikeDetailPage() {
               {/* Left Column: Vehicle Photographic Showcase */}
               <div className="lg:col-span-7 flex flex-col items-center w-full">
                 <div className="relative w-full aspect-square max-w-lg mx-auto flex items-center justify-center p-6 sm:p-8 rounded-3xl bg-[#101827] border border-white/10 shadow-2xl overflow-hidden">
-                  {/* Status Badge */}
-                  <div className="absolute top-5 left-5 z-20">
-                    {vehicle.isBookable ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/15 border border-emerald-500/30">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>Bookings Open</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/15 border border-blue-500/30">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Showroom Showcase</span>
-                      </span>
-                    )}
-                  </div>
-
                   {/* Ambient Electric Blue Rim Glow */}
                   <div
                     className="absolute inset-0 opacity-40 pointer-events-none"
@@ -392,10 +414,34 @@ export default function BikeDetailPage() {
               {/* Right Column: Pricing, Specs & Booking Action */}
               <div className="lg:col-span-5 space-y-6">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-[#50D9FF] uppercase tracking-wider mb-1">
-                    <span>{vehicle.manufacturer || vehicle.brand || 'ASKR EV Mobility'}</span>
-                    <span>•</span>
-                    <span className="font-mono">{activeSku}</span>
+                  <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                    {/* Status Badge clearly positioned outside image container */}
+                    {effectiveAvailability === 'BUY_AVAILABLE' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/15 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Buy Available</span>
+                      </span>
+                    ) : effectiveAvailability === 'BOOKING_AVAILABLE' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/15 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Bookings Open</span>
+                      </span>
+                    ) : effectiveAvailability === 'UNAVAILABLE' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-rose-300 bg-rose-500/15 border border-rose-500/30">
+                        <span>Out of Stock</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/15 border border-blue-500/30">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Coming Soon</span>
+                      </span>
+                    )}
+
+                    <span className="text-xs font-bold text-[#50D9FF] uppercase tracking-wider">
+                      {vehicle.manufacturer || vehicle.brand || 'ASKR EV Mobility'}
+                    </span>
+                    <span className="text-[#AAB7C8]">•</span>
+                    <span className="font-mono text-xs text-[#AAB7C8]">{activeSku}</span>
                     {isOutOfStock && (
                       <span className="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30">
                         Variant Unavailable
@@ -406,7 +452,7 @@ export default function BikeDetailPage() {
                     {vehicle.name}
                   </h1>
                   <p className="mt-2 text-sm text-[#AAB7C8] leading-relaxed">
-                    {vehicle.tagline || vehicle.shortDescription || vehicle.fullDescription}
+                    {vehicle.tagline || vehicle.shortDescription}
                   </p>
                 </div>
 
@@ -494,8 +540,23 @@ export default function BikeDetailPage() {
                     </div>
                   )}
 
-                  {/* Booking CTA or Concept Callback */}
-                  {vehicle.isBookable ? (
+                  {/* Product Specific CTA System */}
+                  {effectiveAvailability === 'BUY_AVAILABLE' ? (
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => setModalOpen(true)}
+                        className="w-full py-4 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(16,185,129,0.4)] flex items-center justify-center gap-2"
+                      >
+                        <span>Buy Now</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+
+                      <div className="flex items-center justify-center gap-2 text-[11px] text-[#AAB7C8]">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Direct Purchase Enquiry • Non-Payment Allocation</span>
+                      </div>
+                    </div>
+                  ) : effectiveAvailability === 'BOOKING_AVAILABLE' ? (
                     <div className="space-y-3">
                       <button
                         onClick={() => setModalOpen(true)}
@@ -509,6 +570,24 @@ export default function BikeDetailPage() {
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Non-Transactional Showroom Request • Priority Test Drive Allocation</span>
                       </div>
+                    </div>
+                  ) : effectiveAvailability === 'UNAVAILABLE' ? (
+                    <div className="space-y-3">
+                      {enquirySuccess ? (
+                        <div className="p-4 rounded-xl bg-amber-500/15 border border-amber-500/30 text-center text-xs text-amber-300 font-medium">
+                          Showroom enquiry logged! A specialist will contact you when inventory is replenished.
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setEnquirySuccess(true)}
+                          className="w-full py-3.5 rounded-full bg-white/10 hover:bg-white/20 text-[#AAB7C8] text-xs font-semibold uppercase tracking-wider transition-all border border-white/15"
+                        >
+                          Out of Stock / Contact Us
+                        </button>
+                      )}
+                      <p className="text-[11px] text-[#AAB7C8] text-center">
+                        This model is temporarily out of stock. Contact our sales fleet desk for restocking schedules.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -553,6 +632,29 @@ export default function BikeDetailPage() {
             </div>
           </div>
         </section>
+
+        {/* =========================================================================
+            PRODUCT COMMERCIAL DESCRIPTION
+            ========================================================================= */}
+        {vehicle.fullDescription && vehicle.fullDescription.trim().length > 0 && (
+          <section className="py-12 px-4 sm:px-6 lg:px-8 border-b border-white/10 bg-[#0A0E18]">
+            <div className="max-w-7xl mx-auto">
+              <div className="p-6 sm:p-8 rounded-3xl bg-[#101827] border border-white/10 shadow-xl space-y-4 max-w-4xl">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/15 text-[#50D9FF] flex items-center justify-center border border-blue-500/30">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-[#F7FAFF] tracking-tight">
+                    Product Description
+                  </h2>
+                </div>
+                <div className="text-sm sm:text-base text-[#AAB7C8] leading-relaxed whitespace-pre-line space-y-3 font-normal">
+                  {vehicle.fullDescription}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* =========================================================================
             TECHNICAL SPECIFICATIONS & HIGHLIGHTS
@@ -699,6 +801,7 @@ export default function BikeDetailPage() {
           onClose={() => setModalOpen(false)}
           user={userProfile}
           initialVariant={currentColor}
+          mode={effectiveAvailability === 'BUY_AVAILABLE' ? 'BUY' : 'BOOK'}
           onSuccess={() => setModalOpen(false)}
         />
       )}

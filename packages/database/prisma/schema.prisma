@@ -425,6 +425,7 @@ model Product {
   // Catalog status & ordering
   isFeatured              Boolean         @default(false)
   status                  ProductStatus   @default(DRAFT)
+  availability            String?         @default("BOOKING_AVAILABLE")
   displayOrder            Int             @default(0)
 
   // Optional connection to legacy EvBike for booking integration
@@ -439,6 +440,7 @@ model Product {
 
   @@index([category])
   @@index([status])
+  @@index([availability])
   @@index([isFeatured])
   @@index([isHero])
   @@index([displayOrder])

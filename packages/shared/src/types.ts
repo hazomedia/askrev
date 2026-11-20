@@ -1,4 +1,4 @@
-import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus, ProductCategory, ProductStatus, HeroSlideStatus } from './constants';
+import { UserRole, MembershipPackage, QualificationMethod, JournalAccount, MembershipRequestType, MembershipRequestStatus, ProductCategory, ProductStatus, ProductAvailability, HeroSlideStatus } from './constants';
 
 export interface MembershipRequestItem {
   id: string;
@@ -305,6 +305,7 @@ export interface ProductItem {
   rebrandingNotes?: string | null;
   isFeatured: boolean;
   status: ProductStatus;
+  availability?: ProductAvailability | string | null;
   displayOrder: number;
   evBikeId?: string | null;
   createdAt: string;

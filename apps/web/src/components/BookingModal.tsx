@@ -10,6 +10,7 @@ interface BookingModalProps {
   user?: any | null;
   onSuccess?: () => void;
   initialVariant?: any;
+  mode?: 'BOOK' | 'BUY';
 }
 
 export default function BookingModal({
@@ -19,6 +20,7 @@ export default function BookingModal({
   user,
   onSuccess,
   initialVariant,
+  mode = 'BOOK',
 }: BookingModalProps) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -98,10 +100,11 @@ export default function BookingModal({
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-[#F7FAFF] tracking-tight">
-                {bike.name}
+                {mode === 'BUY' ? `Direct Purchase Reservation: ${bike.name}` : `Showroom Booking: ${bike.name}`}
               </h2>
               <div className="text-xs text-[#AAB7C8]">
-                Showroom Priority Allocation • Model: {bike.modelCode}
+                {mode === 'BUY' ? 'Direct Purchase Enquiry • Model: ' : 'Showroom Priority Allocation • Model: '}
+                {bike.modelCode}
               </div>
             </div>
           </div>
@@ -276,10 +279,10 @@ export default function BookingModal({
                   className="w-full py-3.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)] flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {submitting ? (
-                    <span>Registering Priority Interest...</span>
+                    <span>{mode === 'BUY' ? 'Registering Purchase Enquiry...' : 'Registering Priority Reservation...'}</span>
                   ) : (
                     <>
-                      <span>Register Priority Interest (₹0)</span>
+                      <span>{mode === 'BUY' ? 'Submit Purchase Reservation (₹0)' : 'Confirm Showroom Reservation (₹0)'}</span>
                       <Send className="w-3.5 h-3.5" />
                     </>
                   )}

@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ProductCategory, ProductStatus } from '@askrev/shared';
+import { ProductCategory, ProductStatus, ProductAvailability } from '@askrev/shared';
 
 export class ProductColorDto {
   @IsString()
@@ -276,6 +276,10 @@ export class CreateProductDto {
   @IsEnum(ProductStatus)
   @IsOptional()
   status?: ProductStatus;
+
+  @IsEnum(ProductAvailability)
+  @IsOptional()
+  availability?: ProductAvailability;
 
   @Type(() => Number)
   @IsNumber()

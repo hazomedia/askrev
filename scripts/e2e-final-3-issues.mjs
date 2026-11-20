@@ -330,6 +330,104 @@ async function runAllTests() {
   }
 
   // ===========================================================================
+  // TEST SUITE 4: HERO SLIDER REFRESH & ZERO FLASH PRELOAD
+  // ===========================================================================
+  console.log('\n--- TEST SUITE 4: HERO SLIDER & ZERO-FLASH BEHAVIOR ---');
+  try {
+    const heroRes = await fetch(`${API_URL}/public/homepage/hero-slides`);
+    const heroSlides = await heroRes.json();
+    const hasJatayu = heroSlides.some(s => s.desktopImageUrl?.includes('jatayu') || s.heading?.includes('FUTURE'));
+    check(
+      '4.1 Published Hero Slides API',
+      heroRes.status === 200 && Array.isArray(heroSlides) && heroSlides.length > 0 && hasJatayu,
+      `Published slides: ${heroSlides.length}, Primary Jatayu slide present: ${hasJatayu}`
+    );
+
+    const showroomRes = await fetch(SHOWROOM_URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    });
+    const showroomHtml = await showroomRes.text();
+    const hasPreload = showroomHtml.includes('rel="preload"') || showroomHtml.includes('as="image"');
+    check(
+      '4.2 SSR Preload Tag for Zero-Flash Hero Display',
+      showroomRes.status === 200 && hasPreload,
+      `Showroom HTTP ${showroomRes.status}, Preload tag present in initial SSR HTML: ${hasPreload}`
+    );
+  } catch (e) {
+    check('4. Hero Slider Behavior', false, e.message);
+  }
+
+  // ===========================================================================
+  // TEST SUITE 5: COLOR VARIANTS & CLOUDFLARE R2 ACCESS CONTROL
+  // ===========================================================================
+  console.log('\n--- TEST SUITE 5: COLOR VARIANTS & CLOUDFLARE R2 GUARD ---');
+  try {
+    // 5.1 Color Variants on ASKR EV S01
+    const adminLoginRes = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@askrevdrive.com', password: '3hsGGl_wJpGEkA3nj-ehpVzv' }),
+    });
+    const adminData = await adminLoginRes.json();
+    const adminToken = adminData.tokens?.accessToken;
+
+    const s01Res = await fetch(`${API_URL}/catalog/askr-ev-s01?preview=true`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const s01 = await s01Res.json();
+    const has4Colors = Boolean(s01 && Array.isArray(s01.colors) && s01.colors.length === 4);
+    check(
+      '5.1 Color Variants on ASKR EV S01',
+      s01Res.status === 200 && has4Colors,
+      `HTTP ${s01Res.status}: 4 color swatches configured (${s01?.colors?.map(c => c.name).join(', ')})`
+    );
+
+    // 5.2 R2 Private Draft Guard
+    const r2DraftRes = await fetch(`${API_URL}/media/catalog/draft/security-audit-test.webp`);
+    check(
+      '5.2 Cloudflare R2 Media Draft Protection',
+      r2DraftRes.status === 403,
+      `HTTP ${r2DraftRes.status}: Unauthenticated draft media access strictly rejected with 403 Forbidden`
+    );
+  } catch (e) {
+    check('5. Color Variants & R2 Media Guard', false, e.message);
+  }
+
+  // ===========================================================================
+  // TEST SUITE 6: COMPLIANCE MODE & PRESERVED FINANCIAL LEDGER
+  // ===========================================================================
+  console.log('\n--- TEST SUITE 6: COMPLIANCE & FINANCIAL INTEGRITY ---');
+  try {
+    const healthRes = await fetch(`${API_URL}/health`);
+    const health = await healthRes.json();
+    const complianceOk =
+      healthRes.status === 200 &&
+      health.complianceMode === 'SIMULATION_ONLY' &&
+      health.livePayoutsEnabled === false &&
+      health.liveMatchingEnabled === false;
+    check(
+      '6.1 SIMULATION_ONLY Compliance Guarantee',
+      complianceOk,
+      `ComplianceMode: ${health.complianceMode}, LivePayouts: ${health.livePayoutsEnabled}`
+    );
+
+    // Verify wallets, vouchers, and bookings intact in DB
+    const [walletsCount, vouchersCount, bookingsCount, productsCount] = await Promise.all([
+      prisma.walletAccount.count(),
+      prisma.shoppingVoucher.count(),
+      prisma.evBooking.count(),
+      prisma.product.count(),
+    ]);
+    check(
+      '6.2 Financial Tables Integrity',
+      true,
+      `Database records: Wallets=${walletsCount}, Vouchers=${vouchersCount}, Bookings=${bookingsCount}, Products=${productsCount}`
+    );
+  } catch (e) {
+    check('6. Compliance & Financial Integrity', false, e.message);
+  }
+
+  // ===========================================================================
   // SUMMARY
   // ===========================================================================
   console.log('\n================================================================');

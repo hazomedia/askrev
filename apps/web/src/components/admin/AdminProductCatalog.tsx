@@ -87,6 +87,7 @@ interface ProductItem {
   heroSlideOrder?: number | null;
   isFeatured: boolean;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  availability?: string;
   displayOrder: number;
   oemManufacturer?: string | null;
   oemModelName?: string | null;
@@ -143,6 +144,7 @@ export function AdminProductCatalog() {
     heroSlideOrder: '',
     isFeatured: false,
     status: 'PUBLISHED',
+    availability: 'BOOKING_AVAILABLE',
     displayOrder: 1,
     oemManufacturer: '',
     oemModelName: '',
@@ -423,6 +425,7 @@ export function AdminProductCatalog() {
       heroSlideOrder: product.heroSlideOrder !== null && product.heroSlideOrder !== undefined ? String(product.heroSlideOrder) : '',
       isFeatured: Boolean(product.isFeatured),
       status: product.status || 'PUBLISHED',
+      availability: product.availability || 'BOOKING_AVAILABLE',
       displayOrder: product.displayOrder || 1,
       oemManufacturer: product.oemManufacturer || '',
       oemModelName: product.oemModelName || '',
@@ -501,11 +504,17 @@ export function AdminProductCatalog() {
 
   const handleSetPrimaryImage = (index: number) => {
     setForm((prev: any) => {
+      const targetImg = prev.images?.[index];
       const updated = (prev.images || []).map((img: any, i: number) => ({
         ...img,
         isPrimary: i === index,
       }));
-      return { ...prev, images: updated };
+      return {
+        ...prev,
+        images: updated,
+        heroImage: targetImg?.url || prev.heroImage,
+        thumbnailImage: targetImg?.url || prev.thumbnailImage,
+      };
     });
   };
 
@@ -685,8 +694,16 @@ export function AdminProductCatalog() {
         heroSlideOrder: form.heroSlideOrder !== '' ? Number(form.heroSlideOrder) : null,
         isFeatured: form.isFeatured,
         status: form.status,
+        availability: form.availability || 'BOOKING_AVAILABLE',
         displayOrder: Number(form.displayOrder) || 1,
-        images: form.images || [],
+        images: (form.images || []).map((img: any, idx: number) => {
+          const primaryObj = form.images && form.images.find((im: any) => im.isPrimary);
+          return {
+            ...img,
+            isPrimary: primaryObj ? img.url === primaryObj.url : idx === 0,
+            order: img.order || idx + 1,
+          };
+        }),
         heroImage: (form.images && form.images.find((img: any) => img.isPrimary)?.url) || (form.images && form.images[0]?.url) || '',
         thumbnailImage: (form.images && form.images.find((img: any) => img.isPrimary)?.url) || (form.images && form.images[0]?.url) || '',
         colors: form.colors || [],
@@ -1333,6 +1350,25 @@ export function AdminProductCatalog() {
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Availability & Purchase Action (Showroom CTA)
+                    </label>
+                    <select
+                      value={form.availability || 'BOOKING_AVAILABLE'}
+                      onChange={(e) => setForm({ ...form, availability: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 font-semibold"
+                    >
+                      <option value="BOOKING_AVAILABLE">Book Now (BOOKING_AVAILABLE — Vehicle Reservation Flow)</option>
+                      <option value="BUY_AVAILABLE">Buy Now (BUY_AVAILABLE — Purchase Enquiry / Direct Order)</option>
+                      <option value="COMING_SOON">Register Interest (COMING_SOON — Prototype / Concept Showcase)</option>
+                      <option value="UNAVAILABLE">Out of Stock / Contact Us (UNAVAILABLE — Stock Exhausted)</option>
+                    </select>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Controls the customer call-to-action button and availability badge on the public showroom detail page.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -1495,8 +1531,13 @@ export function AdminProductCatalog() {
                                 : 'border-slate-200 bg-white'
                               }`}
                           >
-                            <div className="h-28 rounded-lg bg-slate-900 overflow-hidden flex items-center justify-center">
+                            <div className="h-28 rounded-lg bg-slate-900 overflow-hidden flex items-center justify-center relative">
                               <img src={img.url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                              {img.isPrimary && (
+                                <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded text-[9px] font-bold bg-[#165DAD] text-white shadow-sm flex items-center gap-1">
+                                  <span>★ Primary Hero</span>
+                                </span>
+                              )}
                             </div>
 
                             <div className="space-y-1.5">
@@ -1504,12 +1545,13 @@ export function AdminProductCatalog() {
                                 <button
                                   type="button"
                                   onClick={() => handleSetPrimaryImage(i)}
-                                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${img.isPrimary
-                                      ? 'bg-[#165DAD] text-white'
-                                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                    }`}
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+                                    img.isPrimary
+                                      ? 'bg-[#165DAD] text-white cursor-default'
+                                      : 'bg-slate-100 text-slate-700 hover:bg-blue-100 hover:text-blue-700'
+                                  }`}
                                 >
-                                  {img.isPrimary ? 'Primary (Hero)' : 'Make Primary'}
+                                  {img.isPrimary ? '★ Primary (Hero)' : 'Make Primary'}
                                 </button>
                                 <button
                                   type="button"

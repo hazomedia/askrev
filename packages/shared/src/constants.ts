@@ -50,6 +50,13 @@ export enum ProductStatus {
   ARCHIVED = 'ARCHIVED',
 }
 
+export enum ProductAvailability {
+  BUY_AVAILABLE = 'BUY_AVAILABLE',
+  BOOKING_AVAILABLE = 'BOOKING_AVAILABLE',
+  COMING_SOON = 'COMING_SOON',
+  UNAVAILABLE = 'UNAVAILABLE',
+}
+
 export enum HeroSlideStatus {
   DRAFT = 'DRAFT',
   PUBLISHED = 'PUBLISHED',

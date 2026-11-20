@@ -26,7 +26,40 @@ export class ProductsService {
     const sellingINR = p.sellingPricePaise ? paiseToRupees(p.sellingPricePaise) : null;
     const regularINR = p.regularPricePaise ? paiseToRupees(p.regularPricePaise) : null;
     const bookingINR = p.bookingAmountPaise ? paiseToRupees(p.bookingAmountPaise) : null;
-    const heroImg = p.heroImage || (p.images && p.images[0] ? p.images[0].url : '');
+
+    // Handle primary image accurately from images collection or persisted heroImage
+    const primaryImageObj = Array.isArray(p.images) ? p.images.find((img: any) => img.isPrimary) : null;
+    const heroImg = primaryImageObj?.url || p.heroImage || (p.images && p.images[0] ? p.images[0].url : '');
+
+    // Ensure sorted images array preserves isPrimary and places primary image first in gallery
+    let sortedImages: any[] = [];
+    if (Array.isArray(p.images) && p.images.length > 0) {
+      const hasPrimary = p.images.some((img: any) => img.isPrimary);
+      sortedImages = p.images.map((img: any, idx: number) => ({
+        ...img,
+        isPrimary: hasPrimary ? Boolean(img.isPrimary) : idx === 0,
+      }));
+      sortedImages.sort((a: any, b: any) => {
+        if (a.isPrimary && !b.isPrimary) return -1;
+        if (!a.isPrimary && b.isPrimary) return 1;
+        return (a.order || 0) - (b.order || 0);
+      });
+    }
+
+    // Availability & Purchase CTA status resolution
+    const rawAvailability = p.availability || (p.status === 'ARCHIVED' ? 'UNAVAILABLE' : (p.status === 'DRAFT' ? 'COMING_SOON' : 'BOOKING_AVAILABLE'));
+    const availability = ['BUY_AVAILABLE', 'BOOKING_AVAILABLE', 'COMING_SOON', 'UNAVAILABLE'].includes(rawAvailability)
+      ? rawAvailability
+      : 'BOOKING_AVAILABLE';
+
+    const isBookable = availability === 'BOOKING_AVAILABLE' || availability === 'BUY_AVAILABLE';
+    const statusBadge = availability === 'BUY_AVAILABLE'
+      ? 'Buy Available'
+      : availability === 'BOOKING_AVAILABLE'
+      ? 'Bookings Open'
+      : availability === 'UNAVAILABLE'
+      ? 'Out of Stock'
+      : 'Coming Soon';
 
     const specsList = Array.isArray(p.specifications) ? p.specifications : [];
     const payloadSpec = specsList.find((s: any) => /load capacity|payload/i.test(s.label || ''));
@@ -73,7 +106,7 @@ export class ProductsService {
       specifications: p.specifications || [],
       specs: p.specifications || [],
       highlights: p.highlights || [],
-      images: p.images || [],
+      images: sortedImages.length > 0 ? sortedImages : (p.images || []),
       heroImage: heroImg,
       imageUrl: heroImg,
       thumbnailImage: p.thumbnailImage || heroImg,
@@ -84,8 +117,9 @@ export class ProductsService {
       heroCtaText: p.heroCtaText || null,
       heroCtaLink: p.heroCtaLink || null,
       heroSlideOrder: p.heroSlideOrder ?? null,
-      isBookable: Boolean(p.bookingAmountPaise && BigInt(p.bookingAmountPaise) > 0n),
-      statusBadge: p.bookingAmountPaise && BigInt(p.bookingAmountPaise) > 0n ? 'Bookings Open' : 'Showroom Showcase',
+      availability,
+      isBookable,
+      statusBadge,
       isFeatured: p.isFeatured,
       status: p.status,
       displayOrder: p.displayOrder,
@@ -440,8 +474,8 @@ export class ProductsService {
         specifications: dto.specifications ? (dto.specifications as any) : [],
         highlights: dto.highlights ? (dto.highlights as any) : [],
         images: dto.images ? (dto.images as any) : [],
-        heroImage: dto.heroImage || (dto.images && dto.images[0] ? dto.images[0].url : ''),
-        thumbnailImage: dto.thumbnailImage || (dto.images && dto.images[0] ? dto.images[0].url : ''),
+        heroImage: (dto.images && dto.images.find((img: any) => img.isPrimary)?.url) || dto.heroImage || (dto.images && dto.images[0] ? dto.images[0].url : ''),
+        thumbnailImage: (dto.images && dto.images.find((img: any) => img.isPrimary)?.url) || dto.thumbnailImage || (dto.images && dto.images[0] ? dto.images[0].url : ''),
         isHero: dto.isHero || false,
         heroMobileImage: dto.heroMobileImage || null,
         heroHeading: dto.heroHeading || null,
@@ -451,6 +485,7 @@ export class ProductsService {
         heroSlideOrder: dto.heroSlideOrder ?? null,
         isFeatured: dto.isFeatured || false,
         status: (dto.status as any) || ProductStatus.DRAFT,
+        availability: (dto.availability as any) || 'BOOKING_AVAILABLE',
         displayOrder,
         evBikeId: dto.evBikeId || null,
         oemManufacturer: dto.oemManufacturer || null,
@@ -528,9 +563,16 @@ export class ProductsService {
     if (dto.colors !== undefined) data.colors = dto.colors;
     if (dto.specifications !== undefined) data.specifications = dto.specifications;
     if (dto.highlights !== undefined) data.highlights = dto.highlights;
-    if (dto.images !== undefined) data.images = dto.images;
-    if (dto.heroImage !== undefined) data.heroImage = dto.heroImage;
-    if (dto.thumbnailImage !== undefined) data.thumbnailImage = dto.thumbnailImage;
+    if (dto.images !== undefined) {
+      data.images = dto.images;
+      const primaryImg = (dto.images && dto.images.find((img: any) => img.isPrimary)?.url) || (dto.images && dto.images[0]?.url);
+      if (primaryImg) {
+        data.heroImage = primaryImg;
+        data.thumbnailImage = primaryImg;
+      }
+    }
+    if (dto.heroImage !== undefined && !data.heroImage) data.heroImage = dto.heroImage;
+    if (dto.thumbnailImage !== undefined && !data.thumbnailImage) data.thumbnailImage = dto.thumbnailImage;
     if (dto.isHero !== undefined) data.isHero = dto.isHero;
     if (dto.heroMobileImage !== undefined) data.heroMobileImage = dto.heroMobileImage;
     if (dto.heroHeading !== undefined) data.heroHeading = dto.heroHeading;
@@ -540,6 +582,7 @@ export class ProductsService {
     if (dto.heroSlideOrder !== undefined) data.heroSlideOrder = dto.heroSlideOrder;
     if (dto.isFeatured !== undefined) data.isFeatured = dto.isFeatured;
     if (dto.status !== undefined) data.status = dto.status;
+    if (dto.availability !== undefined) data.availability = dto.availability;
     if (dto.displayOrder !== undefined) data.displayOrder = dto.displayOrder;
     if (dto.evBikeId !== undefined) data.evBikeId = dto.evBikeId;
     if (dto.oemManufacturer !== undefined) data.oemManufacturer = dto.oemManufacturer;
