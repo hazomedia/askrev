@@ -53,15 +53,20 @@ export function setAuthSession(token: string, user: any, refreshToken?: string, 
     setCsrfToken(csrfToken);
   }
 
-  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const isAdmin =
+    user?.role === 'SUPER_ADMIN' ||
+    user?.role === 'ADMIN_OPERATIONS' ||
+    user?.role === 'ADMIN' ||
+    user?.role === 'FINANCE_MANAGER';
 
   if (isAdmin) {
-    // Strictly purge any legacy tokens from localStorage for admin users
-    localStorage.removeItem('askrev_access_token');
-    localStorage.removeItem('askrev_refresh_token');
     localStorage.setItem('askrev_user', JSON.stringify(user));
     if (token) {
       sessionStorage.setItem('askrev_admin_access_token', token);
+      localStorage.setItem('askrev_access_token', token);
+    }
+    if (refreshToken) {
+      localStorage.setItem('askrev_refresh_token', refreshToken);
     }
     return;
   }
@@ -161,9 +166,31 @@ async function attemptTokenRefresh(): Promise<string | null> {
   return pendingRefreshPromise;
 }
 
+/**
+ * Ensure a valid CSRF token exists; if missing, proactively fetch from /auth/csrf
+ */
+export async function ensureCsrfToken(): Promise<string | null> {
+  const existing = getCsrfToken();
+  if (existing) return existing;
+  try {
+    const res = await fetch(`${API_BASE}/auth/csrf`, {
+      credentials: 'include',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.csrfToken) {
+        setCsrfToken(data.csrfToken);
+        return data.csrfToken;
+      }
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+  return getCsrfToken();
+}
+
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
-  const csrf = getCsrfToken();
   const method = (options.method || 'GET').toUpperCase();
 
   const headers: Record<string, string> = {
@@ -173,6 +200,11 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let csrf = getCsrfToken();
+  if (!csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !endpoint.startsWith('/auth/csrf') && !endpoint.startsWith('/auth/login')) {
+    csrf = await ensureCsrfToken();
   }
 
   if (csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {

@@ -18,7 +18,7 @@ export class AuthController {
 
     const options: any = {
       secure: isProduction,
-      sameSite: isAskrDomain ? 'lax' : (isProduction ? 'none' : 'lax'),
+      sameSite: isProduction ? 'none' : 'lax',
     };
 
     if (isAskrDomain && isProduction) {
@@ -26,6 +26,22 @@ export class AuthController {
     }
 
     return options;
+  }
+
+  @Get('csrf')
+  getCsrfToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const existing = req.cookies?.['askrev_csrf_token'];
+    const csrfToken = existing || crypto.randomBytes(32).toString('hex');
+    const cookieOpts = this.getCookieOptions(req);
+
+    res.cookie('askrev_csrf_token', csrfToken, {
+      ...cookieOpts,
+      httpOnly: false,
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return { csrfToken };
   }
 
   @Post('register')

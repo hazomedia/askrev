@@ -41,6 +41,7 @@ interface ProductItem {
   id: string;
   name: string;
   slug: string;
+  modelCode?: string;
   category: 'SCOOTER' | 'BIKE' | 'CYCLE' | 'JEEP' | 'UTILITY';
   categoryLabel: string;
   brand: string;
@@ -346,6 +347,7 @@ export function AdminProductCatalog() {
     setForm({
       name: '',
       slug: '',
+      modelCode: '',
       category: 'BIKE',
       brand: 'ASKR EV',
       tagline: '',
@@ -394,6 +396,7 @@ export function AdminProductCatalog() {
     setForm({
       name: product.name,
       slug: product.slug,
+      modelCode: product.modelCode || (product.slug ? product.slug.toUpperCase() : ''),
       category: product.category,
       brand: product.brand || 'ASKR EV',
       tagline: product.tagline || '',
@@ -655,6 +658,7 @@ export function AdminProductCatalog() {
       const payload: any = {
         name: form.name.trim(),
         slug: form.slug ? form.slug.trim() : undefined,
+        modelCode: form.modelCode ? form.modelCode.trim().toUpperCase() : undefined,
         category: form.category,
         brand: form.brand || 'ASKR EV',
         tagline: form.tagline,
@@ -912,7 +916,7 @@ export function AdminProductCatalog() {
                   <th className="py-3 px-4 text-center">Hero</th>
                   <th className="py-3 px-4 text-center">Featured</th>
                   <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-3 px-4 text-right sticky right-0 bg-slate-50 z-10 shadow-[-4px_0_6px_rgba(0,0,0,0.02)]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -953,8 +957,12 @@ export function AdminProductCatalog() {
 
                     {/* Vehicle Info */}
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                      <div
+                        onClick={() => openEditModal(p)}
+                        className="group flex items-center gap-3 cursor-pointer"
+                        title="Click to edit vehicle model"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 group-hover:ring-2 group-hover:ring-blue-500 transition-all">
                           {p.heroImage ? (
                             <img src={p.heroImage} alt={p.name} className="w-full h-full object-cover" />
                           ) : (
@@ -963,8 +971,11 @@ export function AdminProductCatalog() {
                         </div>
                         <div>
                           <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                            <span>{p.name}</span>
+                            <span className="group-hover:text-blue-600 transition-colors underline-offset-2 group-hover:underline">{p.name}</span>
                             <span className="text-[10px] font-normal text-slate-400">({p.brand})</span>
+                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-blue-600 font-semibold transition-opacity">
+                              • Edit
+                            </span>
                             {p.oemManufacturer && (
                               <span
                                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 text-purple-700 border border-purple-200"
@@ -1086,8 +1097,18 @@ export function AdminProductCatalog() {
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                    <td className="py-3 px-4 text-right sticky right-0 bg-white/95 backdrop-blur-sm z-10 shadow-[-4px_0_6px_rgba(0,0,0,0.02)]">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Obvious, Prominent Edit Action Button */}
+                        <button
+                          onClick={() => openEditModal(p)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-[#165DAD] hover:bg-blue-100 hover:border-blue-300 font-bold text-xs transition shadow-sm"
+                          title="Edit Vehicle Model"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Edit</span>
+                        </button>
+
                         <Link
                           href={`/bikes/${p.slug}?preview=true`}
                           target="_blank"
@@ -1097,13 +1118,6 @@ export function AdminProductCatalog() {
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                         </Link>
-                        <button
-                          onClick={() => openEditModal(p)}
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-[#165DAD] hover:border-blue-300 transition-colors"
-                          title="Edit Vehicle Model"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
                         {p.status === 'ARCHIVED' ? (
                           <button
                             onClick={() => handleRestore(p)}
@@ -1213,7 +1227,7 @@ export function AdminProductCatalog() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">Category *</label>
                       <select
@@ -1227,6 +1241,16 @@ export function AdminProductCatalog() {
                         <option value="JEEP">Electric 4x4 Jeep</option>
                         <option value="UTILITY">Electric Utility Vehicle</option>
                       </select>
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Model Code (SKU)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. ASKR-EV-S01"
+                        value={form.modelCode || ''}
+                        onChange={(e) => setForm({ ...form, modelCode: e.target.value.toUpperCase() })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 font-mono"
+                      />
                     </div>
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">Brand Name</label>

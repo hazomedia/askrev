@@ -187,7 +187,7 @@ export default function BikeDetailPage() {
         <main className="flex-1 max-w-7xl mx-auto px-4 py-20 w-full animate-pulse">
           <div className="h-6 bg-white/10 rounded w-32 mb-8" />
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <div className="lg:col-span-7 h-96 bg-white/5 rounded-3xl" />
+            <div className="lg:col-span-7 aspect-square w-full max-w-lg mx-auto bg-white/5 rounded-3xl" />
             <div className="lg:col-span-5 space-y-4">
               <div className="h-10 bg-white/10 rounded w-3/4" />
               <div className="h-5 bg-white/10 rounded w-1/2" />
@@ -272,8 +272,8 @@ export default function BikeDetailPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
               {/* Left Column: Vehicle Photographic Showcase */}
-              <div className="lg:col-span-7 flex flex-col items-center">
-                <div className="relative w-full h-88 sm:h-100 md:h-[460px] flex items-center justify-center p-6 rounded-3xl bg-[#101827] border border-white/10 shadow-2xl overflow-hidden">
+              <div className="lg:col-span-7 flex flex-col items-center w-full">
+                <div className="relative w-full aspect-square max-w-lg mx-auto flex items-center justify-center p-6 sm:p-8 rounded-3xl bg-[#101827] border border-white/10 shadow-2xl overflow-hidden">
                   {/* Status Badge */}
                   <div className="absolute top-5 left-5 z-20">
                     {vehicle.isBookable ? (
@@ -297,28 +297,31 @@ export default function BikeDetailPage() {
                     }}
                   />
 
-                  {/* Vehicle Image with Smooth Swapping */}
+                  {/* Vehicle Image with 1:1 Aspect Ratio & Object Contain */}
                   <img
                     key={activeImageSrc}
                     src={activeImageSrc}
                     alt={`${vehicle.name} - ${currentColor.name}`}
-                    className="relative z-10 w-full h-full object-cover rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)] transition-all duration-300"
+                    className="relative z-10 w-full h-full object-contain object-center rounded-2xl filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.8)] transition-all duration-300"
+                    loading="eager"
                   />
                 </div>
 
-                {/* Variant Image Gallery Thumbnails */}
+                {/* Variant Image Gallery Thumbnails with 1:1 Aspect Ratio */}
                 {activeGalleryImages.length > 1 && (
-                  <div className="mt-3 flex items-center gap-2.5 overflow-x-auto w-full py-1">
+                  <div className="mt-3 flex items-center justify-center gap-2.5 overflow-x-auto w-full py-1">
                     {activeGalleryImages.map((imgUrl: string, idx: number) => (
                       <button
                         key={idx}
                         onClick={() => setActiveGalleryIndex(idx)}
-                        className={`relative w-20 h-16 rounded-xl overflow-hidden border transition-all shrink-0 ${activeGalleryIndex === idx
+                        className={`relative w-16 h-16 sm:w-20 sm:h-20 aspect-square rounded-xl overflow-hidden border transition-all shrink-0 bg-[#0d131f] flex items-center justify-center p-1.5 ${
+                          activeGalleryIndex === idx
                             ? 'border-[#267DFF] ring-2 ring-[#267DFF]/50 scale-105'
                             : 'border-white/10 opacity-60 hover:opacity-100'
-                          }`}
+                        }`}
+                        title={`View image ${idx + 1}`}
                       >
-                        <img src={imgUrl} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
+                        <img src={imgUrl} alt={`View ${idx + 1}`} className="w-full h-full object-contain object-center" />
                       </button>
                     ))}
                   </div>

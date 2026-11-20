@@ -269,7 +269,7 @@ describe('AuthService & TotpService Security Enhancements', () => {
       ).rejects.toThrow('Invalid password');
 
       // Disabling MFA with correct password and a fresh time-step code succeeds
-      const disableCode = totpService.generateTOTP(setup.secret, Date.now() + 35000);
+      const disableCode = totpService.generateTOTP(setup.secret);
       const disableResult = await authService.disableMfa(mockUser.id, {
         password: 'OldSecurePassword@2026',
         code: disableCode,

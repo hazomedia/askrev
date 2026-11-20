@@ -3,7 +3,7 @@ import { execSync } from 'child_process';
 
 const envVars = [
   { key: 'NEXT_PUBLIC_APP_URL', value: 'https://admin.askrevdrive.com' },
-  { key: 'NEXT_PUBLIC_API_URL', value: 'https://api-production-486e9909.up.railway.app/api' },
+  { key: 'NEXT_PUBLIC_API_URL', value: 'https://api.askrevdrive.com/api' },
   { key: 'NEXT_PUBLIC_ADMIN_MODE', value: 'true' },
   { key: 'SHOWROOM_ONLY', value: 'false' },
   { key: 'NEXT_PUBLIC_SHOWROOM_MODE', value: 'false' },

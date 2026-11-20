@@ -45,6 +45,7 @@ async function bootstrap() {
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.disable('x-powered-by');
+  expressApp.set('trust proxy', 1);
 
   app.setGlobalPrefix('api');
   app.use(cookieParser());
