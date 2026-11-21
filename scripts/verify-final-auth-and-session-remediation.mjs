@@ -175,12 +175,30 @@ async function run() {
   const csrfMatch = cookieHeaderStr.match(/askrev_csrf_token=([^;]+)/);
   const csrfToken = csrfMatch ? csrfMatch[1] : '';
 
+  // Attempt state mutation with cookie BUT NO Origin/Referer (Missing Origin/Referer rejection)
+  const noOriginRes = await fetch(`${API_BASE}/auth/profile`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieHeaderStr,
+      'X-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({ fullName: 'Missing Origin Attempt' }),
+  });
+
+  assert(
+    noOriginRes.status === 403,
+    'Cookie mutation missing both Origin and Referer is rejected with 403 Forbidden',
+    `Status: ${noOriginRes.status}`
+  );
+
   // Attempt state mutation with cookie BUT NO CSRF header
   const noCsrfRes = await fetch(`${API_BASE}/auth/profile`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeaderStr,
+      Origin: 'https://askrevdrive.com',
     },
     body: JSON.stringify({ fullName: 'Malicious CSRF Attempt' }),
   });
@@ -198,6 +216,7 @@ async function run() {
       'Content-Type': 'application/json',
       Authorization: 'Bearer dummy-or-stolen-token',
       Cookie: cookieHeaderStr,
+      Origin: 'https://askrevdrive.com',
     },
     body: JSON.stringify({ fullName: 'Malicious Bypass Attempt' }),
   });
@@ -208,13 +227,14 @@ async function run() {
     `Status: ${bypassCsrfRes.status}`
   );
 
-  // Legitimate mutation with matching X-CSRF-Token header
+  // Legitimate mutation with matching X-CSRF-Token header and trusted Origin
   const validCsrfRes = await fetch(`${API_BASE}/auth/profile`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookieHeaderStr,
       'X-CSRF-Token': csrfToken,
+      Origin: 'https://askrevdrive.com',
     },
     body: JSON.stringify({ fullName: 'Rahul Sharma' }),
   });

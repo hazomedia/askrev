@@ -9,6 +9,7 @@ import { UserRole, MembershipPackage, paiseToRupees } from '@askrev/shared';
 import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken, isAccessTokenRevoked } from './jwt-secrets';
 import { TotpService } from './totp.service';
 import { EmailService } from './email.service';
+import { TokenRevocationService } from './token-revocation.service';
 
 @Injectable()
 export class AuthService {
@@ -18,7 +19,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly totpService: TotpService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly tokenRevocationService?: TokenRevocationService
   ) {}
 
   /**
@@ -235,16 +237,25 @@ export class AuthService {
       if (dto.totpCode) {
         mfaPassed = this.totpService.verifyTokenWithReplayProtection(user.id, user.twoFactorSecret || '', dto.totpCode, 1, 'login');
       } else if (dto.recoveryCode) {
-        const recoveryResult = this.totpService.verifyAndConsumeRecoveryCode(
-          dto.recoveryCode,
-          user.twoFactorRecoveryCodes || []
-        );
-        if (recoveryResult.valid) {
-          mfaPassed = true;
-          await this.prisma.user.update({
-            where: { id: user.id },
-            data: { twoFactorRecoveryCodes: recoveryResult.remainingHashedCodes },
+        const candidateHash = this.totpService.hashRecoveryCode(dto.recoveryCode);
+        const storedCodes = user.twoFactorRecoveryCodes || [];
+        const index = storedCodes.findIndex((h) => crypto.timingSafeEqual(Buffer.from(h), Buffer.from(candidateHash)));
+        if (index !== -1) {
+          const remaining = [...storedCodes];
+          remaining.splice(index, 1);
+          // Atomic update strictly verifying candidateHash is still present in array
+          const updateRes = await this.prisma.user.updateMany({
+            where: {
+              id: user.id,
+              twoFactorRecoveryCodes: { has: candidateHash },
+            },
+            data: {
+              twoFactorRecoveryCodes: remaining,
+            },
           });
+          if (updateRes.count > 0) {
+            mfaPassed = true;
+          }
         }
       }
 
@@ -343,11 +354,15 @@ export class AuthService {
   async logout(userId: string, accessToken?: string) {
     await this.prisma.user.update({
       where: { id: userId },
-      data: { refreshTokenHash: null },
+      data: {
+        refreshTokenHash: null,
+        sessionVersion: { increment: 1 },
+      },
     });
 
     if (accessToken) {
       const decoded = this.jwtService.decode(accessToken) as { exp?: number } | null;
+      await this.tokenRevocationService.revokeToken(accessToken, decoded?.exp, 'USER_LOGOUT');
       revokeAccessToken(accessToken, decoded?.exp);
     }
 
@@ -387,7 +402,12 @@ export class AuthService {
   }
 
   private async generateTokens(userId: string, email: string, role: string) {
-    const payload = { sub: userId, email, role, jti: crypto.randomUUID() };
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { sessionVersion: true },
+    });
+    const sessionVersion = user?.sessionVersion || 1;
+    const payload = { sub: userId, email, role, sessionVersion, jti: crypto.randomUUID() };
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: getJwtAccessSecret(),
@@ -479,7 +499,7 @@ export class AuthService {
    * Requires a valid short-lived enrollment token.
    */
   async setupMfaEnrollment(dto: MfaEnrollmentSetupDto) {
-    if (isAccessTokenRevoked(dto.enrollmentToken)) {
+    if ((await this.tokenRevocationService?.isTokenRevoked(dto.enrollmentToken)) || isAccessTokenRevoked(dto.enrollmentToken)) {
       throw new UnauthorizedException('MFA enrollment session has already been used or revoked. Please sign in again.');
     }
 
@@ -499,8 +519,21 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) throw new UnauthorizedException('User not found');
 
+    if (user.twoFactorEnabled) {
+      throw new ConflictException('Two-Factor Authentication is already enabled for this account.');
+    }
+
     const { secret, otpauthUrl } = this.totpService.generateSecret(20, user.email);
     const qrCodeDataUrl = await this.totpService.generateQrCode(otpauthUrl);
+
+    // Securely bind the server-generated pending TOTP secret to the user's enrollment challenge
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        pendingTwoFactorSecret: secret,
+        pendingTwoFactorCreatedAt: new Date(),
+      },
+    });
 
     return {
       secret,
@@ -516,9 +549,10 @@ export class AuthService {
   /**
    * Confirms MFA enrollment for an administrator, marks twoFactorEnabled: true,
    * stores hashed recovery codes, and issues full session credentials.
+   * Strictly verifies against the server-bound pending TOTP secret.
    */
   async confirmMfaEnrollment(dto: MfaEnrollmentConfirmDto) {
-    if (isAccessTokenRevoked(dto.enrollmentToken)) {
+    if ((await this.tokenRevocationService?.isTokenRevoked(dto.enrollmentToken)) || isAccessTokenRevoked(dto.enrollmentToken)) {
       throw new UnauthorizedException('MFA enrollment session has already been used or revoked. Please sign in again.');
     }
 
@@ -544,25 +578,71 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('User not found');
 
-    const isValid = this.totpService.verifyTokenWithReplayProtection(user.id, dto.secret, dto.code, 1, 'enrollment');
+    if (user.twoFactorEnabled) {
+      throw new ConflictException('Two-Factor Authentication is already enabled for this account.');
+    }
+
+    if (!user.pendingTwoFactorSecret) {
+      throw new BadRequestException('No pending MFA enrollment session found. Please run enrollment setup first.');
+    }
+
+    // Reject expired enrollment challenge (10 minutes)
+    if (
+      user.pendingTwoFactorCreatedAt &&
+      Date.now() - user.pendingTwoFactorCreatedAt.getTime() > 10 * 60 * 1000
+    ) {
+      throw new UnauthorizedException('MFA enrollment challenge has expired. Please initiate setup again.');
+    }
+
+    // DO NOT trust client-supplied secret! Validate strictly against server-generated pending secret.
+    const secretToVerify = user.pendingTwoFactorSecret;
+    const isValid = this.totpService.verifyTokenWithReplayProtection(user.id, secretToVerify, dto.code, 1, 'enrollment');
     if (!isValid) {
       throw new BadRequestException('Invalid 6-digit TOTP verification code.');
     }
 
     const rawRecoveryCodes = this.totpService.generateRecoveryCodes(8);
     const hashedCodes = rawRecoveryCodes.map((c) => this.totpService.hashRecoveryCode(c));
+    const tokenHash = hashToken(dto.enrollmentToken);
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        twoFactorSecret: dto.secret,
-        twoFactorEnabled: true,
-        twoFactorRecoveryCodes: hashedCodes,
-      },
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Atomic single-use consumption: insert into RevokedToken
+        await tx.revokedToken.create({
+          data: {
+            tokenHash,
+            expiresAt: new Date(payload.exp ? payload.exp * 1000 : Date.now() + 10 * 60 * 1000),
+            reason: 'MFA_ENROLLMENT_CONSUMED',
+          },
+        });
 
-    // Invalidate enrollment token immediately upon successful confirmation
-    revokeAccessToken(dto.enrollmentToken, payload.exp);
+        const freshUser = await tx.user.findUnique({ where: { id: user.id } });
+        if (freshUser?.twoFactorEnabled) {
+          throw new ConflictException('Two-Factor Authentication is already enabled for this account.');
+        }
+
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            twoFactorSecret: secretToVerify,
+            twoFactorEnabled: true,
+            twoFactorRecoveryCodes: hashedCodes,
+            pendingTwoFactorSecret: null,
+            pendingTwoFactorCreatedAt: null,
+            sessionVersion: { increment: 1 },
+            refreshTokenHash: null,
+          },
+        });
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new ConflictException('MFA enrollment token has already been consumed.');
+      }
+      throw err;
+    }
+
+    // Update revocation cache and distributed storage
+    await this.tokenRevocationService?.revokeToken(dto.enrollmentToken, payload.exp, 'MFA_ENROLLMENT_CONSUMED');
 
     try {
       await this.prisma.auditLog.create({
@@ -589,9 +669,9 @@ export class AuthService {
 
   /**
    * Dedicated machine-to-machine service token generation.
-   * Requires strict pre-shared client credentials authentication.
+   * Requires strict pre-shared client credentials authentication and validated scope permissions.
    */
-  async issueServiceToken(dto: ServiceTokenRequestDto) {
+  async issueServiceToken(dto: ServiceTokenRequestDto, clientIp: string = 'unknown') {
     const configuredSecret =
       process.env.SERVICE_CLIENT_SECRET ||
       (process.env.NODE_ENV !== 'production' ? 'askrev-dev-service-client-secret-12345!' : undefined);
@@ -599,6 +679,32 @@ export class AuthService {
 
     if (!configuredSecret) {
       throw new ForbiddenException('Service-to-service authentication is not configured');
+    }
+
+    const ALLOWED_SERVICE_SCOPES = new Set([
+      'service:reconciliation',
+      'service:health',
+      'service:batch',
+      'service:read',
+      'service:read_write',
+    ]);
+
+    const requestedScope = dto.scope || 'service:read';
+    if (!ALLOWED_SERVICE_SCOPES.has(requestedScope)) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'AUTH_SERVICE_TOKEN_REJECTED',
+            entityType: 'ServiceToken',
+            entityId: dto.clientId,
+            actorId: `service:${dto.clientId}`,
+            metadata: { clientId: dto.clientId, scope: requestedScope, clientIp, reason: 'INVALID_SCOPE' },
+          },
+        });
+      } catch {}
+      throw new ForbiddenException(
+        `Invalid service scope '${requestedScope}'. Allowed scopes: ${Array.from(ALLOWED_SERVICE_SCOPES).join(', ')}`
+      );
     }
 
     const idBuffer = Buffer.from(dto.clientId);
@@ -614,6 +720,17 @@ export class AuthService {
       crypto.timingSafeEqual(secretBuffer, expectedSecretBuffer);
 
     if (!isIdValid || !isSecretValid) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'AUTH_SERVICE_TOKEN_FAILED',
+            entityType: 'ServiceToken',
+            entityId: dto.clientId,
+            actorId: `service:${dto.clientId}`,
+            metadata: { clientId: dto.clientId, clientIp, reason: 'INVALID_CREDENTIALS' },
+          },
+        });
+      } catch {}
       throw new UnauthorizedException('Invalid service client credentials');
     }
 
@@ -621,7 +738,7 @@ export class AuthService {
       sub: `service:${dto.clientId}`,
       clientId: dto.clientId,
       role: 'SERVICE_CLIENT',
-      scope: dto.scope || 'service:read_write',
+      scope: requestedScope,
       jti: crypto.randomUUID(),
     };
 
@@ -630,11 +747,23 @@ export class AuthService {
       expiresIn: '1h',
     });
 
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_SERVICE_TOKEN_ISSUED',
+          entityType: 'ServiceToken',
+          entityId: dto.clientId,
+          actorId: `service:${dto.clientId}`,
+          metadata: { clientId: dto.clientId, scope: requestedScope, clientIp },
+        },
+      });
+    } catch {}
+
     return {
       tokenType: 'Bearer',
       accessToken: token,
       expiresIn: 3600,
-      scope: payload.scope,
+      scope: requestedScope,
     };
   }
 
@@ -751,16 +880,25 @@ export class AuthService {
       if (dto.totpCode) {
         mfaPassed = this.totpService.verifyTokenWithReplayProtection(user.id, user.twoFactorSecret || '', dto.totpCode, 1, 'change-password');
       } else if (dto.recoveryCode) {
-        const recoveryResult = this.totpService.verifyAndConsumeRecoveryCode(
-          dto.recoveryCode,
-          user.twoFactorRecoveryCodes || []
-        );
-        if (recoveryResult.valid) {
-          mfaPassed = true;
-          await this.prisma.user.update({
-            where: { id: user.id },
-            data: { twoFactorRecoveryCodes: recoveryResult.remainingHashedCodes },
+        const candidateHash = this.totpService.hashRecoveryCode(dto.recoveryCode);
+        const storedCodes = user.twoFactorRecoveryCodes || [];
+        const index = storedCodes.findIndex((h) => crypto.timingSafeEqual(Buffer.from(h), Buffer.from(candidateHash)));
+        if (index !== -1) {
+          const remaining = [...storedCodes];
+          remaining.splice(index, 1);
+          // Atomic update strictly verifying candidateHash is still present in array
+          const updateRes = await this.prisma.user.updateMany({
+            where: {
+              id: user.id,
+              twoFactorRecoveryCodes: { has: candidateHash },
+            },
+            data: {
+              twoFactorRecoveryCodes: remaining,
+            },
           });
+          if (updateRes.count > 0) {
+            mfaPassed = true;
+          }
         }
       }
 
@@ -787,18 +925,20 @@ export class AuthService {
     // 8. Hash new password with bcrypt 12 rounds
     const newPasswordHash = await bcrypt.hash(dto.newPassword, 12);
 
-    // 9. Update password and revoke all refresh tokens in DB
+    // 9. Update password and revoke all sessions (increment sessionVersion and clear refreshTokenHash)
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         passwordHash: newPasswordHash,
         refreshTokenHash: null,
+        sessionVersion: { increment: 1 },
       },
     });
 
     // 10. Revoke current access token if present
     if (currentAccessToken) {
       const decoded = this.jwtService.decode(currentAccessToken) as { exp?: number } | null;
+      await this.tokenRevocationService?.revokeToken(currentAccessToken, decoded?.exp, 'PASSWORD_CHANGED');
       revokeAccessToken(currentAccessToken, decoded?.exp);
     }
 
@@ -831,11 +971,15 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { refreshTokenHash: null },
+      data: {
+        refreshTokenHash: null,
+        sessionVersion: { increment: 1 },
+      },
     });
 
     if (currentAccessToken) {
       const decoded = this.jwtService.decode(currentAccessToken) as { exp?: number } | null;
+      await this.tokenRevocationService?.revokeToken(currentAccessToken, decoded?.exp, 'REVOKE_ALL_SESSIONS');
       revokeAccessToken(currentAccessToken, decoded?.exp);
     }
 

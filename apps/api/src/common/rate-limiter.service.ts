@@ -18,15 +18,18 @@ export function getClientIp(req: Request): string {
     return expressIp.replace(/^::ffff:/, '').trim();
   }
 
-  // Fallback to x-forwarded-for handling (take the leftmost client IP)
+  // Fallback to x-forwarded-for handling behind 1-hop reverse proxy:
+  // The trusted proxy appends the real remote address to the end of X-Forwarded-For.
+  // The leftmost entries can be spoofed by the client, so with 1 trusted hop,
+  // we take the rightmost (last) entry appended by the proxy.
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.length > 0) {
     const ips = forwarded.split(',').map((ip) => ip.trim());
-    const clientIp = ips[0].replace(/^::ffff:/, '').trim();
-    if (clientIp) return clientIp;
+    const trustedClientIp = ips[ips.length - 1].replace(/^::ffff:/, '').trim();
+    if (trustedClientIp) return trustedClientIp;
   } else if (Array.isArray(forwarded) && forwarded.length > 0) {
-    const clientIp = forwarded[0].replace(/^::ffff:/, '').trim();
-    if (clientIp) return clientIp;
+    const trustedClientIp = forwarded[forwarded.length - 1].replace(/^::ffff:/, '').trim();
+    if (trustedClientIp) return trustedClientIp;
   }
 
   const socketIp = req.socket?.remoteAddress || '';
@@ -118,7 +121,15 @@ export class RateLimiterService implements OnModuleDestroy {
           return { allowed: true, retryAfter: 0, currentCount: count };
         }
       } catch (err: any) {
-        this.logger.warn(`Redis checkLimit failed (${err.message}).`);
+        this.logger.error(`Redis checkLimit failed (${err.message}). Marking Redis unavailable.`);
+        this.isRedisAvailable = false;
+        if (isSensitive && this.isStrictProduction) {
+          return {
+            allowed: false,
+            retryAfter: 60,
+            currentCount: maxRequests + 1,
+          };
+        }
       }
     }
 
@@ -166,6 +177,14 @@ export class RateLimiterService implements OnModuleDestroy {
       } catch {}
     }
     this.memoryBuckets.delete(key);
+  }
+
+  getRedisClient(): Redis | null {
+    return this.isRedisAvailable ? this.redisClient : null;
+  }
+
+  isRedisHealthy(): boolean {
+    return this.isRedisAvailable;
   }
 
   onModuleDestroy() {

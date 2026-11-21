@@ -3,11 +3,15 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
-import { getJwtAccessSecret, isAccessTokenRevoked } from '../jwt-secrets';
+import { getJwtAccessSecret } from '../jwt-secrets';
+import { TokenRevocationService } from '../token-revocation.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tokenRevocationService: TokenRevocationService
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -24,7 +28,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: Request, payload: { sub: string; email: string; role: string; scope?: string }) {
+  async validate(
+    req: Request,
+    payload: { sub: string; email?: string; role: string; scope?: string; clientId?: string; sessionVersion?: number }
+  ) {
     if (payload.scope === 'mfa_enrollment') {
       throw new UnauthorizedException(
         'INSUFFICIENT_SCOPE: This token is restricted strictly to MFA enrollment and cannot access application resources.'
@@ -40,8 +47,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       token = req.cookies['askrev_access_token'] || req.cookies['askrev_admin_session'] || '';
     }
 
-    if (token && isAccessTokenRevoked(token)) {
+    if (token && (await this.tokenRevocationService.isTokenRevoked(token))) {
       throw new UnauthorizedException('Session has been logged out or revoked. Please sign in again.');
+    }
+
+    // Dedicated Machine-to-Machine Service Token handling
+    if (payload.role === 'SERVICE_CLIENT') {
+      if (!payload.sub || !payload.sub.startsWith('service:')) {
+        throw new UnauthorizedException('Invalid service token subject');
+      }
+      return {
+        isServiceClient: true,
+        clientId: payload.clientId || payload.sub.replace('service:', ''),
+        role: 'SERVICE_CLIENT',
+        scope: payload.scope || 'service:read',
+        sub: payload.sub,
+      };
     }
 
     const user = await this.prisma.user.findUnique({
@@ -55,6 +76,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User account no longer exists or token invalid');
     }
 
+    // Distributed session version check: if sessionVersion was bumped, revoke instantly
+    if (payload.sessionVersion !== undefined && user.sessionVersion !== payload.sessionVersion) {
+      throw new UnauthorizedException('Session has been revoked. Please sign in again.');
+    }
+
     return user;
   }
 }
+

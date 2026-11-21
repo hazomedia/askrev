@@ -33,6 +33,7 @@ export class CsrfGuard implements CanActivate {
     }
 
     // 2. Request Origin / Referer Validation (OWASP Recommended)
+    const hasSessionCookie = Boolean(req.cookies?.['askrev_access_token'] || req.cookies?.['askrev_admin_session']);
     const origin = req.headers['origin'] as string | undefined;
     const referer = req.headers['referer'] as string | undefined;
 
@@ -47,12 +48,15 @@ export class CsrfGuard implements CanActivate {
         if (!this.isOriginAllowed(parsedReferer)) {
           throw new ForbiddenException(`CSRF validation failed: Unauthorized request referer (${referer})`);
         }
-      } catch {}
+      } catch (err: any) {
+        if (err instanceof ForbiddenException) throw err;
+        throw new ForbiddenException(`CSRF validation failed: Malformed request referer (${referer})`);
+      }
+    } else if (hasSessionCookie) {
+      throw new ForbiddenException('CSRF validation failed: Missing Origin and Referer on cookie-authenticated request');
     }
 
     // 3. Ambient Browser Session Cookie Check
-    const hasSessionCookie = Boolean(req.cookies?.['askrev_access_token'] || req.cookies?.['askrev_admin_session']);
-
     // CRITICAL SECURITY ENFORCEMENT:
     // If a session cookie is present, CSRF validation is strictly mandatory.
     // Explicit Bearer headers CANNOT bypass CSRF protection for cookie-authenticated browser sessions.
@@ -73,14 +77,7 @@ export class CsrfGuard implements CanActivate {
   }
 
   private isOriginAllowed(origin: string): boolean {
-    if (this.allowedOrigins.has(origin)) return true;
-    try {
-      const url = new URL(origin);
-      if (url.hostname.endsWith('.askrevdrive.com') || url.hostname === 'askrevdrive.com') {
-        return true;
-      }
-    } catch {}
-    return false;
+    return this.allowedOrigins.has(origin);
   }
 }
 

@@ -63,11 +63,14 @@ model User {
   directReferrals     User[]             @relation("SponsorReferrals")
 
   refreshTokenHash    String?
+  sessionVersion      Int                @default(1)
 
   // Two-Factor Authentication (TOTP RFC 6238)
-  twoFactorSecret        String?
-  twoFactorEnabled       Boolean            @default(false)
-  twoFactorRecoveryCodes String[]           @default([])
+  twoFactorSecret           String?
+  twoFactorEnabled          Boolean            @default(false)
+  twoFactorRecoveryCodes    String[]           @default([])
+  pendingTwoFactorSecret    String?
+  pendingTwoFactorCreatedAt DateTime?
 
   // Email Verification
   isEmailVerified        Boolean            @default(false)
@@ -666,5 +669,17 @@ model RetailQualificationEvent {
   @@index([userId])
   @@index([status])
 }
+
+model RevokedToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  reason    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
 
 

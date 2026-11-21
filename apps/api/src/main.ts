@@ -173,6 +173,16 @@ async function bootstrap() {
             retryAfterSeconds: resetCheck.retryAfter,
           });
         }
+      } else if (reqPath === '/api/auth/service/token') {
+        const m2mCheck = await rateLimiter.checkLimit(`m2m-token:${clientIp}`, 15, windowMs, true);
+        if (!m2mCheck.allowed) {
+          res.setHeader('Retry-After', String(m2mCheck.retryAfter));
+          return res.status(429).json({
+            statusCode: 429,
+            message: 'Too many service token requests. Please wait before retrying.',
+            retryAfterSeconds: m2mCheck.retryAfter,
+          });
+        }
       } else if (reqPath.startsWith('/api/auth/mfa/')) {
         const mfaCheck = await rateLimiter.checkLimit(`mfa-setup:${clientIp}`, 15, windowMs, true);
         if (!mfaCheck.allowed) {

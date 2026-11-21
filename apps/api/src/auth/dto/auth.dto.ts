@@ -110,8 +110,8 @@ export class MfaEnrollmentConfirmDto {
   code: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'TOTP secret is required' })
-  secret: string;
+  @IsOptional()
+  secret?: string;
 }
 
 export class DisableMfaDto {

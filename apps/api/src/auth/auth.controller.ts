@@ -279,8 +279,9 @@ export class AuthController {
    */
   @Post('service/token')
   @HttpCode(HttpStatus.OK)
-  async issueServiceToken(@Body() dto: ServiceTokenRequestDto) {
-    return this.authService.issueServiceToken(dto);
+  async issueServiceToken(@Body() dto: ServiceTokenRequestDto, @Req() req: Request) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
+    return this.authService.issueServiceToken(dto, clientIp);
   }
 
   @UseGuards(JwtAuthGuard)

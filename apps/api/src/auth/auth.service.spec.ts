@@ -103,7 +103,18 @@ describe('AuthService & TotpService Security Enhancements', () => {
       sendEmailVerification: vi.fn().mockResolvedValue(true),
     };
 
-    authService = new AuthService(mockPrisma as any, mockJwtService as any, totpService, mockEmailService as any);
+    const mockTokenRevocation = {
+      revokeToken: vi.fn().mockResolvedValue(undefined),
+      isTokenRevoked: vi.fn().mockResolvedValue(false),
+    };
+
+    authService = new AuthService(
+      mockPrisma as any,
+      mockJwtService as any,
+      totpService,
+      mockEmailService as any,
+      mockTokenRevocation as any
+    );
   });
 
   describe('TotpService Features', () => {
