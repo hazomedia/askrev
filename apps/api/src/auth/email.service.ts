@@ -1,10 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
+export interface EmailDeliveryResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
+  provider: 'BREVO_HTTP' | 'SMTP' | 'SIMULATION';
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: nodemailer.Transporter | null = null;
+  private readonly HTTP_TIMEOUT_MS = 10000; // 10-second timeout
 
   constructor() {
     this.initTransporter();
@@ -30,10 +38,9 @@ export class EmailService {
           minVersion: 'TLSv1.2',
         },
       });
-      this.logger.log(`[SMTP] Initialized transporter with host: ${host}:${port} for user: ${user}`);
+      this.logger.log(`[SMTP] Initialized secondary transporter with host: ${host}:${port} for user: ${user}`);
     } else {
       this.transporter = null;
-      this.logger.warn('[SMTP] SMTP credentials not fully configured; falling back to safe simulation logging.');
     }
   }
 
@@ -48,39 +55,178 @@ export class EmailService {
     ).replace(/\/$/, '');
   }
 
-  private getFromAddress(): string {
-    return process.env.SMTP_FROM || 'ASKR EV <no-reply@askrevdrive.com>';
+  private getSender(): { name: string; email: string } {
+    const rawFrom = process.env.SMTP_FROM || 'ASKR EV <no-reply@askrevdrive.com>';
+    const match = rawFrom.match(/^(.*?)\s*<(.+)>$/);
+    if (match) {
+      return {
+        name: match[1].replace(/["']/g, '').trim() || 'ASKR EV',
+        email: match[2].trim(),
+      };
+    }
+    return {
+      name: 'ASKR EV',
+      email: rawFrom.trim(),
+    };
+  }
+
+  private maskEmail(email: string): string {
+    if (!email) return '***';
+    return email.replace(/(?<=^.{2}).(?=.*@)/g, '*');
   }
 
   /**
-   * Verifies SMTP connection and authentication with the upstream provider.
+   * Dispatches email via Brevo HTTPS REST API (POST https://api.brevo.com/v3/smtp/email).
+   * Runs over HTTPS (port 443), bypassing container-level SMTP port blocks.
    */
-  async verifyConnection(): Promise<{ success: boolean; message: string }> {
-    if (!this.transporter) {
-      this.initTransporter();
+  private async sendViaBrevoHttp(params: {
+    toEmail: string;
+    recipientName: string;
+    subject: string;
+    textContent: string;
+    htmlContent: string;
+  }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const apiKey = process.env.BREVO_API_KEY;
+    if (!apiKey) {
+      return { success: false, error: 'BREVO_API_KEY is not configured' };
     }
-    if (!this.transporter) {
-      return { success: false, message: 'SMTP transporter not initialized (missing environment variables).' };
-    }
+
+    const sender = this.getSender();
+    const payload = {
+      sender,
+      to: [
+        {
+          email: params.toEmail,
+          name: params.recipientName || 'Member',
+        },
+      ],
+      subject: params.subject,
+      textContent: params.textContent,
+      htmlContent: params.htmlContent,
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.HTTP_TIMEOUT_MS);
+
     try {
-      await this.transporter.verify();
-      return { success: true, message: 'SMTP connection and authentication verified successfully.' };
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': apiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      const responseText = await response.text();
+      let responseData: any = {};
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        responseData = { raw: responseText };
+      }
+
+      if (response.ok || response.status === 201 || response.status === 200) {
+        return {
+          success: true,
+          messageId: responseData.messageId || 'DELIVERED',
+        };
+      }
+
+      const errorMessage = responseData.message || responseData.code || `HTTP ${response.status}`;
+      return {
+        success: false,
+        error: `Brevo API HTTP ${response.status}: ${errorMessage}`,
+      };
     } catch (err: any) {
-      const errMsg = `SMTP verify failed: ${err.message || err}`;
-      this.logger.error(`[SMTP_VERIFY_ERROR] ${errMsg}`);
-      return { success: false, message: errMsg };
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        return {
+          success: false,
+          error: `Brevo API request timed out after ${this.HTTP_TIMEOUT_MS / 1000} seconds`,
+        };
+      }
+      return {
+        success: false,
+        error: `Network error connecting to Brevo API: ${err.message || err}`,
+      };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   /**
-   * Dispatches a password reset email to a member.
-   * Real SMTP delivery is performed whenever SMTP is configured.
-   * COMPLIANCE_MODE=SIMULATION_ONLY does NOT disable real security/auth emails.
+   * Verifies connection and authentication with Brevo HTTPS API or fallback SMTP provider.
    */
-  async sendPasswordResetEmail(toEmail: string, recipientName: string, rawToken: string): Promise<boolean> {
-    const appUrl = this.getAppUrl();
-    const resetUrl = `${appUrl}/auth/reset-password?token=${encodeURIComponent(rawToken)}`;
-    const maskedEmail = toEmail.replace(/(?<=^.{2}).(?=.*@)/g, '*');
+  async verifyConnection(): Promise<{ success: boolean; message: string; provider?: string }> {
+    const apiKey = process.env.BREVO_API_KEY;
+
+    if (apiKey) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.HTTP_TIMEOUT_MS);
+
+      try {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'api-key': apiKey,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({}),
+          signal: controller.signal,
+        });
+
+        // Brevo returns 400 with 'missing_parameter' when authenticated but body is empty
+        if (response.status === 400) {
+          const body = await response.json().catch(() => ({}));
+          if (body.code === 'missing_parameter') {
+            return {
+              success: true,
+              message: 'Brevo HTTPS API key authenticated and connection verified successfully.',
+              provider: 'BREVO_HTTP',
+            };
+          }
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          const body = await response.json().catch(() => ({}));
+          const errMsg = body.message || 'Unauthorized / Invalid API Key';
+          this.logger.error(`[BREVO_HTTP_VERIFY_ERROR] ${errMsg}`);
+          return {
+            success: false,
+            message: `Brevo HTTPS API verification failed: ${errMsg}`,
+            provider: 'BREVO_HTTP',
+          };
+        }
+
+        if (response.ok) {
+          return {
+            success: true,
+            message: 'Brevo HTTPS API authenticated and connection verified successfully.',
+            provider: 'BREVO_HTTP',
+          };
+        }
+
+        const body = await response.json().catch(() => ({}));
+        return {
+          success: false,
+          message: `Brevo HTTPS API verification returned status ${response.status}: ${body.message || 'Unknown error'}`,
+          provider: 'BREVO_HTTP',
+        };
+      } catch (err: any) {
+        const errMsg = err.name === 'AbortError' ? 'Brevo HTTPS API connection timed out (10s)' : err.message;
+        this.logger.error(`[BREVO_HTTP_VERIFY_ERROR] ${errMsg}`);
+        return {
+          success: false,
+          message: `Brevo HTTPS API verify failed: ${errMsg}`,
+          provider: 'BREVO_HTTP',
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
 
     if (!this.transporter) {
       this.initTransporter();
@@ -88,29 +234,92 @@ export class EmailService {
 
     if (this.transporter) {
       try {
-        const from = this.getFromAddress();
+        await this.transporter.verify();
+        return {
+          success: true,
+          message: 'SMTP connection and authentication verified successfully.',
+          provider: 'SMTP',
+        };
+      } catch (err: any) {
+        const errMsg = `SMTP verify failed: ${err.message || err}`;
+        this.logger.error(`[SMTP_VERIFY_ERROR] ${errMsg}`);
+        return {
+          success: false,
+          message: errMsg,
+          provider: 'SMTP',
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: 'Email service not configured (neither BREVO_API_KEY nor SMTP credentials found).',
+      provider: 'SIMULATION',
+    };
+  }
+
+  /**
+   * Dispatches a password reset email to a member.
+   * Priority: Brevo HTTPS API -> SMTP Transport -> Simulation Mode.
+   */
+  async sendPasswordResetEmail(toEmail: string, recipientName: string, rawToken: string): Promise<boolean> {
+    const appUrl = this.getAppUrl();
+    const resetUrl = `${appUrl}/auth/reset-password?token=${encodeURIComponent(rawToken)}`;
+    const maskedEmail = this.maskEmail(toEmail);
+
+    const subject = 'Reset Your ASKR EV Account Password';
+    const textContent = `Hello ${recipientName || 'Member'},\n\nYou requested a password reset for your ASKR EV account.\n\nPlease reset your password using the following link:\n${resetUrl}\n\nThis link is valid for 15 minutes and can only be used once.\n\nIf you did not request this reset, please disregard this email.\n\nBest regards,\nASKR EV Security Team`;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #165DAD; margin-top: 0;">ASKR EV Mobility</h2>
+        <p>Hello <strong>${recipientName || 'Member'}</strong>,</p>
+        <p>We received a request to reset your ASKR EV member account password.</p>
+        <div style="text-align: center; margin: 32px 0;">
+          <a href="${resetUrl}" style="background-color: #165DAD; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+        </div>
+        <p style="font-size: 13px; color: #64748b;">
+          This single-use link will expire in <strong>15 minutes</strong>.<br/>
+          If the button above does not work, copy and paste this URL into your browser:<br/>
+          <a href="${resetUrl}" style="color: #165DAD; word-break: break-all;">${resetUrl}</a>
+        </p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">If you did not request a password reset, you can safely ignore this email. Your account remains secure.</p>
+      </div>
+    `;
+
+    // 1. Primary: Brevo HTTPS REST API
+    if (process.env.BREVO_API_KEY) {
+      const result = await this.sendViaBrevoHttp({
+        toEmail,
+        recipientName,
+        subject,
+        textContent,
+        htmlContent,
+      });
+
+      if (result.success) {
+        this.logger.log(`[BREVO_HTTP] Password reset email successfully delivered to ${maskedEmail} (MessageId: ${result.messageId})`);
+        return true;
+      }
+
+      this.logger.error(`[BREVO_HTTP_ERROR] Failed to send password reset email to ${maskedEmail}: ${result.error}`);
+      return false;
+    }
+
+    // 2. Secondary: Fallback SMTP Transport
+    if (!this.transporter) {
+      this.initTransporter();
+    }
+
+    if (this.transporter) {
+      try {
+        const from = `${this.getSender().name} <${this.getSender().email}>`;
         const info = await this.transporter.sendMail({
           from,
           to: toEmail,
-          subject: 'Reset Your ASKR EV Account Password',
-          text: `Hello ${recipientName || 'Member'},\n\nYou requested a password reset for your ASKR EV account.\n\nPlease reset your password using the following link:\n${resetUrl}\n\nThis link is valid for 15 minutes and can only be used once.\n\nIf you did not request this reset, please disregard this email.\n\nBest regards,\nASKR EV Security Team`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <h2 style="color: #165DAD; margin-top: 0;">ASKR EV Mobility</h2>
-              <p>Hello <strong>${recipientName || 'Member'}</strong>,</p>
-              <p>We received a request to reset your ASKR EV member account password.</p>
-              <div style="text-align: center; margin: 32px 0;">
-                <a href="${resetUrl}" style="background-color: #165DAD; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
-              </div>
-              <p style="font-size: 13px; color: #64748b;">
-                This single-use link will expire in <strong>15 minutes</strong>.<br/>
-                If the button above does not work, copy and paste this URL into your browser:<br/>
-                <a href="${resetUrl}" style="color: #165DAD; word-break: break-all;">${resetUrl}</a>
-              </p>
-              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-              <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">If you did not request a password reset, you can safely ignore this email. Your account remains secure.</p>
-            </div>
-          `,
+          subject,
+          text: textContent,
+          html: htmlContent,
         });
 
         this.logger.log(`[SMTP] Password reset email successfully delivered to ${maskedEmail} (MessageId: ${info.messageId})`);
@@ -121,7 +330,7 @@ export class EmailService {
       }
     }
 
-    // Fallback: Simulation logging when SMTP is not configured
+    // 3. Fallback: Safe Simulation Mode
     this.logger.log(
       `[SIMULATION_EMAIL] Password Reset Email queued for ${recipientName} <${maskedEmail}>. Action URL generated: ${appUrl}/auth/reset-password?token=[PROTECTED_TOKEN]`
     );
@@ -130,41 +339,66 @@ export class EmailService {
 
   /**
    * Dispatches an email address verification link to a member.
+   * Priority: Brevo HTTPS API -> SMTP Transport -> Simulation Mode.
    */
   async sendEmailVerification(toEmail: string, recipientName: string, rawToken: string): Promise<boolean> {
     const appUrl = this.getAppUrl();
     const verifyUrl = `${appUrl}/auth/verify-email?token=${encodeURIComponent(rawToken)}`;
-    const maskedEmail = toEmail.replace(/(?<=^.{2}).(?=.*@)/g, '*');
+    const maskedEmail = this.maskEmail(toEmail);
 
+    const subject = 'Verify Your ASKR EV Email Address';
+    const textContent = `Hello ${recipientName || 'Member'},\n\nThank you for registering with ASKR EV.\n\nPlease verify your email address using the following link:\n${verifyUrl}\n\nThis link is valid for 24 hours.\n\nBest regards,\nASKR EV Team`;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #165DAD; margin-top: 0;">ASKR EV Mobility</h2>
+        <p>Hello <strong>${recipientName || 'Member'}</strong>,</p>
+        <p>Thank you for registering with ASKR EV. Please verify your email address to complete your account setup.</p>
+        <div style="text-align: center; margin: 32px 0;">
+          <a href="${verifyUrl}" style="background-color: #165DAD; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email Address</a>
+        </div>
+        <p style="font-size: 13px; color: #64748b;">
+          This link will expire in 24 hours.<br/>
+          If the button above does not work, copy and paste this URL into your browser:<br/>
+          <a href="${verifyUrl}" style="color: #165DAD; word-break: break-all;">${verifyUrl}</a>
+        </p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">If you did not create an ASKR EV account, please disregard this email.</p>
+      </div>
+    `;
+
+    // 1. Primary: Brevo HTTPS REST API
+    if (process.env.BREVO_API_KEY) {
+      const result = await this.sendViaBrevoHttp({
+        toEmail,
+        recipientName,
+        subject,
+        textContent,
+        htmlContent,
+      });
+
+      if (result.success) {
+        this.logger.log(`[BREVO_HTTP] Verification email successfully delivered to ${maskedEmail} (MessageId: ${result.messageId})`);
+        return true;
+      }
+
+      this.logger.error(`[BREVO_HTTP_ERROR] Failed to send verification email to ${maskedEmail}: ${result.error}`);
+      return false;
+    }
+
+    // 2. Secondary: Fallback SMTP Transport
     if (!this.transporter) {
       this.initTransporter();
     }
 
     if (this.transporter) {
       try {
-        const from = this.getFromAddress();
+        const from = `${this.getSender().name} <${this.getSender().email}>`;
         const info = await this.transporter.sendMail({
           from,
           to: toEmail,
-          subject: 'Verify Your ASKR EV Email Address',
-          text: `Hello ${recipientName || 'Member'},\n\nThank you for registering with ASKR EV.\n\nPlease verify your email address using the following link:\n${verifyUrl}\n\nThis link is valid for 24 hours.\n\nBest regards,\nASKR EV Team`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <h2 style="color: #165DAD; margin-top: 0;">ASKR EV Mobility</h2>
-              <p>Hello <strong>${recipientName || 'Member'}</strong>,</p>
-              <p>Thank you for registering with ASKR EV. Please verify your email address to complete your account setup.</p>
-              <div style="text-align: center; margin: 32px 0;">
-                <a href="${verifyUrl}" style="background-color: #165DAD; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email Address</a>
-              </div>
-              <p style="font-size: 13px; color: #64748b;">
-                This link will expire in 24 hours.<br/>
-                If the button above does not work, copy and paste this URL into your browser:<br/>
-                <a href="${verifyUrl}" style="color: #165DAD; word-break: break-all;">${verifyUrl}</a>
-              </p>
-              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-              <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">If you did not create an ASKR EV account, please disregard this email.</p>
-            </div>
-          `,
+          subject,
+          text: textContent,
+          html: htmlContent,
         });
 
         this.logger.log(`[SMTP] Verification email successfully delivered to ${maskedEmail} (MessageId: ${info.messageId})`);
@@ -175,7 +409,7 @@ export class EmailService {
       }
     }
 
-    // Fallback: Simulation logging when SMTP is not configured
+    // 3. Fallback: Safe Simulation Mode
     this.logger.log(
       `[SIMULATION_EMAIL] Verification Email queued for ${recipientName} <${maskedEmail}>. Action URL generated: ${appUrl}/auth/verify-email?token=[PROTECTED_TOKEN]`
     );
