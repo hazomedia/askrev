@@ -119,6 +119,7 @@ model BinaryPlacement {
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
 
+  @@unique([parentId, leg])
   @@index([parentId])
   @@index([leg])
 }

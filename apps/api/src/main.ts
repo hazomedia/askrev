@@ -96,12 +96,46 @@ async function bootstrap() {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    }
 
     const reqPath = (req.originalUrl || req.url || '').split('?')[0];
-    if (req.method === 'POST' && reqPath.startsWith('/api/auth/')) {
-      const clientIp = (req.ip || req.socket?.remoteAddress || 'unknown').toString();
-      const windowMs = 60_000;
+    const clientIp = (req.ip || req.socket?.remoteAddress || 'unknown').toString();
+    const windowMs = 60_000;
 
+    // Rate limiting on simulation compute endpoints (prevent resource exhaustion)
+    if (reqPath.startsWith('/api/simulation/')) {
+      const simCheck = checkRateLimit(`sim:${clientIp}`, 60, windowMs);
+      if (!simCheck.allowed) {
+        res.setHeader('Retry-After', String(simCheck.retryAfter));
+        return res.status(429).json({
+          statusCode: 429,
+          message: 'Too many simulation requests. Please slow down and try again.',
+          retryAfterSeconds: simCheck.retryAfter,
+        });
+      }
+    }
+
+    // Rate limiting on sensitive financial / transaction mutation endpoints
+    if (
+      req.method === 'POST' &&
+      (reqPath.startsWith('/api/vouchers/redeem') ||
+        reqPath.startsWith('/api/packages/request') ||
+        reqPath.startsWith('/api/wallet/request-withdrawal'))
+    ) {
+      const mutCheck = checkRateLimit(`financial-mut:${clientIp}`, 30, windowMs);
+      if (!mutCheck.allowed) {
+        res.setHeader('Retry-After', String(mutCheck.retryAfter));
+        return res.status(429).json({
+          statusCode: 429,
+          message: 'Too many transaction requests. Please wait before submitting again.',
+          retryAfterSeconds: mutCheck.retryAfter,
+        });
+      }
+    }
+
+    if (req.method === 'POST' && reqPath.startsWith('/api/auth/')) {
       if (reqPath === '/api/auth/login') {
         const emailKey = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
         const targetCheck = checkRateLimit(`login:${clientIp}:${emailKey}`, 25, windowMs);
@@ -168,7 +202,7 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true,
     })
   );
 

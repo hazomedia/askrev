@@ -180,6 +180,36 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    const isPrivilegedStaff = [
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN_OPERATIONS,
+      UserRole.FINANCE_MANAGER,
+    ].includes(user.role as any);
+
+    if (isPrivilegedStaff) {
+      if (!user.twoFactorEnabled) {
+        if (process.env.NODE_ENV === 'production' || process.env.MFA_ENFORCE_ADMIN === 'true') {
+          try {
+            await this.prisma.auditLog.create({
+              data: {
+                action: 'AUTH_LOGIN_BLOCKED_MFA_MANDATORY',
+                entityType: 'User',
+                entityId: user.id,
+                metadata: { email: user.email, role: user.role, reason: 'ADMIN_MFA_MANDATORY_ENFORCED' },
+              },
+            });
+          } catch {}
+          throw new UnauthorizedException(
+            'MFA_REQUIRED: Two-Factor Authentication (TOTP) is mandatory for administrative accounts in production. Please contact security operations or enable MFA.'
+          );
+        } else {
+          this.logger.warn(
+            `Privileged staff login without MFA in ${process.env.NODE_ENV || 'development'}: ${user.email} (${user.role})`
+          );
+        }
+      }
+    }
+
     // Mandatory Two-Factor Authentication Check for MFA-enabled accounts
     if (user.twoFactorEnabled) {
       const mfaRateKey = `login-mfa:${user.id}`;

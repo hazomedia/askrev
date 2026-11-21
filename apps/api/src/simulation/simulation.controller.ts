@@ -1,8 +1,10 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
-import { CommissionSimulatorService, SimulationInput } from './commission-simulator.service';
-import { BinaryMatchInput } from '@askrev/shared';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { CommissionSimulatorService } from './commission-simulator.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SimulationInputDto, BinaryMatchInputDto } from './dto/simulation.dto';
 
 @Controller('simulation')
+@UseGuards(JwtAuthGuard)
 export class SimulationController {
   constructor(private readonly simulationService: CommissionSimulatorService) {}
 
@@ -18,15 +20,16 @@ export class SimulationController {
    * Run custom commission simulation
    */
   @Post('run-directs')
-  runCustomSimulation(@Body() input: SimulationInput) {
-    return this.simulationService.simulateSponsorChain(input);
+  runCustomSimulation(@Body() input: SimulationInputDto) {
+    return this.simulationService.simulateSponsorChain(input as any);
   }
 
   /**
    * Run Binary Matching simulation
    */
   @Post('binary-matching')
-  runBinaryMatching(@Body() input: BinaryMatchInput) {
+  runBinaryMatching(@Body() input: BinaryMatchInputDto) {
     return this.simulationService.simulateBinaryMatching(input);
   }
 }
+

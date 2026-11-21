@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -15,6 +16,7 @@ import { MediaModule } from './media/media.module';
 import { TaxModule } from './tax/tax.module';
 import { RetailQualificationModule } from './retail-qualification/retail-qualification.module';
 import { HealthController } from './health.controller';
+import { CsrfGuard } from './auth/guards/csrf.guard';
 
 @Module({
   imports: [
@@ -35,5 +37,11 @@ import { HealthController } from './health.controller';
     RetailQualificationModule,
   ],
   controllers: [HealthController],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: CsrfGuard,
+    },
+  ],
 })
 export class AppModule {}
