@@ -356,6 +356,15 @@ export class PackagesService {
 
       // 2. Process Member Package & Fee Journal
       if (req.requestType === MembershipRequestType.BASIC_ACTIVATION) {
+        if (
+          user.currentPackage === MembershipPackage.BASIC ||
+          user.currentPackage === MembershipPackage.FULL
+        ) {
+          throw new BadRequestException(
+            `Member ${user.memberId} has already been activated to ${user.currentPackage}. Duplicate activation is not permitted.`
+          );
+        }
+
         await tx.user.update({
           where: { id: user.id },
           data: {
@@ -534,15 +543,27 @@ export class PackagesService {
         });
       }
 
-      // 3b. PHASE 3C: BINARY VOLUME PROPAGATION ON FULL QUALIFICATION
-      // If the member is already placed in the binary tree and wasn't previously Full Qualified,
-      // their full qualification confers +1 unit of qualified volume to ancestors up their placement branch.
+      // 3b. PHASE 3C: BINARY PLACEMENT & VOLUME PROPAGATION ON FULL QUALIFICATION
+      let binaryPlacementResult: any = null;
       if (
         (req.requestType === MembershipRequestType.FULL_ACTIVATION ||
           req.requestType === MembershipRequestType.BASIC_TO_FULL_UPGRADE) &&
         !previouslyFullQualified
       ) {
-        await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
+        const existingPlacement = await tx.binaryPlacement.findUnique({
+          where: { userId: user.id },
+        });
+
+        if (existingPlacement && existingPlacement.parentId && existingPlacement.leg) {
+          await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
+          binaryPlacementResult = {
+            action: 'VOLUME_PROPAGATED',
+            parentId: existingPlacement.parentId,
+            leg: existingPlacement.leg,
+          };
+        } else {
+          binaryPlacementResult = await this.autoPlaceMemberInBinaryTree(tx, user);
+        }
       }
 
       // 4. Record Administrative Audit Log
@@ -558,6 +579,7 @@ export class PackagesService {
             isSimulated: true,
             complianceMode: 'SIMULATION_ONLY',
             sponsorSettlement: sponsorSettlementResult,
+            binaryPlacement: binaryPlacementResult,
           },
         },
       });
@@ -578,6 +600,7 @@ export class PackagesService {
           qualificationMethod,
         },
         sponsorSettlement: sponsorSettlementResult,
+        binaryPlacement: binaryPlacementResult,
       };
     });
   }
@@ -674,15 +697,28 @@ export class PackagesService {
     // SCENARIO 1: BASIC ACTIVATION
     // -----------------------------------------------------------------------
     if (params.requestType === MembershipRequestType.BASIC_ACTIVATION) {
-      // Idempotency guard: never settle Basic commission twice for the same requestId
+      const basicSponsorHoldKey = `SPON-BASIC-HOLD-${params.sponsor.id}-${params.referredUser.id}`;
+      const basicSponsorRelKey = `SPON-BASIC-REL-${params.sponsor.id}-${params.referredUser.id}`;
+      const legacyHoldKey = `JNL-HOLD-${params.requestId}`;
+      const legacyRelKey = `JNL-REL-${params.requestId}`;
+      const uniqueBusinessEventKey = `SPONSOR_BONUS_${params.sponsor.id}_${params.referredUser.id}_BASIC`;
+
+      // 1. Transaction-level Idempotency Guard: Check if sponsor bonus was ALREADY settled for this referred member
       const existingBasicJournal = await tx.journalEntry.findFirst({
         where: {
           referenceId: {
-            in: [`JNL-HOLD-${params.requestId}`, `JNL-REL-${params.requestId}`],
+            in: [
+              basicSponsorHoldKey,
+              basicSponsorRelKey,
+              uniqueBusinessEventKey,
+              legacyHoldKey,
+              legacyRelKey,
+            ],
           },
         },
         select: { id: true, referenceId: true, eventType: true },
       });
+
       if (existingBasicJournal) {
         return {
           sponsorMemberId: params.sponsor.memberId,
@@ -692,6 +728,24 @@ export class PackagesService {
               : 'COMMISSION_RELEASED_TO_WALLET',
           amountINR: paiseToRupees(FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE),
           idempotentReplay: true,
+          reason: 'Basic direct sponsor bonus already settled for this referred member',
+        };
+      }
+
+      // Check if a hold record already exists for this sponsor and referred member
+      const existingHold = await tx.commissionHold.findFirst({
+        where: {
+          sponsorId: params.sponsor.id,
+          referredMemberId: params.referredUser.id,
+        },
+      });
+      if (existingHold) {
+        return {
+          sponsorMemberId: params.sponsor.memberId,
+          action: 'COMMISSION_HELD',
+          amountINR: paiseToRupees(FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE),
+          idempotentReplay: true,
+          reason: 'Basic direct sponsor hold already exists for this referred member',
         };
       }
 
@@ -746,10 +800,10 @@ export class PackagesService {
           },
         });
 
-        // Journal: Commission Hold
+        // Journal: Commission Hold (Enforcing unique business event referenceId)
         await tx.journalEntry.create({
           data: {
-            referenceId: `JNL-HOLD-${params.requestId}`,
+            referenceId: basicSponsorHoldKey,
             eventType: 'BASIC_SPONSOR_COMMISSION_HELD',
             narration: `Simulated ₹1,000 hold reserve for sponsor ${params.sponsor.memberId} from ${params.referredUser.fullName}'s 2nd Basic direct activation`,
             lines: {
@@ -789,10 +843,10 @@ export class PackagesService {
           },
         });
 
-        // Journal: Commission Released Directly to Wallet
+        // Journal: Commission Released Directly to Wallet (Enforcing unique business event referenceId)
         await tx.journalEntry.create({
           data: {
-            referenceId: `JNL-REL-${params.requestId}`,
+            referenceId: basicSponsorRelKey,
             eventType: 'BASIC_SPONSOR_COMMISSION_RELEASED',
             narration: `Simulated ₹1,000 commission credited to sponsor ${params.sponsor.memberId} from ${params.referredUser.fullName}'s Basic activation (#${basicActivationOrder})`,
             lines: {
@@ -832,6 +886,20 @@ export class PackagesService {
       params.requestType === MembershipRequestType.FULL_ACTIVATION ||
       params.requestType === MembershipRequestType.BASIC_TO_FULL_UPGRADE
     ) {
+      // 1. Transaction-level Idempotency Guard: Check if qualification event already recorded for this member
+      const existingQualEvent = await tx.qualificationEvent.findFirst({
+        where: { memberId: params.referredUser.id },
+      });
+      if (existingQualEvent) {
+        return {
+          sponsorMemberId: params.sponsor.memberId,
+          qualificationOrder: existingQualEvent.qualificationOrderForSponsor,
+          action: 'ALREADY_QUALIFIED',
+          idempotentReplay: true,
+          reason: 'Qualification event already processed for this member',
+        };
+      }
+
       // Determine qualification order for sponsor (excluding this user)
       const existingFullDirects = await tx.user.count({
         where: {
@@ -1202,6 +1270,131 @@ export class PackagesService {
       currLeg = parentPlacement.leg;
       currParentId = parentPlacement.parentId;
     }
+  }
+
+  /**
+   * Deterministically places a Full Qualified member in the binary tree on their intended leg
+   * under the sponsor's subtree (standard direct-selling extreme outer spillover).
+   */
+  private async autoPlaceMemberInBinaryTree(
+    tx: Prisma.TransactionClient,
+    targetUser: User
+  ) {
+    if (targetUser.role === UserRole.SUPER_ADMIN) {
+      return null;
+    }
+
+    // 1. Determine sponsor / anchor node
+    let anchorUserId = targetUser.sponsorId;
+    if (!anchorUserId) {
+      const rootAdmin = await tx.user.findFirst({
+        where: { role: UserRole.SUPER_ADMIN },
+        select: { id: true },
+      });
+      anchorUserId = rootAdmin?.id || null;
+    }
+
+    if (!anchorUserId || anchorUserId === targetUser.id) {
+      return null;
+    }
+
+    // Ensure anchor has a BinaryPlacement record
+    let anchorPlacement = await tx.binaryPlacement.findUnique({
+      where: { userId: anchorUserId },
+    });
+    if (!anchorPlacement) {
+      anchorPlacement = await tx.binaryPlacement.create({
+        data: { userId: anchorUserId },
+      });
+    }
+
+    // Determine intended side: LEFT or RIGHT
+    const intendedSide: BinaryLeg =
+      targetUser.intendedBinarySide === BinaryLeg.RIGHT ? BinaryLeg.RIGHT : BinaryLeg.LEFT;
+
+    // 2. Extreme outer leg spillover traversal down intendedSide
+    let targetParentId = anchorUserId;
+    const visited = new Set<string>();
+
+    while (targetParentId) {
+      if (visited.has(targetParentId)) {
+        throw new BadRequestException('Cycle detected in binary tree traversal during auto-placement.');
+      }
+      visited.add(targetParentId);
+
+      const childOnLeg = await tx.binaryPlacement.findFirst({
+        where: {
+          parentId: targetParentId,
+          leg: intendedSide,
+        },
+        select: { userId: true },
+      });
+
+      if (!childOnLeg) {
+        // Found vacant leaf position on intendedSide!
+        break;
+      }
+
+      targetParentId = childOnLeg.userId;
+    }
+
+    // 3. Upsert target user's BinaryPlacement under targetParentId on intendedSide
+    await tx.binaryPlacement.upsert({
+      where: { userId: targetUser.id },
+      create: {
+        userId: targetUser.id,
+        parentId: targetParentId,
+        leg: intendedSide,
+      },
+      update: {
+        parentId: targetParentId,
+        leg: intendedSide,
+      },
+    });
+
+    // 4. Propagate counts (+1 count) and qualified volume (+1 unit) up the ancestor chain
+    let currParentId: string | null = targetParentId;
+    let currLeg: BinaryLeg | null = intendedSide;
+    const visitedPropagate = new Set<string>();
+
+    while (currParentId && currLeg) {
+      if (visitedPropagate.has(currParentId)) break;
+      visitedPropagate.add(currParentId);
+
+      const parentNode: { parentId: string | null; leg: BinaryLeg | null } | null =
+        await tx.binaryPlacement.findUnique({
+          where: { userId: currParentId },
+          select: { parentId: true, leg: true },
+        });
+      if (!parentNode) break;
+
+      const updateData: any = {};
+      if (currLeg === BinaryLeg.LEFT) {
+        updateData.leftCount = { increment: 1 };
+        updateData.leftVolumePaise = { increment: 1n };
+        updateData.carryLeftPaise = { increment: 1n };
+      } else {
+        updateData.rightCount = { increment: 1 };
+        updateData.rightVolumePaise = { increment: 1n };
+        updateData.carryRightPaise = { increment: 1n };
+      }
+
+      await tx.binaryPlacement.update({
+        where: { userId: currParentId },
+        data: updateData,
+      });
+
+      if (!parentNode.parentId || !parentNode.leg) break;
+      currLeg = parentNode.leg;
+      currParentId = parentNode.parentId;
+    }
+
+    return {
+      action: 'AUTO_PLACED',
+      placedUserId: targetUser.id,
+      parentId: targetParentId,
+      leg: intendedSide,
+    };
   }
 }
 

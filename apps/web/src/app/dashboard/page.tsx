@@ -60,7 +60,8 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const [copied, setCopied] = useState(false);
+  const [copiedLeft, setCopiedLeft] = useState(false);
+  const [copiedRight, setCopiedRight] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -269,29 +270,36 @@ function DashboardContent() {
     }
   };
 
-  const getReferralLink = () => {
+  const getReferralLink = (leg?: 'LEFT' | 'RIGHT') => {
     if (!user || !user.memberId) return '';
     if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/auth/register?ref=${user.memberId}`;
+    const base = `${window.location.origin}/auth/register?ref=${user.memberId}`;
+    return leg ? `${base}&side=${leg}` : base;
   };
 
-  const handleCopyLink = () => {
-    const link = getReferralLink();
+  const handleCopyLink = (leg?: 'LEFT' | 'RIGHT') => {
+    const link = getReferralLink(leg);
     if (!link) return;
     navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    if (leg === 'RIGHT') {
+      setCopiedRight(true);
+      setTimeout(() => setCopiedRight(false), 2500);
+    } else {
+      setCopiedLeft(true);
+      setTimeout(() => setCopiedLeft(false), 2500);
+    }
   };
 
-  const getWhatsAppShareUrl = () => {
-    const link = getReferralLink();
+  const getWhatsAppShareUrl = (leg?: 'LEFT' | 'RIGHT') => {
+    const link = getReferralLink(leg);
     if (!link || !user) return '#';
-    const text = `Join ASKR EV Mobility platform. Register using my sponsor referral code ${user.memberId}: ${link}`;
+    const sideLabel = leg ? ` (${leg} Team)` : '';
+    const text = `Join ASKR EV Mobility platform${sideLabel}. Register using my sponsor referral code ${user.memberId}: ${link}`;
     return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
   };
 
-  const handleShareLink = async () => {
-    const link = getReferralLink();
+  const handleShareLink = async (leg?: 'LEFT' | 'RIGHT') => {
+    const link = getReferralLink(leg);
     if (!link || !user) return;
 
     if (navigator.share) {
@@ -302,10 +310,10 @@ function DashboardContent() {
           url: link,
         });
       } catch (err) {
-        handleCopyLink();
+        handleCopyLink(leg);
       }
     } else {
-      handleCopyLink();
+      handleCopyLink(leg);
     }
   };
 
@@ -699,65 +707,121 @@ function DashboardContent() {
                       </p>
                     </div>
 
-                    {/* Referral Link Box - Compact & Multi-Share */}
-                    <div className="bg-[#F7F9FC] border border-slate-200 rounded-lg p-3 sm:p-3.5 max-w-lg w-full space-y-2">
+                    {/* Referral Link Box - Dual-Leg Side Selection & Multi-Share */}
+                    <div className="bg-[#F7F9FC] border border-slate-200 rounded-lg p-3 sm:p-3.5 max-w-xl w-full space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-[#253247] flex items-center gap-1.5">
                           <Share2 className="w-3.5 h-3.5 text-[#165DAD]" />
-                          <span>Personal Referral Link</span>
+                          <span>Direct Sponsor Referral Links</span>
                         </span>
                         <span className="text-[11px] text-[#15803D] font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          Active
+                          Active Links
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap xl:flex-nowrap items-center gap-2">
-                        <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-0 w-full xl:w-auto select-all">
-                          {getReferralLink()}
+                      {/* Left Team Referral Link */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-700 flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-[#165DAD]"></span>
+                            <span>Left Team Link (?side=LEFT)</span>
+                          </span>
+                          <span className="text-slate-400 text-[10px]">Places member into Left subtree</span>
                         </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Copy Button */}
-                          <button
-                            onClick={handleCopyLink}
-                            className="px-3 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 min-h-[36px]"
-                            title="Copy referral link to clipboard"
-                          >
-                            {copied ? (
-                              <Check className="w-3.5 h-3.5 text-white" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                            <span>{copied ? 'Copied' : 'Copy'}</span>
-                          </button>
-
-                          {/* WhatsApp Share Button */}
-                          <a
-                            href={getWhatsAppShareUrl()}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2.5 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-medium transition-colors flex items-center gap-1.5 min-h-[36px]"
-                            title="Share referral link via WhatsApp"
-                          >
-                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
-                            </svg>
-                            <span className="hidden sm:inline">WhatsApp</span>
-                          </a>
-
-                          {/* Native Device Share */}
-                          <button
-                            onClick={handleShareLink}
-                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors min-h-[36px]"
-                            title="Share link via device options"
-                          >
-                            <Share2 className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
+                          <div className="bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-0 select-all">
+                            {getReferralLink('LEFT')}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleCopyLink('LEFT')}
+                              className="px-2.5 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1 min-h-[32px]"
+                              title="Copy Left referral link"
+                            >
+                              {copiedLeft ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedLeft ? 'Copied' : 'Copy'}</span>
+                            </button>
+                            <a
+                              href={getWhatsAppShareUrl('LEFT')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-medium transition-colors flex items-center gap-1 min-h-[32px]"
+                              title="Share Left link via WhatsApp"
+                            >
+                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                              </svg>
+                            </a>
+                            <button
+                              onClick={() => handleShareLink('LEFT')}
+                              className="px-2 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors min-h-[32px]"
+                              title="Share Left link via device"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-[11px] text-slate-500">
-                        Share this link to invite new members into your direct referral team.
-                      </p>
+
+                      {/* Right Team Referral Link */}
+                      <div className="space-y-1 pt-1 border-t border-slate-200/60">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-700 flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                            <span>Right Team Link (?side=RIGHT)</span>
+                          </span>
+                          <span className="text-slate-400 text-[10px]">Places member into Right subtree</span>
+                        </div>
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
+                          <div className="bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-0 select-all">
+                            {getReferralLink('RIGHT')}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleCopyLink('RIGHT')}
+                              className="px-2.5 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1 min-h-[32px]"
+                              title="Copy Right referral link"
+                            >
+                              {copiedRight ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedRight ? 'Copied' : 'Copy'}</span>
+                            </button>
+                            <a
+                              href={getWhatsAppShareUrl('RIGHT')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-medium transition-colors flex items-center gap-1 min-h-[32px]"
+                              title="Share Right link via WhatsApp"
+                            >
+                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                              </svg>
+                            </a>
+                            <button
+                              onClick={() => handleShareLink('RIGHT')}
+                              className="px-2 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors min-h-[32px]"
+                              title="Share Right link via device"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Binary Placement Status Bar */}
+                      <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">Binary Tree Status:</span>
+                        {binaryTree?.parentId && binaryTree?.leg ? (
+                          <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Placed on {binaryTree.leg} Leg</span>
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-[#165DAD]" />
+                            <span>Placement Pending Full Activation (Intended: {user.intendedBinarySide || 'LEFT'})</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2389,27 +2453,67 @@ function DashboardContent() {
                   )}
 
                   {/* Share & Referral Section inside Profile */}
-                  <div className="mt-6 pt-6 border-t border-slate-200 space-y-3">
-                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">Your Member Referral Link</div>
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                      <div className="font-mono text-xs text-slate-700 break-all bg-white px-3 py-2 rounded-lg border border-slate-200 flex-1">
-                        {getReferralLink()}
+                  <div className="mt-6 pt-6 border-t border-slate-200 space-y-4">
+                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">Your Member Referral Links</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Left Team Link */}
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-700 flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-[#165DAD]"></span>
+                            <span>Left Team Link</span>
+                          </span>
+                        </div>
+                        <div className="font-mono text-[11px] text-slate-700 break-all bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+                          {getReferralLink('LEFT')}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopyLink('LEFT')}
+                            className="px-2.5 py-1.5 text-xs font-semibold text-white bg-[#165DAD] hover:bg-[#134e96] rounded-lg transition inline-flex items-center gap-1"
+                          >
+                            {copiedLeft ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedLeft ? 'Copied' : 'Copy'}</span>
+                          </button>
+                          <a
+                            href={getWhatsAppShareUrl('LEFT')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 text-xs font-semibold text-white bg-[#25D366] hover:bg-[#20ba59] rounded-lg transition inline-flex items-center gap-1"
+                          >
+                            WhatsApp
+                          </a>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={handleCopyLink}
-                          className="px-3 py-2 text-xs font-semibold text-white bg-[#165DAD] hover:bg-[#134e96] rounded-lg transition inline-flex items-center gap-1.5"
-                        >
-                          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          {copied ? 'Copied' : 'Copy'}
-                        </button>
-                        <button
-                          onClick={handleShareLink}
-                          className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg transition border border-slate-300 inline-flex items-center gap-1.5"
-                        >
-                          <Share2 className="w-3.5 h-3.5" />
-                          Share
-                        </button>
+
+                      {/* Right Team Link */}
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-700 flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                            <span>Right Team Link</span>
+                          </span>
+                        </div>
+                        <div className="font-mono text-[11px] text-slate-700 break-all bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+                          {getReferralLink('RIGHT')}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopyLink('RIGHT')}
+                            className="px-2.5 py-1.5 text-xs font-semibold text-white bg-[#165DAD] hover:bg-[#134e96] rounded-lg transition inline-flex items-center gap-1"
+                          >
+                            {copiedRight ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedRight ? 'Copied' : 'Copy'}</span>
+                          </button>
+                          <a
+                            href={getWhatsAppShareUrl('RIGHT')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 text-xs font-semibold text-white bg-[#25D366] hover:bg-[#20ba59] rounded-lg transition inline-flex items-center gap-1"
+                          >
+                            WhatsApp
+                          </a>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -1,5 +1,6 @@
-import { Injectable, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { BinaryLeg } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +12,8 @@ import { EmailService } from './email.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -79,6 +82,8 @@ export class AuthService {
     }
 
     const sponsorId = sponsor.id;
+    const intendedBinarySide =
+      dto.side?.trim().toUpperCase() === 'RIGHT' ? BinaryLeg.RIGHT : BinaryLeg.LEFT;
 
     const memberId = await this.generateUniqueMemberId();
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -94,6 +99,7 @@ export class AuthService {
         currentPackage: MembershipPackage.FREE,
         isFullQualified: false,
         sponsorId,
+        intendedBinarySide,
         wallet: {
           create: {
             availableEarningsPaise: 0n,
@@ -114,10 +120,22 @@ export class AuthService {
       },
     });
 
+    // Automatically trigger 24-hr verification email immediately after registration
+    let emailVerificationSent = false;
+    try {
+      await this.sendEmailVerification(user.id);
+      emailVerificationSent = true;
+    } catch (err: any) {
+      this.logger.warn(
+        `Immediate verification email delivery warning for member ${user.memberId}: ${err.message}`
+      );
+    }
+
     const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     return {
       message: 'Registration successful',
+      emailVerificationSent,
       tokens,
       user: this.formatUserProfile(user),
     };
@@ -901,6 +919,7 @@ export class AuthService {
       currentPackage: user.currentPackage,
       isFullQualified: user.isFullQualified,
       qualificationMethod: user.qualificationMethod,
+      intendedBinarySide: user.intendedBinarySide ?? 'LEFT',
       isEmailVerified: user.isEmailVerified ?? false,
       emailVerifiedAt: user.emailVerifiedAt ?? null,
       twoFactorEnabled: user.twoFactorEnabled ?? false,

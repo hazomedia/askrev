@@ -16,6 +16,7 @@ function RegisterForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
   const [sponsorMemberId, setSponsorMemberId] = useState('');
   const [sponsorInfo, setSponsorInfo] = useState<{ memberId: string; fullName: string } | null>(null);
   const [sponsorChecking, setSponsorChecking] = useState(false);
@@ -57,6 +58,10 @@ function RegisterForm() {
       setSponsorMemberId(clean);
       lookupSponsor(clean);
     }
+    const sideParam = searchParams.get('side')?.toUpperCase().trim();
+    if (sideParam === 'RIGHT' || sideParam === 'LEFT') {
+      setSide(sideParam as 'LEFT' | 'RIGHT');
+    }
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,6 +90,7 @@ function RegisterForm() {
           password,
           phone: phone || undefined,
           sponsorMemberId: sponsorMemberId.trim().toUpperCase(),
+          side,
         }),
       });
 
@@ -251,6 +257,40 @@ function RegisterForm() {
                   {sponsorError}
                 </p>
               )}
+            </div>
+
+            {/* Team Placement Leg Selector */}
+            <div>
+              <label className="block text-xs font-semibold text-[#253247] mb-1">
+                Team Placement Leg
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSide('LEFT')}
+                  className={`py-2 px-3 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    side === 'LEFT'
+                      ? 'bg-blue-50 border-[#165DAD] text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span>Left Team</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSide('RIGHT')}
+                  className={`py-2 px-3 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    side === 'RIGHT'
+                      ? 'bg-blue-50 border-[#165DAD] text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span>Right Team</span>
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Binary tree placement will target your sponsor&apos;s <strong>{side === 'LEFT' ? 'Left Team' : 'Right Team'}</strong> upon Full Membership activation.
+              </p>
             </div>
 
             {/* Membership Activation Policy */}

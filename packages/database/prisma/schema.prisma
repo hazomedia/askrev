@@ -73,6 +73,9 @@ model User {
   isEmailVerified        Boolean            @default(false)
   emailVerifiedAt        DateTime?
 
+  // Intended Binary Placement Side (LEFT or RIGHT)
+  intendedBinarySide     BinaryLeg?         @default(LEFT)
+
   wallet                  WalletAccount?
   binaryPlacement         BinaryPlacement?
   vouchers                ShoppingVoucher[]

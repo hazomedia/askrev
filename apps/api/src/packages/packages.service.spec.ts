@@ -232,6 +232,12 @@ function createStatefulMockPrisma() {
       },
     },
     qualificationEvent: {
+      findFirst: async ({ where }: any) => {
+        if (where?.memberId) {
+          return state.qualificationEvents.find((qe) => qe.memberId === where.memberId) ?? null;
+        }
+        return null;
+      },
       create: async ({ data }: any) => {
         const qe = { id: nextId('qe'), createdAt: new Date(), ...data };
         state.qualificationEvents.push(qe);
@@ -260,6 +266,10 @@ function createStatefulMockPrisma() {
     },
     binaryPlacement: {
       findUnique: async () => null,
+      findFirst: async () => null,
+      create: async () => ({}),
+      upsert: async () => ({}),
+      update: async () => ({}),
     },
     auditLog: {
       create: async ({ data }: any) => {

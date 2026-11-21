@@ -22,6 +22,10 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
+  side?: 'LEFT' | 'RIGHT';
+
+  @IsString()
+  @IsOptional()
   initialPackage?: string;
 }
 
