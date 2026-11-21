@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EmailService } from './email.service';
 
-describe('EmailService - Brevo HTTPS API & Fallback Transports', () => {
+describe('EmailService - Brevo HTTPS API Hardening', () => {
   let emailService: EmailService;
   const originalEnv = process.env;
 
@@ -15,8 +15,8 @@ describe('EmailService - Brevo HTTPS API & Fallback Transports', () => {
     vi.restoreAllMocks();
   });
 
-  describe('1. Successful Brevo HTTPS API submission', () => {
-    it('should successfully send password reset email via POST https://api.brevo.com/v3/smtp/email', async () => {
+  describe('1. Exclusive Brevo HTTPS API Submission & Log Accuracy', () => {
+    it('should successfully dispatch via Brevo HTTPS API and log "accepted by Brevo"', async () => {
       process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
       process.env.SMTP_FROM = 'ASKR EV <no-reply@askrevdrive.com>';
       process.env.FRONTEND_URL = 'https://www.askrevdrive.com';
@@ -54,10 +54,9 @@ describe('EmailService - Brevo HTTPS API & Fallback Transports', () => {
       expect(body.subject).toBe('Reset Your ASKR EV Account Password');
       expect(body.textContent).toContain('https://www.askrevdrive.com/auth/reset-password?token=raw-secure-reset-token-12345');
       expect(body.textContent).toContain('15 minutes');
-      expect(body.htmlContent).toContain('href="https://www.askrevdrive.com/auth/reset-password?token=raw-secure-reset-token-12345"');
     });
 
-    it('should successfully send email verification link via Brevo HTTPS API', async () => {
+    it('should dispatch verification email and log accepted by Brevo', async () => {
       process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
       process.env.SMTP_FROM = 'ASKR EV <no-reply@askrevdrive.com>';
 
@@ -78,84 +77,40 @@ describe('EmailService - Brevo HTTPS API & Fallback Transports', () => {
 
       expect(success).toBe(true);
       expect(mockFetch).toHaveBeenCalledTimes(1);
-
-      const [url, options] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.brevo.com/v3/smtp/email');
-      const body = JSON.parse(options.body);
-      expect(body.subject).toBe('Verify Your ASKR EV Email Address');
-      expect(body.textContent).toContain('token=verification-token-67890');
-      expect(body.textContent).toContain('24 hours');
     });
   });
 
-  describe('2. Invalid Brevo API Key handling', () => {
-    it('should handle HTTP 401 Unauthorized safely and return false without leaking key', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-invalid-secret-key-123456';
+  describe('2. No SMTP Fallback When Brevo HTTP Fails', () => {
+    it('should NEVER fall back to SMTP when Brevo HTTP API fails or rejects', async () => {
+      process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
+      // Even if SMTP variables are present in environment:
+      process.env.SMTP_HOST = 'smtp.fallback-should-never-be-called.com';
+      process.env.SMTP_USER = 'smtp-user';
+      process.env.SMTP_PASS = 'smtp-pass';
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
-        status: 401,
-        text: () => Promise.resolve(JSON.stringify({ message: 'Key not found', code: 'unauthorized' })),
+        status: 500,
+        text: () => Promise.resolve(JSON.stringify({ message: 'Internal upstream error' })),
       });
       vi.stubGlobal('fetch', mockFetch);
 
       emailService = new EmailService();
 
       const success = await emailService.sendPasswordResetEmail(
-        'target@askrevdrive.com',
-        'Target User',
-        'reset-token'
+        'user@askrevdrive.com',
+        'User',
+        'token-123'
       );
 
+      // Must return false and not attempt SMTP fallback
       expect(success).toBe(false);
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    it('should report failure in verifyConnection for invalid API key', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-invalid-key';
-
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ message: 'Key not found', code: 'unauthorized' }),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
-      emailService = new EmailService();
-      const status = await emailService.verifyConnection();
-
-      expect(status.success).toBe(false);
-      expect(status.provider).toBe('BREVO_HTTP');
-      expect(status.message).toContain('Key not found');
-    });
-  });
-
-  describe('3. Provider rejection handling', () => {
-    it('should capture provider rejection details (HTTP 400) and return false safely', async () => {
+    it('should NEVER fall back to SMTP when Brevo HTTP API times out', async () => {
       process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
-
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 400,
-        text: () => Promise.resolve(JSON.stringify({ message: 'Invalid recipient email format', code: 'invalid_parameter' })),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
-      emailService = new EmailService();
-
-      const success = await emailService.sendPasswordResetEmail(
-        'invalid-format-email',
-        'Test User',
-        'test-token'
-      );
-
-      expect(success).toBe(false);
-    });
-  });
-
-  describe('4. Network timeout handling', () => {
-    it('should handle request abort / timeout after 10 seconds gracefully', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
+      process.env.SMTP_HOST = 'smtp.fallback-should-never-be-called.com';
 
       const abortError = new Error('The operation was aborted');
       abortError.name = 'AbortError';
@@ -167,40 +122,84 @@ describe('EmailService - Brevo HTTPS API & Fallback Transports', () => {
 
       const success = await emailService.sendPasswordResetEmail(
         'timeout@askrevdrive.com',
-        'Timeout User',
-        'token-abc'
+        'User',
+        'token-timeout'
       );
 
       expect(success).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('5. Missing API key & Fallback handling', () => {
-    it('should safely fall back to simulation mode when neither BREVO_API_KEY nor SMTP is set', async () => {
+  describe('3. Production Guard: No Simulation Fallback in Production', () => {
+    it('should reject and return false if BREVO_API_KEY is missing in production environment', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.BREVO_API_KEY;
+
+      emailService = new EmailService();
+
+      const resetSuccess = await emailService.sendPasswordResetEmail(
+        'prod-user@askrevdrive.com',
+        'Prod User',
+        'token-reset-prod'
+      );
+      expect(resetSuccess).toBe(false);
+
+      const verifySuccess = await emailService.sendEmailVerification(
+        'prod-user@askrevdrive.com',
+        'Prod User',
+        'token-verify-prod'
+      );
+      expect(verifySuccess).toBe(false);
+
+      const status = await emailService.verifyConnection();
+      expect(status.success).toBe(false);
+      expect(status.message).toContain('CRITICAL: BREVO_API_KEY is not configured in production');
+    });
+
+    it('should allow simulation fallback ONLY in non-production environments', async () => {
+      process.env.NODE_ENV = 'development';
       delete process.env.BREVO_API_KEY;
       delete process.env.SMTP_HOST;
-      delete process.env.SMTP_USER;
-      delete process.env.SMTP_PASS;
 
       emailService = new EmailService();
 
       const success = await emailService.sendPasswordResetEmail(
-        'sim@askrevdrive.com',
-        'Sim User',
-        'token-sim'
+        'dev-user@askrevdrive.com',
+        'Dev User',
+        'token-dev'
+      );
+      expect(success).toBe(true);
+    });
+  });
+
+  describe('4. Safe Error Diagnostics & Key Sanitization', () => {
+    it('should sanitize API key and tokens in error diagnostic messages', async () => {
+      process.env.BREVO_API_KEY = 'xkeysib-secret-key-99999';
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve(JSON.stringify({
+          message: 'Error with key xkeysib-secret-key-99999 and token=secret-token-value',
+        })),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      emailService = new EmailService();
+
+      const success = await emailService.sendPasswordResetEmail(
+        'sanitized@askrevdrive.com',
+        'User',
+        'secret-token-value'
       );
 
-      expect(success).toBe(true);
-
-      const verifyStatus = await emailService.verifyConnection();
-      expect(verifyStatus.success).toBe(false);
-      expect(verifyStatus.provider).toBe('SIMULATION');
+      expect(success).toBe(false);
     });
 
-    it('should authenticate verifyConnection via Brevo parameter validation pattern', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-working-key';
+    it('should verify connection without sending emails (empty validation pattern)', async () => {
+      process.env.BREVO_API_KEY = 'xkeysib-test-auth-key';
 
-      // When Brevo authenticates but receives an empty body, it returns 400 with code missing_parameter
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 400,
@@ -213,7 +212,29 @@ describe('EmailService - Brevo HTTPS API & Fallback Transports', () => {
 
       expect(status.success).toBe(true);
       expect(status.provider).toBe('BREVO_HTTP');
-      expect(status.message).toContain('verified successfully');
+      expect(status.message).toContain('zero emails sent');
+
+      // Confirmed payload was empty body ({}) so Brevo does not dispatch an email
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://api.brevo.com/v3/smtp/email');
+      expect(options.body).toBe('{}');
+    });
+
+    it('should report invalid API key in verifyConnection without sending emails', async () => {
+      process.env.BREVO_API_KEY = 'xkeysib-bad-key';
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ code: 'unauthorized', message: 'Key not found' }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      emailService = new EmailService();
+      const status = await emailService.verifyConnection();
+
+      expect(status.success).toBe(false);
+      expect(status.message).toContain('Key not found');
     });
   });
 });

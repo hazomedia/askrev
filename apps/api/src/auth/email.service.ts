@@ -12,13 +12,20 @@ export interface EmailDeliveryResult {
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: nodemailer.Transporter | null = null;
-  private readonly HTTP_TIMEOUT_MS = 10000; // 10-second timeout
+  private readonly HTTP_TIMEOUT_MS = 10000; // Strict 10-second timeout
 
   constructor() {
     this.initTransporter();
   }
 
   private initTransporter() {
+    // When BREVO_API_KEY is configured, Brevo HTTPS API is used exclusively.
+    // Do not initialize SMTP transporter when Brevo API key is present.
+    if (process.env.BREVO_API_KEY) {
+      this.transporter = null;
+      return;
+    }
+
     const host = process.env.SMTP_HOST;
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
@@ -38,7 +45,7 @@ export class EmailService {
           minVersion: 'TLSv1.2',
         },
       });
-      this.logger.log(`[SMTP] Initialized secondary transporter with host: ${host}:${port} for user: ${user}`);
+      this.logger.log(`[SMTP] Initialized standalone SMTP transporter with host: ${host}:${port} for user: ${user}`);
     } else {
       this.transporter = null;
     }
@@ -76,8 +83,18 @@ export class EmailService {
   }
 
   /**
+   * Sanitizes diagnostic error messages to ensure no tokens, credentials or keys are logged.
+   */
+  private sanitizeError(errMessage: string): string {
+    if (!errMessage) return 'Unknown provider error';
+    return errMessage
+      .replace(/xkeysib-[a-zA-Z0-9_-]+/g, '[REDACTED_API_KEY]')
+      .replace(/token=[a-zA-Z0-9_-]+/gi, 'token=[REDACTED_TOKEN]');
+  }
+
+  /**
    * Dispatches email via Brevo HTTPS REST API (POST https://api.brevo.com/v3/smtp/email).
-   * Runs over HTTPS (port 443), bypassing container-level SMTP port blocks.
+   * Runs over HTTPS (port 443) with a strict 10-second timeout.
    */
   private async sendViaBrevoHttp(params: {
     toEmail: string;
@@ -131,14 +148,14 @@ export class EmailService {
       if (response.ok || response.status === 201 || response.status === 200) {
         return {
           success: true,
-          messageId: responseData.messageId || 'DELIVERED',
+          messageId: responseData.messageId || 'ACCEPTED',
         };
       }
 
-      const errorMessage = responseData.message || responseData.code || `HTTP ${response.status}`;
+      const rawError = responseData.message || responseData.code || `HTTP ${response.status}`;
       return {
         success: false,
-        error: `Brevo API HTTP ${response.status}: ${errorMessage}`,
+        error: this.sanitizeError(`Brevo API HTTP ${response.status}: ${rawError}`),
       };
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
@@ -149,7 +166,7 @@ export class EmailService {
       }
       return {
         success: false,
-        error: `Network error connecting to Brevo API: ${err.message || err}`,
+        error: this.sanitizeError(`Network error connecting to Brevo API: ${err.message || err}`),
       };
     } finally {
       clearTimeout(timeoutId);
@@ -157,7 +174,8 @@ export class EmailService {
   }
 
   /**
-   * Verifies connection and authentication with Brevo HTTPS API or fallback SMTP provider.
+   * Verifies Brevo API key authentication without sending a real email.
+   * When BREVO_API_KEY is configured, uses Brevo HTTPS API exclusively.
    */
   async verifyConnection(): Promise<{ success: boolean; message: string; provider?: string }> {
     const apiKey = process.env.BREVO_API_KEY;
@@ -167,6 +185,7 @@ export class EmailService {
       const timeoutId = setTimeout(() => controller.abort(), this.HTTP_TIMEOUT_MS);
 
       try {
+        // Validate authentication with empty body - Brevo authenticates before parameter validation
         const response = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
           headers: {
@@ -178,13 +197,13 @@ export class EmailService {
           signal: controller.signal,
         });
 
-        // Brevo returns 400 with 'missing_parameter' when authenticated but body is empty
+        // Brevo returns 400 with 'missing_parameter' only when API key is authenticated
         if (response.status === 400) {
           const body = await response.json().catch(() => ({}));
           if (body.code === 'missing_parameter') {
             return {
               success: true,
-              message: 'Brevo HTTPS API key authenticated and connection verified successfully.',
+              message: 'Brevo HTTPS API key authenticated and connection verified successfully (zero emails sent).',
               provider: 'BREVO_HTTP',
             };
           }
@@ -192,7 +211,7 @@ export class EmailService {
 
         if (response.status === 401 || response.status === 403) {
           const body = await response.json().catch(() => ({}));
-          const errMsg = body.message || 'Unauthorized / Invalid API Key';
+          const errMsg = this.sanitizeError(body.message || 'Unauthorized / Invalid API Key');
           this.logger.error(`[BREVO_HTTP_VERIFY_ERROR] ${errMsg}`);
           return {
             success: false,
@@ -212,15 +231,16 @@ export class EmailService {
         const body = await response.json().catch(() => ({}));
         return {
           success: false,
-          message: `Brevo HTTPS API verification returned status ${response.status}: ${body.message || 'Unknown error'}`,
+          message: this.sanitizeError(`Brevo HTTPS API verification returned status ${response.status}: ${body.message || 'Unknown error'}`),
           provider: 'BREVO_HTTP',
         };
       } catch (err: any) {
         const errMsg = err.name === 'AbortError' ? 'Brevo HTTPS API connection timed out (10s)' : err.message;
-        this.logger.error(`[BREVO_HTTP_VERIFY_ERROR] ${errMsg}`);
+        const sanitized = this.sanitizeError(errMsg);
+        this.logger.error(`[BREVO_HTTP_VERIFY_ERROR] ${sanitized}`);
         return {
           success: false,
-          message: `Brevo HTTPS API verify failed: ${errMsg}`,
+          message: `Brevo HTTPS API verify failed: ${sanitized}`,
           provider: 'BREVO_HTTP',
         };
       } finally {
@@ -228,6 +248,16 @@ export class EmailService {
       }
     }
 
+    // In production, missing BREVO_API_KEY must not silently fall back to simulation or SMTP
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        success: false,
+        message: 'CRITICAL: BREVO_API_KEY is not configured in production environment.',
+        provider: 'BREVO_HTTP',
+      };
+    }
+
+    // Secondary fallback: SMTP Transport for local/non-production testing only
     if (!this.transporter) {
       this.initTransporter();
     }
@@ -260,7 +290,9 @@ export class EmailService {
 
   /**
    * Dispatches a password reset email to a member.
-   * Priority: Brevo HTTPS API -> SMTP Transport -> Simulation Mode.
+   * When BREVO_API_KEY is configured, Brevo HTTPS API is used exclusively.
+   * Never falls back to SMTP after an HTTP API failure.
+   * In production, never falls back to simulation mode if BREVO_API_KEY is missing.
    */
   async sendPasswordResetEmail(toEmail: string, recipientName: string, rawToken: string): Promise<boolean> {
     const appUrl = this.getAppUrl();
@@ -287,7 +319,7 @@ export class EmailService {
       </div>
     `;
 
-    // 1. Primary: Brevo HTTPS REST API
+    // 1. Exclusive: Brevo HTTPS REST API when BREVO_API_KEY is configured
     if (process.env.BREVO_API_KEY) {
       const result = await this.sendViaBrevoHttp({
         toEmail,
@@ -298,19 +330,24 @@ export class EmailService {
       });
 
       if (result.success) {
-        this.logger.log(`[BREVO_HTTP] Password reset email successfully delivered to ${maskedEmail} (MessageId: ${result.messageId})`);
+        this.logger.log(`[BREVO_HTTP] Password reset email accepted by Brevo for delivery to ${maskedEmail} (MessageId: ${result.messageId})`);
         return true;
       }
 
+      // Safe failure: never fall back to SMTP after HTTP API failure
       this.logger.error(`[BREVO_HTTP_ERROR] Failed to send password reset email to ${maskedEmail}: ${result.error}`);
       return false;
     }
 
-    // 2. Secondary: Fallback SMTP Transport
-    if (!this.transporter) {
-      this.initTransporter();
+    // 2. Production Guard: In production, missing BREVO_API_KEY must not silently fall back
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.error(
+        `[EMAIL_CONFIG_ERROR] BREVO_API_KEY is missing in production environment. Password reset email to ${maskedEmail} aborted.`
+      );
+      return false;
     }
 
+    // 3. Non-Production Fallback: Local SMTP Transport (if explicitly configured)
     if (this.transporter) {
       try {
         const from = `${this.getSender().name} <${this.getSender().email}>`;
@@ -322,7 +359,7 @@ export class EmailService {
           html: htmlContent,
         });
 
-        this.logger.log(`[SMTP] Password reset email successfully delivered to ${maskedEmail} (MessageId: ${info.messageId})`);
+        this.logger.log(`[SMTP] Password reset email accepted by SMTP for delivery to ${maskedEmail} (MessageId: ${info.messageId})`);
         return true;
       } catch (err: any) {
         this.logger.error(`[SMTP_ERROR] Failed to send password reset email to ${maskedEmail}: ${err.message}`, err.stack);
@@ -330,7 +367,7 @@ export class EmailService {
       }
     }
 
-    // 3. Fallback: Safe Simulation Mode
+    // 4. Non-Production Fallback: Safe Simulation Mode
     this.logger.log(
       `[SIMULATION_EMAIL] Password Reset Email queued for ${recipientName} <${maskedEmail}>. Action URL generated: ${appUrl}/auth/reset-password?token=[PROTECTED_TOKEN]`
     );
@@ -339,7 +376,9 @@ export class EmailService {
 
   /**
    * Dispatches an email address verification link to a member.
-   * Priority: Brevo HTTPS API -> SMTP Transport -> Simulation Mode.
+   * When BREVO_API_KEY is configured, Brevo HTTPS API is used exclusively.
+   * Never falls back to SMTP after an HTTP API failure.
+   * In production, never falls back to simulation mode if BREVO_API_KEY is missing.
    */
   async sendEmailVerification(toEmail: string, recipientName: string, rawToken: string): Promise<boolean> {
     const appUrl = this.getAppUrl();
@@ -366,7 +405,7 @@ export class EmailService {
       </div>
     `;
 
-    // 1. Primary: Brevo HTTPS REST API
+    // 1. Exclusive: Brevo HTTPS REST API when BREVO_API_KEY is configured
     if (process.env.BREVO_API_KEY) {
       const result = await this.sendViaBrevoHttp({
         toEmail,
@@ -377,19 +416,24 @@ export class EmailService {
       });
 
       if (result.success) {
-        this.logger.log(`[BREVO_HTTP] Verification email successfully delivered to ${maskedEmail} (MessageId: ${result.messageId})`);
+        this.logger.log(`[BREVO_HTTP] Verification email accepted by Brevo for delivery to ${maskedEmail} (MessageId: ${result.messageId})`);
         return true;
       }
 
+      // Safe failure: never fall back to SMTP after HTTP API failure
       this.logger.error(`[BREVO_HTTP_ERROR] Failed to send verification email to ${maskedEmail}: ${result.error}`);
       return false;
     }
 
-    // 2. Secondary: Fallback SMTP Transport
-    if (!this.transporter) {
-      this.initTransporter();
+    // 2. Production Guard: In production, missing BREVO_API_KEY must not silently fall back
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.error(
+        `[EMAIL_CONFIG_ERROR] BREVO_API_KEY is missing in production environment. Verification email to ${maskedEmail} aborted.`
+      );
+      return false;
     }
 
+    // 3. Non-Production Fallback: Local SMTP Transport (if explicitly configured)
     if (this.transporter) {
       try {
         const from = `${this.getSender().name} <${this.getSender().email}>`;
@@ -401,7 +445,7 @@ export class EmailService {
           html: htmlContent,
         });
 
-        this.logger.log(`[SMTP] Verification email successfully delivered to ${maskedEmail} (MessageId: ${info.messageId})`);
+        this.logger.log(`[SMTP] Verification email accepted by SMTP for delivery to ${maskedEmail} (MessageId: ${info.messageId})`);
         return true;
       } catch (err: any) {
         this.logger.error(`[SMTP_ERROR] Failed to send verification email to ${maskedEmail}: ${err.message}`, err.stack);
@@ -409,7 +453,7 @@ export class EmailService {
       }
     }
 
-    // 3. Fallback: Safe Simulation Mode
+    // 4. Non-Production Fallback: Safe Simulation Mode
     this.logger.log(
       `[SIMULATION_EMAIL] Verification Email queued for ${recipientName} <${maskedEmail}>. Action URL generated: ${appUrl}/auth/verify-email?token=[PROTECTED_TOKEN]`
     );
