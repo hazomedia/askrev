@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   ChevronDown,
   ArrowRight,
+  Cpu,
 } from 'lucide-react';
 import AskrLogo from './AskrLogo';
 import { getStoredUser, logoutSession } from '../lib/api';
@@ -138,6 +139,15 @@ export default function Navbar() {
                       <span>Member Dashboard</span>
                     </Link>
 
+                    <Link
+                      href="/simulator"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 text-[#F7FAFF] transition-colors"
+                    >
+                      <Cpu className="w-4 h-4 text-emerald-400" />
+                      <span>Earnings Simulator</span>
+                    </Link>
+
                     {isAdmin && (
                       <Link
                         href="/admin"
@@ -161,19 +171,19 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                {isShowroomMode ? (
-                  <span className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/10 border border-blue-500/25">
+                {isShowroomMode && (
+                  <span className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider text-[#50D9FF] bg-blue-500/10 border border-blue-500/25">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#50D9FF] animate-pulse" />
                     <span>Showroom Live</span>
                   </span>
-                ) : (
-                  <Link
-                    href="/auth/login"
-                    className="px-4 py-2 rounded-full text-xs font-semibold text-[#F7FAFF] hover:text-white transition-colors border border-white/15 hover:border-white/30 hover:bg-white/5"
-                  >
-                    Sign In
-                  </Link>
                 )}
+
+                <Link
+                  href="/auth/login"
+                  className="px-4 py-2 rounded-full text-xs font-semibold text-[#F7FAFF] hover:text-white transition-colors border border-white/15 hover:border-white/30 hover:bg-white/5"
+                >
+                  Sign In
+                </Link>
 
                 <Link
                   href="/book"
@@ -264,6 +274,13 @@ export default function Navbar() {
                 >
                   Member Dashboard
                 </Link>
+                <Link
+                  href="/simulator"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-center text-xs font-semibold text-emerald-400"
+                >
+                  Earnings Simulator
+                </Link>
                 {isAdmin && (
                   <Link
                     href="/admin"
@@ -282,15 +299,13 @@ export default function Navbar() {
               </>
             ) : (
               <div className="flex flex-col gap-2">
-                {!isShowroomMode && (
-                  <Link
-                    href="/auth/login"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="w-full py-2.5 rounded-full border border-white/20 text-center text-xs font-semibold text-[#F7FAFF]"
-                  >
-                    Sign In
-                  </Link>
-                )}
+                <Link
+                  href="/auth/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full py-2.5 rounded-full border border-white/20 text-center text-xs font-semibold text-[#F7FAFF]"
+                >
+                  Sign In / Member Portal
+                </Link>
                 <Link
                   href="/book"
                   onClick={() => setMobileMenuOpen(false)}

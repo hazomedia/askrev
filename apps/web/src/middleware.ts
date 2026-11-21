@@ -40,11 +40,7 @@ export function middleware(request: NextRequest) {
 
   // 2. PUBLIC SHOWROOM DOMAIN (www.askrevdrive.com)
   if (isShowroomDomain && !isAdminDomain) {
-    const isRestrictedOnPublicShowroom =
-      pathname.startsWith('/admin') ||
-      pathname.startsWith('/dashboard') ||
-      pathname.startsWith('/simulator') ||
-      pathname.startsWith('/auth');
+    const isRestrictedOnPublicShowroom = pathname.startsWith('/admin');
 
     if (isRestrictedOnPublicShowroom) {
       // Rewrite to 404 so admin endpoints appear completely non-existent to public visitors

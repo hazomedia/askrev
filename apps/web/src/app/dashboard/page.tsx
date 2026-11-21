@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Wallet,
   Users,
@@ -29,13 +29,18 @@ import {
   Mail,
   Edit3,
   CheckCircle,
+  Cpu,
+  ShieldAlert,
+  Receipt,
+  CheckCircle2,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
-type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
+type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'calculator' | 'bookings' | 'profile';
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
   const [directTeam, setDirectTeam] = useState<any>(null);
   const [binaryTree, setBinaryTree] = useState<any>(null);
@@ -68,6 +73,75 @@ export default function DashboardPage() {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
+
+  // Calculation Engine Simulator States
+  const [simulationResult, setSimulationResult] = useState<any>(null);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simError, setSimError] = useState<string | null>(null);
+  const [leftUnits, setLeftUnits] = useState(12);
+  const [rightUnits, setRightUnits] = useState(25);
+  const [prevCarryLeft, setPrevCarryLeft] = useState(0);
+  const [prevCarryRight, setPrevCarryRight] = useState(0);
+  const [binaryResult, setBinaryResult] = useState<any>(null);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as TabType;
+    if (
+      tabParam &&
+      [
+        'overview',
+        'membership',
+        'team',
+        'binary',
+        'wallets',
+        'vouchers',
+        'calculator',
+        'bookings',
+        'profile',
+      ].includes(tabParam)
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (activeTab === 'calculator' && !simulationResult) {
+      runCanonicalSimulation();
+      calculateBinaryMatching();
+    }
+  }, [activeTab]);
+
+  const runCanonicalSimulation = async () => {
+    setSimLoading(true);
+    setSimError(null);
+    try {
+      const data: any = await fetchApi('/simulation/canonical-scenario');
+      setSimulationResult(data);
+    } catch (err: any) {
+      setSimError(err.message || 'Simulation execution failed');
+    } finally {
+      setSimLoading(false);
+    }
+  };
+
+  const calculateBinaryMatching = async () => {
+    try {
+      const res: any = await fetchApi('/simulation/binary-matching', {
+        method: 'POST',
+        body: JSON.stringify({
+          leftUnits: Number(leftUnits),
+          rightUnits: Number(rightUnits),
+          previousCarryLeft: Number(prevCarryLeft),
+          previousCarryRight: Number(prevCarryRight),
+          isBeneficiaryQualified: true,
+          todayMatchesAlreadySettled: 0,
+        }),
+      });
+      setBinaryResult(res);
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     const stored = getStoredUser();
@@ -318,6 +392,7 @@ export default function DashboardPage() {
     { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
     { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
     { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
+    { id: 'calculator', label: 'Earnings Simulator', icon: Cpu },
     { id: 'bookings', label: 'My Bookings', icon: Bike, count: userBookings.length },
     { id: 'profile', label: 'Profile', icon: User },
   ];
@@ -459,6 +534,46 @@ export default function DashboardPage() {
           {/* Main Content Area */}
           <main className="flex-1 min-w-0 space-y-6">
             {/* System Notifications / Alerts */}
+            {user && !user.isEmailVerified && (
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-amber-950">Email Verification Required</p>
+                    <p className="text-[11px] text-amber-800">
+                      Your registered email <span className="font-semibold">{user.email}</span> is unverified. Please verify your address to ensure secure access.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleSendVerification}
+                    disabled={sendingVerification}
+                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {sendingVerification ? 'Sending...' : 'Resend Verification Email'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {verificationNotice && (
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-[#165DAD] text-xs font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-[#165DAD] shrink-0" />
+                  <span>{verificationNotice}</span>
+                </div>
+                <button
+                  onClick={() => setVerificationNotice(null)}
+                  className="text-xs text-slate-400 hover:text-slate-600 font-semibold px-2"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {upgradeSuccess && (
               <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-[#15803D] text-xs font-medium flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -2239,9 +2354,261 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
+
+            {/* TAB: EARNINGS SIMULATOR */}
+            {activeTab === 'calculator' && (
+              <div className="space-y-6">
+                {/* Header Card */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[#15803D] text-xs font-semibold">
+                      <Cpu className="w-3.5 h-3.5" />
+                      <span>Calculation Engine Testbench</span>
+                    </div>
+                    <h2 className="text-lg font-bold text-[#253247] mt-2">
+                      Commission Ledger & Binary Matching Simulator
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Simulates hold reserves, upgrade reconciliations, and double-entry accounting in SIMULATION_ONLY mode.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={runCanonicalSimulation}
+                    disabled={simLoading}
+                    className="px-4 py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors flex items-center gap-2 self-start md:self-auto shrink-0 shadow-xs"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>{simLoading ? 'Simulating...' : 'Re-Run Scenario (A → B, C, D, E)'}</span>
+                  </button>
+                </div>
+
+                {/* Compliance Advisory */}
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800 leading-relaxed">
+                    <span className="font-bold">Compliance & Safety Safeguard:</span> All calculations below are internal mathematical simulations. Live payouts, network commissions, and banking releases are strictly disabled under the Consumer Protection (Direct Selling) Rules, 2021.
+                  </div>
+                </div>
+
+                {simError && (
+                  <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-[#DC2626] text-xs font-medium">
+                    {simError}
+                  </div>
+                )}
+
+                {/* SECTION 1: Canonical Scenario Results */}
+                {simulationResult && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200">
+                      <div>
+                        <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wider">
+                          Scenario Execution
+                        </span>
+                        <h3 className="text-base font-bold text-[#253247] mt-0.5">
+                          Sponsor A Sponsoring 4 Members (B, C, D, E) & Upgrades
+                        </h3>
+                      </div>
+                      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 border border-emerald-200 text-[#15803D] flex items-center gap-1.5 self-start">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Double-Entry Balanced: 100%</span>
+                      </span>
+                    </div>
+
+                    {/* Final State Counters */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Available Earnings</div>
+                        <div className="text-xl font-bold text-[#15803D] mt-1">
+                          ₹{simulationResult.finalWalletState?.availableEarningsINR?.toLocaleString('en-IN') ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">₹3k base + ₹9k D upgrade</div>
+                      </div>
+
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Hold Reserve Balance</div>
+                        <div className="text-xl font-bold text-amber-600 mt-1">
+                          ₹{simulationResult.finalWalletState?.heldCommissionsINR?.toLocaleString('en-IN') ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">₹1,000 released on 2nd direct</div>
+                      </div>
+
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Shopping Voucher</div>
+                        <div className="text-xl font-bold text-[#165DAD] mt-1">
+                          ₹{simulationResult.finalWalletState?.shoppingVoucherINR?.toLocaleString('en-IN') ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">Issued on E upgrade</div>
+                      </div>
+
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Pending Recovery</div>
+                        <div className="text-xl font-bold text-purple-600 mt-1">
+                          ₹{simulationResult.finalWalletState?.pendingVoucherRecoveryINR?.toLocaleString('en-IN') ?? 0}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">₹4,000 auto-recovered</div>
+                      </div>
+                    </div>
+
+                    {/* Step-by-Step Scenario Audit Log */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Scenario Event Execution Log
+                      </h4>
+                      <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
+                        {simulationResult.steps?.map((step: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className="p-3 bg-white text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50 transition"
+                          >
+                            <div>
+                              <span className="font-mono font-bold text-slate-500 mr-2">#{step.step}</span>
+                              <span className="font-semibold text-[#253247]">{step.description}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[11px]">
+                              <span className="text-slate-500">
+                                Hold: ₹{step.heldBalanceINR?.toLocaleString('en-IN')}
+                              </span>
+                              <span className="font-bold text-[#15803D]">
+                                Avail: ₹{step.availableEarningsINR?.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SECTION 2: Interactive Binary Matching Calculator */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+                  <div className="flex items-center gap-2 pb-4 border-b border-slate-200">
+                    <GitBranch className="w-5 h-5 text-[#165DAD]" />
+                    <h3 className="text-base font-bold text-[#253247]">
+                      Interactive 1:1 Binary Matching Calculator
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Left Units Today
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={leftUnits}
+                        onChange={(e) => setLeftUnits(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Right Units Today
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={rightUnits}
+                        onChange={(e) => setRightUnits(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Prev Carry Left
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={prevCarryLeft}
+                        onChange={(e) => setPrevCarryLeft(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Prev Carry Right
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={prevCarryRight}
+                        onChange={(e) => setPrevCarryRight(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={calculateBinaryMatching}
+                    className="px-4 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold transition"
+                  >
+                    Calculate Binary Matching
+                  </button>
+
+                  {binaryResult && (
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
+                      <div>
+                        <div className="text-[10px] uppercase font-semibold text-slate-500">Pairs Matched</div>
+                        <div className="text-lg font-bold text-[#165DAD] mt-0.5">{binaryResult.matchedPairs}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-semibold text-slate-500">Daily Cap</div>
+                        <div className="text-lg font-bold text-slate-700 mt-0.5">15 Pairs</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-semibold text-slate-500">Gross Reward</div>
+                        <div className="text-lg font-bold text-slate-800 mt-0.5">
+                          ₹{binaryResult.grossRewardINR?.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-semibold text-slate-500">TDS (5%)</div>
+                        <div className="text-lg font-bold text-amber-600 mt-0.5">
+                          ₹{binaryResult.tdsDeductionINR?.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-semibold text-slate-500">Admin (10%)</div>
+                        <div className="text-lg font-bold text-amber-600 mt-0.5">
+                          ₹{binaryResult.adminFeeDeductionINR?.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-semibold text-slate-500">Net Credit</div>
+                        <div className="text-lg font-bold text-[#15803D] mt-0.5">
+                          ₹{binaryResult.netCreditedINR?.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </main>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F7F9FC] flex items-center justify-center text-slate-500">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin w-6 h-6 border-2 border-[#165DAD] border-t-transparent rounded-full" />
+            <span className="text-sm font-medium">Loading Dashboard...</span>
+          </div>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }
