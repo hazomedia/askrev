@@ -199,30 +199,32 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Demo Autofill Switcher for QA */}
-          <div className="pt-4 border-t border-slate-100">
-            <div className="text-[11px] font-semibold text-slate-400 mb-2">
-              Quick QA Accounts:
+          {/* Quick Demo Autofill Switcher for QA (Non-production environments only) */}
+          {process.env.NODE_ENV !== 'production' && (
+            <div className="pt-4 border-t border-slate-100">
+              <div className="text-[11px] font-semibold text-slate-400 mb-2">
+                Quick QA Accounts:
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => fillDemo('admin@askrev.com', 'Admin@123456')}
+                  className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-left hover:border-slate-300 transition-colors"
+                >
+                  <div className="font-semibold text-[#253247]">Super Admin</div>
+                  <div className="text-[10px] text-slate-400 truncate">admin@askrev.com</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fillDemo('member.a@askrev.local', 'MemberA@AskREV2026!')}
+                  className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-left hover:border-slate-300 transition-colors"
+                >
+                  <div className="font-semibold text-[#253247]">Active Member</div>
+                  <div className="text-[10px] text-slate-400 truncate">member.a@...</div>
+                </button>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => fillDemo('admin@askrev.com', 'Admin@123456')}
-                className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-left hover:border-slate-300 transition-colors"
-              >
-                <div className="font-semibold text-[#253247]">Super Admin</div>
-                <div className="text-[10px] text-slate-400 truncate">admin@askrev.com</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('member.a@askrev.local', 'MemberA@AskREV2026!')}
-                className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-left hover:border-slate-300 transition-colors"
-              >
-                <div className="font-semibold text-[#253247]">Active Member</div>
-                <div className="text-[10px] text-slate-400 truncate">member.a@...</div>
-              </button>
-            </div>
-          </div>
+          )}
 
           <div className="text-center text-xs text-slate-500">
             Do not have an account?{' '}
