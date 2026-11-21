@@ -47,7 +47,14 @@ export default function LoginPage() {
       setAuthSession(data.tokens?.accessToken, data.user, data.tokens?.refreshToken, data.csrfToken);
 
       if (['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(data.user.role)) {
-        router.push('/admin');
+        if (
+          typeof window !== 'undefined' &&
+          (window.location.hostname === 'askrevdrive.com' || window.location.hostname.startsWith('www.'))
+        ) {
+          window.location.href = 'https://admin.askrevdrive.com/admin';
+        } else {
+          router.push('/admin');
+        }
       } else {
         router.push('/dashboard');
       }

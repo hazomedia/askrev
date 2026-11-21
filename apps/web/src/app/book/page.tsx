@@ -45,6 +45,14 @@ function BookingFlowContent() {
 
   // Load published catalog
   useEffect(() => {
+    const user = getStoredUser();
+    if (user) {
+      if (user.fullName) setFullName((prev) => prev || user.fullName);
+      if (user.phone) setPhone((prev) => prev || user.phone);
+    }
+  }, []);
+
+  useEffect(() => {
     loadCatalogAndSelection();
 
     const handlePreview = () => loadCatalogAndSelection();

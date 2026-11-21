@@ -485,6 +485,21 @@ function DashboardContent() {
 
             {/* Right: Status badge & Logout */}
             <div className="flex items-center gap-2.5 sm:gap-3">
+              {user?.role && ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(user.role) && (
+                <a
+                  href={
+                    typeof window !== 'undefined' && !window.location.hostname.startsWith('admin.')
+                      ? 'https://admin.askrevdrive.com/admin'
+                      : '/admin'
+                  }
+                  className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-full hover:bg-indigo-100 transition-colors"
+                  title="Switch to Admin Console"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Admin Console</span>
+                </a>
+              )}
+
               <span
                 className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getPackageBadge(
                   user.currentPackage

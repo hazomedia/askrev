@@ -149,14 +149,20 @@ export default function Navbar() {
                     </Link>
 
                     {isAdmin && (
-                      <Link
-                        href="/admin"
+                      <a
+                        href={
+                          typeof window !== 'undefined' &&
+                          (window.location.hostname === 'askrevdrive.com' || window.location.hostname.endsWith('.askrevdrive.com')) &&
+                          !window.location.hostname.startsWith('admin.')
+                            ? 'https://admin.askrevdrive.com/admin'
+                            : '/admin'
+                        }
                         onClick={() => setUserDropdownOpen(false)}
                         className="flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 text-[#50D9FF] font-semibold transition-colors"
                       >
                         <ShieldCheck className="w-4 h-4" />
                         <span>Admin Portal</span>
-                      </Link>
+                      </a>
                     )}
 
                     <button
@@ -282,13 +288,19 @@ export default function Navbar() {
                   Earnings Simulator
                 </Link>
                 {isAdmin && (
-                  <Link
-                    href="/admin"
+                  <a
+                    href={
+                      typeof window !== 'undefined' &&
+                      (window.location.hostname === 'askrevdrive.com' || window.location.hostname.endsWith('.askrevdrive.com')) &&
+                      !window.location.hostname.startsWith('admin.')
+                        ? 'https://admin.askrevdrive.com/admin'
+                        : '/admin'
+                    }
                     onClick={() => setMobileMenuOpen(false)}
                     className="w-full py-2.5 rounded-full bg-[#267DFF]/20 border border-[#267DFF]/40 text-center text-xs font-semibold text-[#50D9FF]"
                   >
                     Admin Control
-                  </Link>
+                  </a>
                 )}
                 <button
                   onClick={handleLogout}

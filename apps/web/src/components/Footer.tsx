@@ -176,9 +176,18 @@ export default function Footer() {
                     </Link>
                   </li>
                   <li>
-                    <Link href="/admin" className="hover:text-[#50D9FF] transition-colors">
+                    <a
+                      href={
+                        typeof window !== 'undefined' &&
+                        (window.location.hostname === 'askrevdrive.com' || window.location.hostname.endsWith('.askrevdrive.com')) &&
+                        !window.location.hostname.startsWith('admin.')
+                          ? 'https://admin.askrevdrive.com/admin'
+                          : '/admin'
+                      }
+                      className="hover:text-[#50D9FF] transition-colors"
+                    >
                       Admin Portal
-                    </Link>
+                    </a>
                   </li>
                 </>
               ) : (

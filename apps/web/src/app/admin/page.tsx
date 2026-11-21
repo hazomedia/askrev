@@ -682,14 +682,33 @@ export default function AdminPage() {
                 <span className="hidden sm:inline">Security</span>
               </button>
 
-              <Link
-                href="/dashboard"
+              <a
+                href={
+                  typeof window !== 'undefined' && window.location.hostname.startsWith('admin.')
+                    ? 'https://www.askrevdrive.com/'
+                    : '/'
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-[#165DAD] px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                title="View Live Showroom"
+              >
+                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xl:inline">Live Showroom</span>
+              </a>
+
+              <a
+                href={
+                  typeof window !== 'undefined' && window.location.hostname.startsWith('admin.')
+                    ? 'https://www.askrevdrive.com/dashboard'
+                    : '/dashboard'
+                }
                 className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-[#165DAD] px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
                 title="Member Portal"
               >
                 <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden lg:inline">Member Portal</span>
-              </Link>
+              </a>
 
               <button
                 onClick={handleLogout}
