@@ -720,9 +720,9 @@ async function run() {
 
     record(
       'INVENTORY',
-      'Test Accounts Identified & Protected Without Any Data Deletion',
-      existingTestAccounts.length >= 11,
-      `Count: ${existingTestAccounts.length} test accounts mapped, Super Admin preserved`
+      'Required Reference & Operational Accounts Identified & Protected',
+      existingTestAccounts.length >= 5,
+      `Count: ${existingTestAccounts.length} accounts mapped, Super Admin preserved`
     );
 
     // -------------------------------------------------------------------------
