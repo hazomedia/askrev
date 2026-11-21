@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 try {
   if (process.loadEnvFile) {
@@ -261,6 +262,64 @@ async function run() {
     untrustedOriginRes.status === 403,
     'Untrusted cross-origin request is rejected with 403 Forbidden via OWASP Origin validation',
     `Status: ${untrustedOriginRes.status}`
+  );
+
+  console.log('\n--- 2.5 MANDATORY SESSION VERSION VALIDATION & MULTI-INSTANCE REVOCATION ---');
+
+  const accessSecret = process.env.JWT_ACCESS_SECRET || 'askrev-dev-jwt-access-secret-minimum-32-chars-long!';
+  function createTestJwt(payload) {
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const body = Buffer.from(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url');
+    const signature = crypto.createHmac('sha256', accessSecret).update(`${header}.${body}`).digest('base64url');
+    return `${header}.${body}.${signature}`;
+  }
+
+  // 1. Legacy token missing sessionVersion must be rejected with 401
+  const legacyToken = createTestJwt({ sub: registerData.user.id, email: testUserEmail, role: 'FREE_USER' });
+  const legacyRes = await fetch(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${legacyToken}` },
+  });
+  assert(
+    legacyRes.status === 401,
+    'Legacy access token missing sessionVersion is strictly rejected with 401 Unauthorized',
+    `Status: ${legacyRes.status}`
+  );
+
+  // 2. Token with stale sessionVersion must be rejected with 401
+  const staleToken = createTestJwt({ sub: registerData.user.id, email: testUserEmail, role: 'FREE_USER', sessionVersion: 99999 });
+  const staleRes = await fetch(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${staleToken}` },
+  });
+  assert(
+    staleRes.status === 401,
+    'Stale session token with mismatched sessionVersion is strictly rejected with 401 Unauthorized',
+    `Status: ${staleRes.status}`
+  );
+
+  // 3. Multi-instance session invalidation on logout
+  const logoutRes = await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieHeaderStr,
+      'X-CSRF-Token': csrfToken,
+      Origin: 'https://askrevdrive.com',
+    },
+  });
+  assert(
+    logoutRes.status === 200 || logoutRes.status === 204,
+    'User logout succeeds and increments sessionVersion in database',
+    `Status: ${logoutRes.status}`
+  );
+
+  // Subsequent request using the pre-logout session cookie must fail with 401
+  const postLogoutRes = await fetch(`${API_BASE}/auth/me`, {
+    headers: { Cookie: cookieHeaderStr },
+  });
+  assert(
+    postLogoutRes.status === 401,
+    'Pre-logout session cookie is immediately rejected with 401 Unauthorized via sessionVersion mismatch',
+    `Status: ${postLogoutRes.status}`
   );
 
   console.log('\n--- 3. PRIVILEGED ADMIN MFA ENROLLMENT & BOOTSTRAP AUDIT ---');

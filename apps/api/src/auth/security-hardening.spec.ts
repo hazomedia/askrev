@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ExecutionContext, ForbiddenException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { CsrfGuard } from './guards/csrf.guard';
 import { AuthService } from './auth.service';
 import { UserRole } from '@askrev/shared';
 import { RateLimiterService, getClientIp } from '../common/rate-limiter.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { TokenRevocationService } from './token-revocation.service';
+import { hashToken } from './jwt-secrets';
 
 describe('Pre-Production Security Hardening & Session Suite', () => {
   describe('Priority 1 — CsrfGuard & Cookie Hardening', () => {
@@ -628,6 +631,403 @@ describe('Pre-Production Security Hardening & Session Suite', () => {
           metatype: RedeemVoucherDto,
         })
       ).rejects.toThrow();
+    });
+  });
+
+  describe('Release Blockers — Fail-Closed Revocation & Mandatory SessionVersion Validation', () => {
+    describe('TokenRevocationService Backend Failure & Fail-Closed Defense', () => {
+      it('should NEVER fail open and MUST throw UnauthorizedException when both Redis and PostgreSQL fail', async () => {
+        const mockPrismaDb: any = {
+          revokedToken: {
+            findUnique: vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:5432')),
+            upsert: vi.fn().mockResolvedValue({}),
+          },
+        };
+        const mockRateLimiterService: any = {
+          getRedisClient: vi.fn().mockReturnValue({
+            exists: vi.fn().mockRejectedValue(new Error('ETIMEDOUT: Redis cluster unreachable on 10.0.0.1:6379')),
+          }),
+          isRedisHealthy: vi.fn().mockReturnValue(true),
+        };
+
+        const service = new TokenRevocationService(mockPrismaDb, mockRateLimiterService);
+        service.clearLocalCache();
+
+        let caughtError: any;
+        try {
+          await service.isTokenRevoked('any-unverified-access-token');
+        } catch (err) {
+          caughtError = err;
+        }
+
+        // Must throw UnauthorizedException (fails closed)
+        expect(caughtError).toBeInstanceOf(UnauthorizedException);
+        expect(caughtError.message).toBe('Authentication verification failed. Please sign in again.');
+        // Must NOT leak internal infrastructure details (hostnames, ports, SQL/connection errors)
+        expect(caughtError.message).not.toContain('5432');
+        expect(caughtError.message).not.toContain('ECONNREFUSED');
+        expect(caughtError.message).not.toContain('6379');
+        expect(caughtError.message).not.toContain('ETIMEDOUT');
+      });
+
+      it('should NEVER fail open when Redis client is null and PostgreSQL fails', async () => {
+        const mockPrismaDb: any = {
+          revokedToken: {
+            findUnique: vi.fn().mockRejectedValue(new Error('FATAL: pool exhausted')),
+          },
+        };
+        const mockRateLimiterService: any = {
+          getRedisClient: vi.fn().mockReturnValue(null),
+          isRedisHealthy: vi.fn().mockReturnValue(false),
+        };
+
+        const service = new TokenRevocationService(mockPrismaDb, mockRateLimiterService);
+        service.clearLocalCache();
+
+        await expect(service.isTokenRevoked('unverified-token')).rejects.toThrow(UnauthorizedException);
+      });
+
+      it('should proceed and return false when Redis fails but PostgreSQL is available and token is not revoked', async () => {
+        const mockPrismaDb: any = {
+          revokedToken: {
+            findUnique: vi.fn().mockResolvedValue(null), // Token not in DB
+          },
+        };
+        const mockRateLimiterService: any = {
+          getRedisClient: vi.fn().mockReturnValue({
+            exists: vi.fn().mockRejectedValue(new Error('Redis timeout')),
+          }),
+          isRedisHealthy: vi.fn().mockReturnValue(true),
+        };
+
+        const service = new TokenRevocationService(mockPrismaDb, mockRateLimiterService);
+        service.clearLocalCache();
+
+        const result = await service.isTokenRevoked('clean-unrevoked-token');
+        expect(result).toBe(false);
+      });
+
+      it('should return true when Redis fails but PostgreSQL confirms the token is revoked', async () => {
+        const mockPrismaDb: any = {
+          revokedToken: {
+            findUnique: vi.fn().mockResolvedValue({
+              tokenHash: 'hashed',
+              expiresAt: new Date(Date.now() + 60000),
+            }),
+          },
+        };
+        const mockRateLimiterService: any = {
+          getRedisClient: vi.fn().mockReturnValue(null),
+          isRedisHealthy: vi.fn().mockReturnValue(false),
+        };
+
+        const service = new TokenRevocationService(mockPrismaDb, mockRateLimiterService);
+        service.clearLocalCache();
+
+        const result = await service.isTokenRevoked('revoked-in-db-token');
+        expect(result).toBe(true);
+      });
+    });
+
+    describe('JwtStrategy Error Concealment & Safe Authentication Rejection', () => {
+      it('should safely catch backend revocation failure and throw UnauthorizedException without disclosing internal details', async () => {
+        const mockPrismaDb: any = {
+          user: { findUnique: vi.fn() },
+        };
+        const mockRevocationService: any = {
+          isTokenRevoked: vi.fn().mockRejectedValue(
+            new Error('Internal network error: PostgreSQL host master-db.private.askrev:5432 down')
+          ),
+        };
+
+        const jwtStrategy = new JwtStrategy(mockPrismaDb, mockRevocationService);
+        const mockReq: any = { headers: { authorization: 'Bearer some-access-token' }, cookies: {} };
+
+        let caughtError: any;
+        try {
+          await jwtStrategy.validate(mockReq, {
+            sub: 'user-uuid',
+            role: UserRole.FREE_USER,
+            sessionVersion: 1,
+          });
+        } catch (err) {
+          caughtError = err;
+        }
+
+        expect(caughtError).toBeInstanceOf(UnauthorizedException);
+        expect(caughtError.message).toBe('Authentication verification failed. Please sign in again.');
+        expect(caughtError.message).not.toContain('master-db.private.askrev');
+        expect(caughtError.message).not.toContain('5432');
+      });
+
+      it('should safely catch unexpected database errors during user lookup and throw UnauthorizedException without leaking internals', async () => {
+        const mockPrismaDb: any = {
+          user: {
+            findUnique: vi.fn().mockRejectedValue(new Error('PrismaClientKnownRequestError: relation "User" does not exist')),
+          },
+        };
+        const mockRevocationService: any = {
+          isTokenRevoked: vi.fn().mockResolvedValue(false),
+        };
+
+        const jwtStrategy = new JwtStrategy(mockPrismaDb, mockRevocationService);
+        const mockReq: any = { headers: { authorization: 'Bearer valid-token' }, cookies: {} };
+
+        let caughtError: any;
+        try {
+          await jwtStrategy.validate(mockReq, {
+            sub: 'user-uuid',
+            role: UserRole.FREE_USER,
+            sessionVersion: 1,
+          });
+        } catch (err) {
+          caughtError = err;
+        }
+
+        expect(caughtError).toBeInstanceOf(UnauthorizedException);
+        expect(caughtError.message).toBe('Authentication verification failed. Please sign in again.');
+        expect(caughtError.message).not.toContain('relation');
+        expect(caughtError.message).not.toContain('PrismaClientKnownRequestError');
+      });
+    });
+
+    describe('Mandatory sessionVersion Validation on All Member & Admin Access JWTs', () => {
+      it('should strictly reject legacy access tokens missing sessionVersion (undefined)', async () => {
+        const mockPrismaDb: any = {
+          user: { findUnique: vi.fn() },
+        };
+        const mockRevocationService: any = {
+          isTokenRevoked: vi.fn().mockResolvedValue(false),
+        };
+
+        const jwtStrategy = new JwtStrategy(mockPrismaDb, mockRevocationService);
+        const mockReq: any = { headers: { authorization: 'Bearer legacy-token' }, cookies: {} };
+
+        // Legacy token payload completely missing sessionVersion
+        const legacyPayload = {
+          sub: 'user-uuid',
+          email: 'legacy@askrevdrive.com',
+          role: UserRole.FREE_USER,
+        } as any;
+
+        await expect(jwtStrategy.validate(mockReq, legacyPayload)).rejects.toThrow(UnauthorizedException);
+        await expect(jwtStrategy.validate(mockReq, legacyPayload)).rejects.toThrow(
+          'Session version is missing or invalid. Please sign in again.'
+        );
+      });
+
+      it('should strictly reject access tokens with null or non-number sessionVersion', async () => {
+        const mockPrismaDb: any = { user: { findUnique: vi.fn() } };
+        const mockRevocationService: any = { isTokenRevoked: vi.fn().mockResolvedValue(false) };
+        const jwtStrategy = new JwtStrategy(mockPrismaDb, mockRevocationService);
+        const mockReq: any = { headers: {}, cookies: {} };
+
+        await expect(
+          jwtStrategy.validate(mockReq, {
+            sub: 'user-uuid',
+            role: UserRole.FREE_USER,
+            sessionVersion: null as any,
+          })
+        ).rejects.toThrow(UnauthorizedException);
+
+        await expect(
+          jwtStrategy.validate(mockReq, {
+            sub: 'user-uuid',
+            role: UserRole.FREE_USER,
+            sessionVersion: '1' as any,
+          })
+        ).rejects.toThrow(UnauthorizedException);
+      });
+
+      it('should strictly reject stale sessions where sessionVersion does not match current user version', async () => {
+        const mockPrismaDb: any = {
+          user: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'user-uuid',
+              role: UserRole.FREE_USER,
+              sessionVersion: 5, // Bumped to version 5
+            }),
+          },
+        };
+        const mockRevocationService: any = { isTokenRevoked: vi.fn().mockResolvedValue(false) };
+        const jwtStrategy = new JwtStrategy(mockPrismaDb, mockRevocationService);
+        const mockReq: any = { headers: {}, cookies: {} };
+
+        await expect(
+          jwtStrategy.validate(mockReq, {
+            sub: 'user-uuid',
+            role: UserRole.FREE_USER,
+            sessionVersion: 4, // Stale version 4
+          })
+        ).rejects.toThrow('Session has been revoked. Please sign in again.');
+      });
+
+      it('should accept access tokens when sessionVersion strictly matches the current database version', async () => {
+        const mockPrismaDb: any = {
+          user: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'user-uuid',
+              role: UserRole.FREE_USER,
+              sessionVersion: 3,
+              wallet: {},
+            }),
+          },
+        };
+        const mockRevocationService: any = { isTokenRevoked: vi.fn().mockResolvedValue(false) };
+        const jwtStrategy = new JwtStrategy(mockPrismaDb, mockRevocationService);
+        const mockReq: any = { headers: {}, cookies: {} };
+
+        const result = await jwtStrategy.validate(mockReq, {
+          sub: 'user-uuid',
+          role: UserRole.FREE_USER,
+          sessionVersion: 3, // Matches DB version
+        });
+
+        expect(result.id).toBe('user-uuid');
+        expect(result.sessionVersion).toBe(3);
+      });
+
+      it('should simulate multi-instance revocation: Node A bumps sessionVersion, Node B immediately rejects old tokens', async () => {
+        // Shared database state
+        let databaseSessionVersion = 1;
+
+        const sharedDb: any = {
+          user: {
+            findUnique: vi.fn().mockImplementation(async () => ({
+              id: 'member-101',
+              role: UserRole.FREE_USER,
+              sessionVersion: databaseSessionVersion,
+              wallet: {},
+            })),
+            update: vi.fn().mockImplementation(async ({ data }) => {
+              if (data?.sessionVersion?.increment) {
+                databaseSessionVersion += data.sessionVersion.increment;
+              }
+              return { id: 'member-101', sessionVersion: databaseSessionVersion };
+            }),
+          },
+        };
+
+        const mockRevocation: any = { isTokenRevoked: vi.fn().mockResolvedValue(false) };
+        const nodeBJwtStrategy = new JwtStrategy(sharedDb, mockRevocation);
+        const mockReq: any = { headers: {}, cookies: {} };
+
+        // Before revocation on Node A: Node B accepts token issued at version 1
+        const initialResult = await nodeBJwtStrategy.validate(mockReq, {
+          sub: 'member-101',
+          role: UserRole.FREE_USER,
+          sessionVersion: 1,
+        });
+        expect(initialResult.sessionVersion).toBe(1);
+
+        // Node A executes logout or password change: bumps sessionVersion in shared DB
+        await sharedDb.user.update({
+          where: { id: 'member-101' },
+          data: { sessionVersion: { increment: 1 } },
+        });
+        expect(databaseSessionVersion).toBe(2);
+
+        // Node B receives subsequent request with the previous token (sessionVersion 1) -> MUST REJECT INSTANTLY
+        await expect(
+          nodeBJwtStrategy.validate(mockReq, {
+            sub: 'member-101',
+            role: UserRole.FREE_USER,
+            sessionVersion: 1,
+          })
+        ).rejects.toThrow(UnauthorizedException);
+      });
+    });
+
+    describe('Consistent Session Version Behavior across Refresh, Password Reset & Logout', () => {
+      it('should reject refresh tokens missing sessionVersion in payload (legacy refresh tokens)', async () => {
+        const mockJwtService: any = {
+          verifyAsync: vi.fn().mockResolvedValue({
+            sub: 'user-uuid',
+            email: 'user@askrev.com',
+            role: UserRole.FREE_USER,
+            // sessionVersion is missing
+          }),
+        };
+        const mockPrismaDb: any = { user: { findUnique: vi.fn() } };
+        const authService = new AuthService(mockPrismaDb, mockJwtService, {} as any, {} as any, {} as any);
+
+        await expect(authService.refresh('legacy-refresh-token-without-version')).rejects.toThrow(
+          'Session version is missing or invalid. Please sign in again.'
+        );
+      });
+
+      it('should reject refresh tokens with stale sessionVersion', async () => {
+        const rawToken = 'stale-refresh-token';
+        const hash = await bcrypt.hash(hashToken(rawToken), 10);
+
+        const mockJwtService: any = {
+          verifyAsync: vi.fn().mockResolvedValue({
+            sub: 'user-uuid',
+            email: 'user@askrev.com',
+            role: UserRole.FREE_USER,
+            sessionVersion: 2, // Token has version 2
+          }),
+        };
+        const mockPrismaDb: any = {
+          user: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'user-uuid',
+              email: 'user@askrev.com',
+              role: UserRole.FREE_USER,
+              refreshTokenHash: hash,
+              sessionVersion: 3, // Database has version 3
+            }),
+          },
+        };
+        const authService = new AuthService(mockPrismaDb, mockJwtService, {} as any, {} as any, {} as any);
+
+        await expect(authService.refresh(rawToken)).rejects.toThrow(
+          'Session has been revoked. Please sign in again.'
+        );
+      });
+
+      it('should verify resetPassword increments sessionVersion to revoke all active sessions', async () => {
+        const tokenHash = crypto.createHash('sha256').update('reset-tok-xyz').digest('hex');
+        const mockPrismaDb: any = {
+          passwordResetToken: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'prt-1',
+              userId: 'user-uuid',
+              tokenHash,
+              expiresAt: new Date(Date.now() + 600000),
+              usedAt: null,
+              user: { email: 'user@askrev.com' },
+            }),
+            update: vi.fn().mockResolvedValue({}),
+          },
+          user: {
+            update: vi.fn().mockResolvedValue({}),
+          },
+          auditLog: {
+            create: vi.fn().mockResolvedValue({}),
+          },
+          $transaction: vi.fn().mockImplementation(async (ops) => Promise.all(ops)),
+        };
+
+        const authService = new AuthService(mockPrismaDb, {} as any, {} as any, {} as any, {} as any);
+
+        const res = await authService.resetPassword({
+          token: 'reset-tok-xyz',
+          newPassword: 'BrandNewSecurePassword123!',
+          confirmPassword: 'BrandNewSecurePassword123!',
+        });
+
+        expect(res.success).toBe(true);
+        expect(mockPrismaDb.user.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'user-uuid' },
+            data: expect.objectContaining({
+              sessionVersion: { increment: 1 },
+              refreshTokenHash: null,
+            }),
+          })
+        );
+      });
     });
   });
 });

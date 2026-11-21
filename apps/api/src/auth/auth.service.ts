@@ -303,13 +303,18 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
-    let payload: { sub: string; email: string; role: string };
+    let payload: { sub: string; email: string; role: string; sessionVersion?: number };
     try {
       payload = await this.jwtService.verifyAsync(refreshToken, {
         secret: getJwtRefreshSecret(),
       });
     } catch {
       throw new UnauthorizedException('Refresh token invalid or expired');
+    }
+
+    // MANDATORY sessionVersion validation on refresh tokens
+    if (payload.sessionVersion === undefined || payload.sessionVersion === null || typeof payload.sessionVersion !== 'number') {
+      throw new UnauthorizedException('Session version is missing or invalid. Please sign in again.');
     }
 
     const user = await this.prisma.user.findUnique({
@@ -322,6 +327,10 @@ export class AuthService {
 
     if (!user || !user.refreshTokenHash) {
       throw new UnauthorizedException('Session has expired or been logged out');
+    }
+
+    if (user.sessionVersion !== payload.sessionVersion) {
+      throw new UnauthorizedException('Session has been revoked. Please sign in again.');
     }
 
     const hashedCandidate = hashToken(refreshToken);
@@ -1119,6 +1128,7 @@ export class AuthService {
         data: {
           passwordHash: newPasswordHash,
           refreshTokenHash: null, // Revokes all active refresh sessions
+          sessionVersion: { increment: 1 },
         },
       }),
       this.prisma.auditLog.create({

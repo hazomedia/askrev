@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
@@ -8,6 +8,8 @@ import { TokenRevocationService } from '../token-revocation.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokenRevocationService: TokenRevocationService
@@ -47,8 +49,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       token = req.cookies['askrev_access_token'] || req.cookies['askrev_admin_session'] || '';
     }
 
-    if (token && (await this.tokenRevocationService.isTokenRevoked(token))) {
-      throw new UnauthorizedException('Session has been logged out or revoked. Please sign in again.');
+    if (token) {
+      try {
+        const isRevoked = await this.tokenRevocationService.isTokenRevoked(token);
+        if (isRevoked) {
+          throw new UnauthorizedException('Session has been logged out or revoked. Please sign in again.');
+        }
+      } catch (err: any) {
+        if (err instanceof UnauthorizedException) {
+          throw err;
+        }
+        this.logger.error(`Token revocation check failed unexpectedly: ${err.message}`);
+        throw new UnauthorizedException('Authentication verification failed. Please sign in again.');
+      }
     }
 
     // Dedicated Machine-to-Machine Service Token handling
@@ -65,19 +78,31 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       };
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      include: {
-        wallet: true,
-      },
-    });
+    // MANDATORY sessionVersion validation on all member/admin access JWTs
+    // Tokens missing sessionVersion (such as legacy or forged tokens) must be strictly rejected.
+    if (payload.sessionVersion === undefined || payload.sessionVersion === null || typeof payload.sessionVersion !== 'number') {
+      throw new UnauthorizedException('Session version is missing or invalid. Please sign in again.');
+    }
+
+    let user;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        include: {
+          wallet: true,
+        },
+      });
+    } catch (err: any) {
+      this.logger.error(`User lookup failed during JWT validation: ${err.message}`);
+      throw new UnauthorizedException('Authentication verification failed. Please sign in again.');
+    }
 
     if (!user) {
       throw new UnauthorizedException('User account no longer exists or token invalid');
     }
 
     // Distributed session version check: if sessionVersion was bumped, revoke instantly
-    if (payload.sessionVersion !== undefined && user.sessionVersion !== payload.sessionVersion) {
+    if (user.sessionVersion !== payload.sessionVersion) {
       throw new UnauthorizedException('Session has been revoked. Please sign in again.');
     }
 

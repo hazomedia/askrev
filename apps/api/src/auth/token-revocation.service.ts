@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RateLimiterService } from '../common/rate-limiter.service';
 import { hashToken } from './jwt-secrets';
@@ -12,6 +12,10 @@ export class TokenRevocationService {
     private readonly prisma: PrismaService,
     private readonly rateLimiter: RateLimiterService
   ) {}
+
+  clearLocalCache(): void {
+    this.localCache.clear();
+  }
 
   /**
    * Persistently and distributively revokes an individual token (e.g. enrollment token or access token)
@@ -42,7 +46,7 @@ export class TokenRevocationService {
 
     // 3. Update distributed Redis cache if client is available
     const redis = this.rateLimiter.getRedisClient();
-    if (redis) {
+    if (redis && this.rateLimiter.isRedisHealthy()) {
       try {
         const ttlSeconds = Math.max(1, Math.ceil((expiresAtMs - Date.now()) / 1000));
         await redis.setex(`revoked_token:${tokenHash}`, ttlSeconds, '1');
@@ -61,7 +65,9 @@ export class TokenRevocationService {
   }
 
   /**
-   * Distributed check if a token has been revoked
+   * Distributed check if a token has been revoked.
+   * CRITICAL SECURITY INVARIANT:
+   * Verification must NEVER fail open when both Redis and PostgreSQL verification are unavailable.
    */
   async isTokenRevoked(token: string): Promise<boolean> {
     if (!token) return false;
@@ -77,29 +83,50 @@ export class TokenRevocationService {
       this.localCache.delete(tokenHash);
     }
 
+    let redisAvailable = false;
+
     // 2. Check distributed Redis
     const redis = this.rateLimiter.getRedisClient();
-    if (redis) {
+    if (redis && this.rateLimiter.isRedisHealthy()) {
       try {
         const exists = await redis.exists(`revoked_token:${tokenHash}`);
+        redisAvailable = true;
         if (exists === 1) {
           this.localCache.set(tokenHash, now + 60000); // 1 minute local cache
           return true;
         }
-      } catch {}
+      } catch (err: any) {
+        this.logger.warn(`Redis error checking revoked token: ${err.message}`);
+        redisAvailable = false;
+      }
     }
 
-    // 3. Check persistent database (survives restarts and cluster restarts)
+    let dbAvailable = false;
+
+    // 3. Check persistent database (PostgreSQL)
     try {
       const record = await this.prisma.revokedToken.findUnique({
         where: { tokenHash },
       });
+      dbAvailable = true;
       if (record && record.expiresAt.getTime() > now) {
         this.localCache.set(tokenHash, record.expiresAt.getTime());
         return true;
       }
     } catch (err: any) {
       this.logger.error(`Database error checking revoked token: ${err.message}`);
+      dbAvailable = false;
+    }
+
+    // FAIL-CLOSED SECURITY BOUNDARY:
+    // When both distributed Redis and persistent PostgreSQL backends are unavailable,
+    // the system cannot cryptographically verify revocation status.
+    // Under no circumstances fail open — throw a safe UnauthorizedException.
+    if (!redisAvailable && !dbAvailable) {
+      this.logger.error(
+        'CRITICAL: Token revocation verification backend unavailable (both Redis and PostgreSQL failed). Failing closed.'
+      );
+      throw new UnauthorizedException('Authentication verification failed. Please sign in again.');
     }
 
     return false;
