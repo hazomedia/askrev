@@ -7,6 +7,8 @@ import {
   LoginDto,
   RefreshTokenDto,
   VerifyMfaDto,
+  MfaEnrollmentSetupDto,
+  MfaEnrollmentConfirmDto,
   DisableMfaDto,
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -32,7 +34,9 @@ export class AuthController {
       sameSite: isProduction ? 'none' : 'lax',
     };
 
-    if (isAskrDomain && isProduction) {
+    if (process.env.COOKIE_DOMAIN) {
+      options.domain = process.env.COOKIE_DOMAIN;
+    } else if (isAskrDomain && isProduction) {
       options.domain = '.askrevdrive.com';
     }
 
@@ -89,17 +93,64 @@ export class AuthController {
   }
 
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.authService.register(dto);
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    const cookieOpts = this.getCookieOptions(req);
+
+    res.cookie('askrev_access_token', result.tokens.accessToken, {
+      ...cookieOpts,
+      httpOnly: true,
+      path: '/',
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie('askrev_refresh_token', result.tokens.refreshToken, {
+      ...cookieOpts,
+      httpOnly: true,
+      path: '/api/auth',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.cookie('askrev_csrf_token', csrfToken, {
+      ...cookieOpts,
+      httpOnly: false,
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
+
+    return {
+      message: result.message,
+      emailVerificationSent: result.emailVerificationSent,
+      csrfToken,
+      user: result.user,
+      ...(isServiceClient ? { tokens: result.tokens } : {}),
+    };
   }
 
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ) {
     const result = await this.authService.login(dto);
+
+    if (result.mfaEnrollmentRequired) {
+      return {
+        mfaEnrollmentRequired: true,
+        message: result.message,
+        enrollmentToken: result.enrollmentToken,
+        user: result.user,
+      };
+    }
 
     // Set secure HttpOnly cookies for browser sessions
     const csrfToken = crypto.randomBytes(32).toString('hex');
@@ -127,15 +178,18 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
+
     return {
       message: result.message,
       csrfToken,
       user: result.user,
-      tokens: result.tokens, // Provided for backward compatibility with CLI/QA scripts
+      ...(isServiceClient ? { tokens: result.tokens } : {}),
     };
   }
 
   @Post('refresh')
+  @HttpCode(HttpStatus.OK)
   async refresh(
     @Body() dto: RefreshTokenDto,
     @Req() req: Request,
@@ -168,11 +222,65 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
+
     return {
       message: result.message,
       csrfToken,
       user: result.user,
-      tokens: result.tokens,
+      ...(isServiceClient ? { tokens: result.tokens } : {}),
+    };
+  }
+
+  @Post('mfa/enrollment-setup')
+  @HttpCode(HttpStatus.OK)
+  async setupMfaEnrollment(@Body() dto: MfaEnrollmentSetupDto) {
+    return this.authService.setupMfaEnrollment(dto);
+  }
+
+  @Post('mfa/enrollment-confirm')
+  @HttpCode(HttpStatus.OK)
+  async confirmMfaEnrollment(
+    @Body() dto: MfaEnrollmentConfirmDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.authService.confirmMfaEnrollment(dto);
+
+    // Upon successful enrollment confirmation, initialize the authenticated session
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    const cookieOpts = this.getCookieOptions(req);
+
+    res.cookie('askrev_access_token', result.tokens.accessToken, {
+      ...cookieOpts,
+      httpOnly: true,
+      path: '/',
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie('askrev_refresh_token', result.tokens.refreshToken, {
+      ...cookieOpts,
+      httpOnly: true,
+      path: '/api/auth',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.cookie('askrev_csrf_token', csrfToken, {
+      ...cookieOpts,
+      httpOnly: false,
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
+
+    return {
+      message: result.message,
+      success: true,
+      recoveryCodes: result.recoveryCodes,
+      csrfToken,
+      user: result.user,
+      ...(isServiceClient ? { tokens: result.tokens } : {}),
     };
   }
 

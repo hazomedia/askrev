@@ -94,6 +94,26 @@ export class VerifyMfaDto {
   secret?: string;
 }
 
+export class MfaEnrollmentSetupDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Enrollment token is required' })
+  enrollmentToken: string;
+}
+
+export class MfaEnrollmentConfirmDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Enrollment token is required' })
+  enrollmentToken: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'TOTP 6-digit verification code is required' })
+  code: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'TOTP secret is required' })
+  secret: string;
+}
+
 export class DisableMfaDto {
   @IsString()
   @IsNotEmpty()

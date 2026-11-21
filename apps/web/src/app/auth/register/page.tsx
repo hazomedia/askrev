@@ -94,7 +94,7 @@ function RegisterForm() {
         }),
       });
 
-      setAuthSession(data.tokens.accessToken, data.user, data.tokens.refreshToken);
+      setAuthSession(data.user, data.csrfToken);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please check your inputs.');

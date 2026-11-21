@@ -13,12 +13,13 @@ export class CsrfGuard implements CanActivate {
       return true;
     }
 
-    // If request has explicit Authorization: Bearer header (e.g. CLI, automated tests, server-to-server),
-    // it is not subject to ambient browser cookie CSRF.
-    const hasBearerAuth = req.headers.authorization && req.headers.authorization.startsWith('Bearer ');
+    // Check if ambient browser session cookies are present
     const hasSessionCookie = Boolean(req.cookies?.['askrev_access_token'] || req.cookies?.['askrev_admin_session']);
 
-    if (hasSessionCookie && !hasBearerAuth) {
+    // CRITICAL SECURITY ENFORCEMENT:
+    // If a session cookie is present, CSRF validation is strictly mandatory.
+    // Explicit Bearer headers CANNOT bypass CSRF protection for cookie-authenticated browser sessions.
+    if (hasSessionCookie) {
       const csrfCookie = req.cookies?.['askrev_csrf_token'];
       const csrfHeader = (req.headers['x-csrf-token'] || req.headers['x-xsrf-token']) as string;
 
@@ -34,4 +35,5 @@ export class CsrfGuard implements CanActivate {
     return true;
   }
 }
+
 

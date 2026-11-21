@@ -27,54 +27,53 @@ export function getCsrfToken(): string | null {
 }
 
 /**
- * Legacy auth token helper (preserved for non-admin backward compatibility)
- * Admin accounts strictly use secure HttpOnly cookies.
+ * Browser Session Security Handler:
+ * Pure HttpOnly cookie authentication. Access and refresh tokens are strictly NEVER
+ * stored in localStorage or sessionStorage for any user or administrative account.
  */
 export function getAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return sessionStorage.getItem('askrev_admin_access_token') || localStorage.getItem('askrev_access_token');
+  return null;
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('askrev_refresh_token');
+  return null;
 }
 
-/**
- * Session storage handler:
- * CRITICAL SECURITY RULE: Admin credentials are NEVER written to localStorage.
- * Tokens are securely managed by the server in HttpOnly cookies, with optional
- * session-scoped in-memory storage for active tab API calls.
- */
-export function setAuthSession(token: string, user: any, refreshToken?: string, csrfToken?: string) {
+export function setAuthSession(
+  arg1?: any,
+  arg2?: any,
+  arg3?: string,
+  arg4?: string
+) {
   if (typeof window === 'undefined') return;
 
-  if (csrfToken) {
-    setCsrfToken(csrfToken);
+  let user: any = null;
+  let csrf: string | undefined = undefined;
+
+  if (arg1 && typeof arg1 === 'object' && !arg2) {
+    user = arg1;
+  } else if (arg1 && typeof arg1 === 'object' && typeof arg2 === 'string') {
+    user = arg1;
+    csrf = arg2;
+  } else if (typeof arg1 === 'string' && arg2 && typeof arg2 === 'object') {
+    user = arg2;
+    csrf = arg4;
+  } else if (arg2 && typeof arg2 === 'object') {
+    user = arg2;
   }
 
-  const isAdmin =
-    user?.role === 'SUPER_ADMIN' ||
-    user?.role === 'ADMIN_OPERATIONS' ||
-    user?.role === 'ADMIN' ||
-    user?.role === 'FINANCE_MANAGER';
+  if (csrf) {
+    setCsrfToken(csrf);
+  }
 
-  if (isAdmin) {
+  if (user) {
     localStorage.setItem('askrev_user', JSON.stringify(user));
-    if (token) {
-      sessionStorage.setItem('askrev_admin_access_token', token);
-      localStorage.setItem('askrev_access_token', token);
-    }
-    if (refreshToken) {
-      localStorage.setItem('askrev_refresh_token', refreshToken);
-    }
-    return;
   }
 
-  // Non-admin fallback session persistence
-  if (token) localStorage.setItem('askrev_access_token', token);
-  if (user) localStorage.setItem('askrev_user', JSON.stringify(user));
-  if (refreshToken) localStorage.setItem('askrev_refresh_token', refreshToken);
+  // Strictly eliminate tokens from browser storage
+  localStorage.removeItem('askrev_access_token');
+  localStorage.removeItem('askrev_refresh_token');
+  sessionStorage.removeItem('askrev_admin_access_token');
 }
 
 export function clearAuthSession() {
@@ -92,14 +91,12 @@ export function clearAuthSession() {
 export const clearAuth = clearAuthSession;
 
 export async function logoutSession(): Promise<void> {
-  const token = getAuthToken();
   try {
     await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken()! } : {}),
       },
     });
@@ -121,43 +118,46 @@ export function getStoredUser(): any | null {
   }
 }
 
-let pendingRefreshPromise: Promise<string | null> | null = null;
+let pendingRefreshPromise: Promise<boolean> | null = null;
 
-async function attemptTokenRefresh(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-
+export async function attemptTokenRefresh(): Promise<boolean> {
   if (pendingRefreshPromise) {
     return pendingRefreshPromise;
   }
 
   pendingRefreshPromise = (async () => {
     try {
+      let csrf = getCsrfToken();
+      if (!csrf) {
+        csrf = await ensureCsrfToken();
+      }
+
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken()! } : {}),
+          ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
         },
-        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+        body: JSON.stringify({}),
       });
+
       if (!res.ok) {
         clearAuthSession();
-        return null;
+        return false;
       }
+
       const data = await res.json();
-      if (data?.tokens?.accessToken) {
-        setAuthSession(
-          data.tokens.accessToken,
-          data.user || getStoredUser(),
-          data.tokens.refreshToken
-        );
-        return data.tokens.accessToken as string;
+      if (data?.csrfToken) {
+        setCsrfToken(data.csrfToken);
       }
-      clearAuthSession();
-      return null;
+      if (data?.user) {
+        localStorage.setItem('askrev_user', JSON.stringify(data.user));
+      }
+      return true;
     } catch {
-      return null;
+      clearAuthSession();
+      return false;
     } finally {
       pendingRefreshPromise = null;
     }
@@ -223,15 +223,14 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     !endpoint.startsWith('/auth/register') &&
     !endpoint.startsWith('/auth/refresh')
   ) {
-    const newAccessToken = await attemptTokenRefresh();
-    if (newAccessToken) {
-      headers['Authorization'] = `Bearer ${newAccessToken}`;
+    const refreshed = await attemptTokenRefresh();
+    if (refreshed) {
       response = await fetch(`${API_BASE}${endpoint}`, {
         credentials: 'include',
         ...options,
         headers,
       });
-    } else if (token) {
+    } else {
       clearAuthSession();
     }
   }
@@ -374,10 +373,8 @@ export async function fetchPublishedCatalog(params?: {
     const hasRealFleet = items.some((p: any) => p.slug && p.slug.startsWith('askr-ev-'));
     if (!hasRealFleet) {
       try {
-        const refreshedToken = await attemptTokenRefresh();
-        if (refreshedToken) {
-          headers['Authorization'] = `Bearer ${refreshedToken}`;
-          sessionStorage.setItem('askrev_admin_access_token', refreshedToken);
+        const refreshed = await attemptTokenRefresh();
+        if (refreshed) {
           const retryRes = await fetch(`${API_BASE}/catalog${qs}`, {
             cache: 'no-store',
             credentials: 'include',

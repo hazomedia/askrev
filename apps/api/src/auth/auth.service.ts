@@ -4,7 +4,7 @@ import { BinaryLeg } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto, DisableMfaDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, UpdateProfileDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, DisableMfaDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, UpdateProfileDto, MfaEnrollmentSetupDto, MfaEnrollmentConfirmDto } from './dto/auth.dto';
 import { UserRole, MembershipPackage, paiseToRupees } from '@askrev/shared';
 import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken } from './jwt-secrets';
 import { TotpService } from './totp.service';
@@ -188,25 +188,37 @@ export class AuthService {
 
     if (isPrivilegedStaff) {
       if (!user.twoFactorEnabled) {
-        if (process.env.NODE_ENV === 'production' || process.env.MFA_ENFORCE_ADMIN === 'true') {
-          try {
-            await this.prisma.auditLog.create({
-              data: {
-                action: 'AUTH_LOGIN_BLOCKED_MFA_MANDATORY',
-                entityType: 'User',
-                entityId: user.id,
-                metadata: { email: user.email, role: user.role, reason: 'ADMIN_MFA_MANDATORY_ENFORCED' },
-              },
-            });
-          } catch {}
-          throw new UnauthorizedException(
-            'MFA_REQUIRED: Two-Factor Authentication (TOTP) is mandatory for administrative accounts in production. Please contact security operations or enable MFA.'
-          );
-        } else {
-          this.logger.warn(
-            `Privileged staff login without MFA in ${process.env.NODE_ENV || 'development'}: ${user.email} (${user.role})`
-          );
-        }
+        // Safe bootstrap process for existing administrators without MFA
+        const enrollmentPayload = {
+          sub: user.id,
+          email: user.email,
+          role: user.role,
+          scope: 'mfa_enrollment',
+          jti: crypto.randomUUID(),
+        };
+        const enrollmentToken = await this.jwtService.signAsync(enrollmentPayload, {
+          secret: getJwtAccessSecret(),
+          expiresIn: '15m',
+        });
+
+        try {
+          await this.prisma.auditLog.create({
+            data: {
+              action: 'AUTH_MFA_ENROLLMENT_REQUIRED',
+              entityType: 'User',
+              entityId: user.id,
+              metadata: { email: user.email, role: user.role, reason: 'ADMIN_MFA_BOOTSTRAP_TRIGGERED' },
+            },
+          });
+        } catch {}
+
+        return {
+          mfaEnrollmentRequired: true,
+          message:
+            'MFA_ENROLLMENT_REQUIRED: Two-Factor Authentication is mandatory for administrative accounts. Please complete enrollment using the provided one-time enrollment token.',
+          enrollmentToken,
+          user: this.formatUserProfile(user),
+        };
       }
     }
 
@@ -306,6 +318,18 @@ export class AuthService {
     const matchesLegacyRaw = !matchesHashed && (await bcrypt.compare(refreshToken, user.refreshTokenHash));
     if (!matchesHashed && !matchesLegacyRaw) {
       throw new UnauthorizedException('Refresh token revoked');
+    }
+
+    const isPrivilegedStaff = [
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN_OPERATIONS,
+      UserRole.FINANCE_MANAGER,
+    ].includes(user.role as any);
+
+    if (isPrivilegedStaff && !user.twoFactorEnabled) {
+      throw new UnauthorizedException(
+        'MFA_REQUIRED: Two-Factor Authentication is mandatory for administrative accounts. Please re-authenticate.'
+      );
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
@@ -447,6 +471,108 @@ export class AuthService {
     return {
       message: 'Two-Factor Authentication (TOTP) successfully enabled',
       recoveryCodes: rawRecoveryCodes,
+    };
+  }
+
+  /**
+   * Bootstraps MFA setup for existing administrators who do not yet have MFA enabled.
+   * Requires a valid short-lived enrollment token.
+   */
+  async setupMfaEnrollment(dto: MfaEnrollmentSetupDto) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(dto.enrollmentToken, {
+        secret: getJwtAccessSecret(),
+      });
+    } catch {
+      throw new UnauthorizedException('MFA enrollment session is invalid or expired. Please sign in again.');
+    }
+
+    if (payload.scope !== 'mfa_enrollment') {
+      throw new UnauthorizedException('Invalid token scope for MFA enrollment.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const { secret, otpauthUrl } = this.totpService.generateSecret(20, user.email);
+    const qrCodeDataUrl = await this.totpService.generateQrCode(otpauthUrl);
+
+    return {
+      secret,
+      otpauthUrl,
+      qrCodeDataUrl,
+      issuer: 'ASKR EV',
+      accountName: user.email,
+      instructions:
+        'Scan this QR code with your authenticator app (Google Authenticator, Microsoft Authenticator, 1Password) or enter the secret key manually, then verify with a 6-digit code.',
+    };
+  }
+
+  /**
+   * Confirms MFA enrollment for an administrator, marks twoFactorEnabled: true,
+   * stores hashed recovery codes, and issues full session credentials.
+   */
+  async confirmMfaEnrollment(dto: MfaEnrollmentConfirmDto) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(dto.enrollmentToken, {
+        secret: getJwtAccessSecret(),
+      });
+    } catch {
+      throw new UnauthorizedException('MFA enrollment session is invalid or expired. Please sign in again.');
+    }
+
+    if (payload.scope !== 'mfa_enrollment') {
+      throw new UnauthorizedException('Invalid token scope for MFA enrollment.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        wallet: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const isValid = this.totpService.verifyTokenWithReplayProtection(user.id, dto.secret, dto.code, 1, 'enrollment');
+    if (!isValid) {
+      throw new BadRequestException('Invalid 6-digit TOTP verification code.');
+    }
+
+    const rawRecoveryCodes = this.totpService.generateRecoveryCodes(8);
+    const hashedCodes = rawRecoveryCodes.map((c) => this.totpService.hashRecoveryCode(c));
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorSecret: dto.secret,
+        twoFactorEnabled: true,
+        twoFactorRecoveryCodes: hashedCodes,
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_MFA_BOOTSTRAP_ENROLLED',
+          entityType: 'User',
+          entityId: user.id,
+          actorId: user.id,
+          metadata: { email: user.email, role: user.role },
+        },
+      });
+    } catch {}
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+    return {
+      message: 'Two-Factor Authentication successfully enrolled. Administrative session initialized.',
+      success: true,
+      recoveryCodes: rawRecoveryCodes,
+      tokens,
+      user: this.formatUserProfile(user),
     };
   }
 

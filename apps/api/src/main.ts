@@ -8,6 +8,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
+import { RateLimiterService, getClientIp } from './common/rate-limiter.service';
 const cookieParser = require('cookie-parser');
 
 // Ensure BigInts serialize automatically to JSON string
@@ -17,31 +18,10 @@ if (typeof BigInt !== 'undefined' && !(BigInt.prototype as any).toJSON) {
   };
 }
 
-const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(key: string, maxRequests: number, windowMs: number): { allowed: boolean; retryAfter: number } {
-  const now = Date.now();
-  const existing = rateLimitBuckets.get(key);
-  if (!existing || existing.resetAt <= now) {
-    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
-    if (rateLimitBuckets.size > 5000) {
-      for (const [k, v] of rateLimitBuckets.entries()) {
-        if (v.resetAt <= now) rateLimitBuckets.delete(k);
-      }
-    }
-    return { allowed: true, retryAfter: 0 };
-  }
-
-  existing.count += 1;
-  if (existing.count > maxRequests) {
-    return { allowed: false, retryAfter: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)) };
-  }
-  return { allowed: true, retryAfter: 0 };
-}
-
 async function bootstrap() {
   const logger = new Logger('AskrEV_API');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const rateLimiter = app.get(RateLimiterService);
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.disable('x-powered-by');
@@ -90,8 +70,8 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '1mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '1mb' });
 
-  // Security headers + lightweight auth brute-force rate limiter
-  app.use((req: Request, res: Response, next: NextFunction) => {
+  // Security headers + distributed production-grade rate limiter
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -101,12 +81,12 @@ async function bootstrap() {
     }
 
     const reqPath = (req.originalUrl || req.url || '').split('?')[0];
-    const clientIp = (req.ip || req.socket?.remoteAddress || 'unknown').toString();
+    const clientIp = getClientIp(req);
     const windowMs = 60_000;
 
     // Rate limiting on simulation compute endpoints (prevent resource exhaustion)
     if (reqPath.startsWith('/api/simulation/')) {
-      const simCheck = checkRateLimit(`sim:${clientIp}`, 60, windowMs);
+      const simCheck = await rateLimiter.checkLimit(`sim:${clientIp}`, 60, windowMs);
       if (!simCheck.allowed) {
         res.setHeader('Retry-After', String(simCheck.retryAfter));
         return res.status(429).json({
@@ -122,9 +102,10 @@ async function bootstrap() {
       req.method === 'POST' &&
       (reqPath.startsWith('/api/vouchers/redeem') ||
         reqPath.startsWith('/api/packages/request') ||
-        reqPath.startsWith('/api/wallet/request-withdrawal'))
+        reqPath.startsWith('/api/wallet/request-withdrawal') ||
+        reqPath.startsWith('/api/members/binary/run-matching'))
     ) {
-      const mutCheck = checkRateLimit(`financial-mut:${clientIp}`, 30, windowMs);
+      const mutCheck = await rateLimiter.checkLimit(`financial-mut:${clientIp}`, 30, windowMs);
       if (!mutCheck.allowed) {
         res.setHeader('Retry-After', String(mutCheck.retryAfter));
         return res.status(429).json({
@@ -138,8 +119,8 @@ async function bootstrap() {
     if (req.method === 'POST' && reqPath.startsWith('/api/auth/')) {
       if (reqPath === '/api/auth/login') {
         const emailKey = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
-        const targetCheck = checkRateLimit(`login:${clientIp}:${emailKey}`, 25, windowMs);
-        const ipCheck = checkRateLimit(`login-ip:${clientIp}`, 200, windowMs);
+        const targetCheck = await rateLimiter.checkLimit(`login:${clientIp}:${emailKey}`, 25, windowMs);
+        const ipCheck = await rateLimiter.checkLimit(`login-ip:${clientIp}`, 200, windowMs);
         if (!targetCheck.allowed || !ipCheck.allowed) {
           const retryAfter = Math.max(targetCheck.retryAfter, ipCheck.retryAfter);
           res.setHeader('Retry-After', String(retryAfter));
@@ -150,7 +131,7 @@ async function bootstrap() {
           });
         }
       } else if (reqPath === '/api/auth/register') {
-        const regCheck = checkRateLimit(`register:${clientIp}`, 40, windowMs);
+        const regCheck = await rateLimiter.checkLimit(`register:${clientIp}`, 40, windowMs);
         if (!regCheck.allowed) {
           res.setHeader('Retry-After', String(regCheck.retryAfter));
           return res.status(429).json({
@@ -160,7 +141,7 @@ async function bootstrap() {
           });
         }
       } else if (reqPath === '/api/auth/refresh') {
-        const refCheck = checkRateLimit(`refresh:${clientIp}`, 60, windowMs);
+        const refCheck = await rateLimiter.checkLimit(`refresh:${clientIp}`, 60, windowMs);
         if (!refCheck.allowed) {
           res.setHeader('Retry-After', String(refCheck.retryAfter));
           return res.status(429).json({
@@ -171,8 +152,8 @@ async function bootstrap() {
         }
       } else if (reqPath === '/api/auth/forgot-password') {
         const emailKey = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
-        const forgotCheck = checkRateLimit(`forgot:${clientIp}:${emailKey}`, 5, windowMs);
-        const ipForgotCheck = checkRateLimit(`forgot-ip:${clientIp}`, 20, windowMs);
+        const forgotCheck = await rateLimiter.checkLimit(`forgot:${clientIp}:${emailKey}`, 5, windowMs);
+        const ipForgotCheck = await rateLimiter.checkLimit(`forgot-ip:${clientIp}`, 20, windowMs);
         if (!forgotCheck.allowed || !ipForgotCheck.allowed) {
           const retryAfter = Math.max(forgotCheck.retryAfter, ipForgotCheck.retryAfter);
           res.setHeader('Retry-After', String(retryAfter));
@@ -183,13 +164,23 @@ async function bootstrap() {
           });
         }
       } else if (reqPath === '/api/auth/reset-password') {
-        const resetCheck = checkRateLimit(`reset:${clientIp}`, 10, windowMs);
+        const resetCheck = await rateLimiter.checkLimit(`reset:${clientIp}`, 10, windowMs);
         if (!resetCheck.allowed) {
           res.setHeader('Retry-After', String(resetCheck.retryAfter));
           return res.status(429).json({
             statusCode: 429,
             message: 'Too many reset attempts. Please wait before trying again.',
             retryAfterSeconds: resetCheck.retryAfter,
+          });
+        }
+      } else if (reqPath.startsWith('/api/auth/mfa/')) {
+        const mfaCheck = await rateLimiter.checkLimit(`mfa-setup:${clientIp}`, 15, windowMs);
+        if (!mfaCheck.allowed) {
+          res.setHeader('Retry-After', String(mfaCheck.retryAfter));
+          return res.status(429).json({
+            statusCode: 429,
+            message: 'Too many MFA enrollment attempts. Please wait before trying again.',
+            retryAfterSeconds: mfaCheck.retryAfter,
           });
         }
       }

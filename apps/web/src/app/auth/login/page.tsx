@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, KeyRound, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, KeyRound, AlertCircle, ShieldCheck, QrCode, CheckCircle2, Copy } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
 import { fetchApi, setAuthSession } from '../../../lib/api';
@@ -18,6 +18,55 @@ export default function LoginPage() {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Admin MFA Bootstrap Enrollment States
+  const [isEnrollingMfa, setIsEnrollingMfa] = useState(false);
+  const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
+  const [enrollmentSecret, setEnrollmentSecret] = useState<string | null>(null);
+  const [enrollmentQr, setEnrollmentQr] = useState<string | null>(null);
+  const [enrollmentCode, setEnrollmentCode] = useState('');
+  const [enrollmentRecoveryCodes, setEnrollmentRecoveryCodes] = useState<string[] | null>(null);
+  const [copiedCodes, setCopiedCodes] = useState(false);
+
+  const navigateAfterAuth = (user: any) => {
+    if (['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(user.role)) {
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'askrevdrive.com' || window.location.hostname.startsWith('www.'))
+      ) {
+        window.location.href = 'https://admin.askrevdrive.com/admin';
+      } else {
+        router.push('/admin');
+      }
+    } else {
+      router.push('/dashboard');
+    }
+  };
+
+  const handleEnrollmentConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!enrollmentToken || !enrollmentSecret || !enrollmentCode) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data: any = await fetchApi('/auth/mfa/enrollment-confirm', {
+        method: 'POST',
+        body: JSON.stringify({
+          enrollmentToken,
+          secret: enrollmentSecret,
+          code: enrollmentCode.trim(),
+        }),
+      });
+
+      setAuthSession(data.user, data.csrfToken);
+      setEnrollmentRecoveryCodes(data.recoveryCodes || []);
+    } catch (err: any) {
+      setError(err.message || 'MFA enrollment confirmation failed. Please check the 6-digit code.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,21 +92,25 @@ export default function LoginPage() {
         body: JSON.stringify(payload),
       });
 
-      // Secure session: Admin tokens are stored strictly in HttpOnly cookies, never localStorage
-      setAuthSession(data.tokens?.accessToken, data.user, data.tokens?.refreshToken, data.csrfToken);
+      // Handle Admin Mandatory MFA Bootstrap Enrollment
+      if (data.mfaEnrollmentRequired) {
+        setEnrollmentToken(data.enrollmentToken);
+        setIsEnrollingMfa(true);
 
-      if (['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(data.user.role)) {
-        if (
-          typeof window !== 'undefined' &&
-          (window.location.hostname === 'askrevdrive.com' || window.location.hostname.startsWith('www.'))
-        ) {
-          window.location.href = 'https://admin.askrevdrive.com/admin';
-        } else {
-          router.push('/admin');
-        }
-      } else {
-        router.push('/dashboard');
+        // Fetch TOTP Secret and QR code for enrollment
+        const setupData: any = await fetchApi('/auth/mfa/enrollment-setup', {
+          method: 'POST',
+          body: JSON.stringify({ enrollmentToken: data.enrollmentToken }),
+        });
+
+        setEnrollmentSecret(setupData.secret);
+        setEnrollmentQr(setupData.qrCodeDataUrl);
+        return;
       }
+
+      // Secure session: Browser auth is strictly HttpOnly cookies (no tokens in localStorage)
+      setAuthSession(data.user, data.csrfToken);
+      navigateAfterAuth(data.user);
     } catch (err: any) {
       const message = err.message || 'Login failed. Please verify your credentials.';
       if (message.includes('MFA_REQUIRED')) {
@@ -71,12 +124,22 @@ export default function LoginPage() {
     }
   };
 
+  const copyRecoveryCodes = () => {
+    if (enrollmentRecoveryCodes) {
+      navigator.clipboard.writeText(enrollmentRecoveryCodes.join('\n'));
+      setCopiedCodes(true);
+      setTimeout(() => setCopiedCodes(false), 3000);
+    }
+  };
+
   const fillDemo = (demoEmail: string, demoPass: string) => {
     setEmail(demoEmail);
     setPassword(demoPass);
     setMfaRequired(false);
     setTotpCode('');
     setRecoveryCode('');
+    setIsEnrollingMfa(false);
+    setEnrollmentRecoveryCodes(null);
     setError(null);
   };
 
@@ -100,114 +163,207 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-xs font-semibold text-[#253247] mb-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] placeholder:text-slate-400"
-                />
+          {/* MFA Enrollment Step 2: Show Recovery Codes & Complete */}
+          {enrollmentRecoveryCodes ? (
+            <div className="space-y-4">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>MFA Enrollment Successful! Save your recovery codes.</span>
               </div>
+              <p className="text-xs text-slate-600">
+                Store these single-use backup recovery codes in a secure password manager. If you lose access to your authenticator app, these are required to recover your administrative account:
+              </p>
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 grid grid-cols-2 gap-2 text-xs font-mono text-center text-slate-700">
+                {enrollmentRecoveryCodes.map((c, i) => (
+                  <div key={i} className="p-1 bg-white border border-slate-200 rounded">
+                    {c}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={copyRecoveryCodes}
+                className="w-full py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {copiedCodes ? 'Copied to Clipboard!' : 'Copy All Recovery Codes'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    const stored = localStorage.getItem('askrev_user');
+                    if (stored) navigateAfterAuth(JSON.parse(stored));
+                    else router.push('/admin');
+                  }
+                }}
+                className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-xs font-semibold transition-colors"
+              >
+                Enter Admin Dashboard
+              </button>
             </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-[#253247]">
-                  Password
-                </label>
-                <Link
-                  href="/auth/forgot-password"
-                  className="text-[11px] text-[#165DAD] hover:underline font-medium"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] placeholder:text-slate-400"
-                />
-              </div>
-            </div>
-
-            {/* MFA Verification Challenge */}
-            {mfaRequired && (
-              <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-[#165DAD]">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Two-Factor Authentication Required</span>
+          ) : isEnrollingMfa ? (
+            /* MFA Enrollment Step 1: Scan QR Code & Enter 6-digit confirmation */
+            <form className="space-y-4" onSubmit={handleEnrollmentConfirm}>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 text-xs space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#165DAD]" />
+                  <span>Mandatory Admin MFA Setup</span>
                 </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  Two-factor authentication is mandatory for administrators. Scan the QR code with Google Authenticator, Microsoft Authenticator, or 1Password.
+                </p>
+              </div>
 
-                {!useRecoveryCode ? (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      6-Digit Authenticator Code
-                    </label>
-                    <div className="relative">
-                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              {enrollmentQr ? (
+                <div className="flex flex-col items-center justify-center p-3 bg-white border border-slate-200 rounded-lg space-y-2">
+                  <img src={enrollmentQr} alt="MFA QR Code" className="w-44 h-44 rounded" />
+                  <div className="text-[11px] text-slate-500 font-mono text-center select-all">
+                    Key: <span className="font-bold text-[#253247]">{enrollmentSecret}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-slate-400">Loading authenticator key...</div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-[#253247] mb-1">
+                  Enter 6-Digit Authenticator Code
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    maxLength={6}
+                    required
+                    autoFocus
+                    value={enrollmentCode}
+                    onChange={(e) => setEnrollmentCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="123456"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono tracking-widest text-center"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || enrollmentCode.length < 6}
+                className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-xs font-semibold transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Activating MFA...' : 'Confirm & Enable MFA'}
+              </button>
+            </form>
+          ) : (
+            /* Normal Login Form */
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div>
+                <label className="block text-xs font-semibold text-[#253247] mb-1">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-[#253247]">
+                    Password
+                  </label>
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-[11px] text-[#165DAD] hover:underline font-medium"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              {/* MFA Verification Challenge for already-enrolled accounts */}
+              {mfaRequired && (
+                <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#165DAD]">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Two-Factor Authentication Required</span>
+                  </div>
+
+                  {!useRecoveryCode ? (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        6-Digit Authenticator Code
+                      </label>
+                      <div className="relative">
+                        <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          maxLength={6}
+                          autoFocus
+                          value={totpCode}
+                          onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                          placeholder="123456"
+                          className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono tracking-widest text-center"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Backup Recovery Code
+                      </label>
                       <input
                         type="text"
-                        maxLength={6}
                         autoFocus
-                        value={totpCode}
-                        onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
-                        placeholder="123456"
-                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono tracking-widest text-center"
+                        value={recoveryCode}
+                        onChange={(e) => setRecoveryCode(e.target.value)}
+                        placeholder="XXXX-XXXX-XX"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono text-center"
                       />
                     </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Backup Recovery Code
-                    </label>
-                    <input
-                      type="text"
-                      autoFocus
-                      value={recoveryCode}
-                      onChange={(e) => setRecoveryCode(e.target.value)}
-                      placeholder="XXXX-XXXX-XX"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono text-center"
-                    />
-                  </div>
-                )}
+                  )}
 
-                <div className="text-right">
-                  <button
-                    type="button"
-                    onClick={() => setUseRecoveryCode(!useRecoveryCode)}
-                    className="text-[11px] text-[#165DAD] hover:underline"
-                  >
-                    {useRecoveryCode ? 'Use 6-digit Authenticator Code' : 'Use Backup Recovery Code'}
-                  </button>
+                  <div className="text-right">
+                    <button
+                      type="button"
+                      onClick={() => setUseRecoveryCode(!useRecoveryCode)}
+                      className="text-[11px] text-[#165DAD] hover:underline"
+                    >
+                      {useRecoveryCode ? 'Use 6-digit Authenticator Code' : 'Use Backup Recovery Code'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-xs font-semibold transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Authenticating...' : mfaRequired ? 'Verify & Continue' : 'Sign In'}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#124B8D] text-white text-xs font-semibold transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Authenticating...' : mfaRequired ? 'Verify & Continue' : 'Sign In'}
+              </button>
+            </form>
+          )}
 
-          {/* Quick Demo Autofill Switcher for QA (Non-production environments only) */}
-          {process.env.NODE_ENV !== 'production' && (
+          {/* Quick Demo Autofill Switcher for QA */}
+          {!isEnrollingMfa && process.env.NODE_ENV !== 'production' && (
             <div className="pt-4 border-t border-slate-100">
               <div className="text-[11px] font-semibold text-slate-400 mb-2">
                 Quick QA Accounts:

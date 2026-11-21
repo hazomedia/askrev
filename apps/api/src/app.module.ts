@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
 import { MembersModule } from './members/members.module';
 import { PackagesModule } from './packages/packages.module';
@@ -22,6 +23,7 @@ import { CsrfGuard } from './auth/guards/csrf.guard';
   imports: [
     ScheduleModule.forRoot(),
     PrismaModule,
+    CommonModule,
     AuthModule,
     MembersModule,
     PackagesModule,

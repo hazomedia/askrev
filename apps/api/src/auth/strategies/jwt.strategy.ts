@@ -24,7 +24,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: Request, payload: { sub: string; email: string; role: string }) {
+  async validate(req: Request, payload: { sub: string; email: string; role: string; scope?: string }) {
+    if (payload.scope === 'mfa_enrollment') {
+      throw new UnauthorizedException(
+        'INSUFFICIENT_SCOPE: This token is restricted strictly to MFA enrollment and cannot access application resources.'
+      );
+    }
+
     // Extract raw token for revocation check
     let token = '';
     const authHeader = req.headers?.authorization || '';
