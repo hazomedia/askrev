@@ -26,6 +26,9 @@ import {
   History,
   ArrowDownRight,
   ArrowUpRight,
+  Mail,
+  Edit3,
+  CheckCircle,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
@@ -56,6 +59,15 @@ export default function DashboardPage() {
   const [upgradeSuccess, setUpgradeSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editFullName, setEditFullName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = getStoredUser();
@@ -197,6 +209,54 @@ export default function DashboardPage() {
       setError(err.message || 'Membership request submission failed');
     } finally {
       setUpgrading(false);
+    }
+  };
+
+  const handleOpenEditProfile = () => {
+    if (user) {
+      setEditFullName(user.fullName || '');
+      setEditPhone(user.phone || '');
+      setProfileError(null);
+      setProfileSuccess(null);
+      setIsEditingProfile(true);
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+    try {
+      const updated = await fetchApi<any>('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          fullName: editFullName.trim(),
+          phone: editPhone.trim() ? editPhone.trim() : undefined,
+        }),
+      });
+      setUser((prev: any) => ({ ...prev, ...updated }));
+      setProfileSuccess('Profile updated successfully!');
+      setIsEditingProfile(false);
+    } catch (err: any) {
+      setProfileError(err.message || 'Failed to update profile');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleSendVerification = async () => {
+    setSendingVerification(true);
+    setVerificationNotice(null);
+    try {
+      const res: any = await fetchApi<any>('/auth/send-verification', {
+        method: 'POST',
+      });
+      setVerificationNotice(res.message || 'Verification link sent to your registered email.');
+    } catch (err: any) {
+      setVerificationNotice(err.message || 'Failed to send verification link.');
+    } finally {
+      setSendingVerification(false);
     }
   };
 
@@ -2013,51 +2073,166 @@ export default function DashboardPage() {
             {/* TAB 7: PROFILE & SETTINGS */}
             {activeTab === 'profile' && (
               <div className="space-y-6">
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-[#253247]">Member Profile & Credentials</h3>
-                    <p className="text-xs text-slate-500">Personal membership details and verification status</p>
+                {profileSuccess && (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>{profileSuccess}</span>
+                  </div>
+                )}
+                {profileError && (
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <span>{profileError}</span>
+                  </div>
+                )}
+                {verificationNotice && (
+                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm flex items-center gap-2">
+                    <Mail className="w-5 h-5 text-blue-600 shrink-0" />
+                    <span>{verificationNotice}</span>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-bold text-[#253247]">Member Profile & Credentials</h3>
+                      <p className="text-xs text-slate-500">Personal membership details, contact information, and verification status</p>
+                    </div>
+                    {!isEditingProfile && (
+                      <button
+                        onClick={handleOpenEditProfile}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#165DAD] bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200 shrink-0"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        Edit Profile
+                      </button>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                    <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">Unique Member ID</span>
-                      <div className="text-sm font-mono font-bold text-[#165DAD]">{user.memberId}</div>
-                    </div>
+                  {isEditingProfile ? (
+                    <form onSubmit={handleSaveProfile} className="space-y-4 max-w-lg p-4 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">Update Personal Information</div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Full Legal Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={editFullName}
+                          onChange={(e) => setEditFullName(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#165DAD] bg-white text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Mobile Phone Number</label>
+                        <input
+                          type="text"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          placeholder="e.g. +91 9876543210"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#165DAD] bg-white text-slate-900"
+                        />
+                        <p className="text-[11px] text-slate-400 mt-1">10-15 digits. Used for order updates and verification.</p>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2">
+                        <button
+                          type="submit"
+                          disabled={profileSaving}
+                          className="px-4 py-2 text-xs font-semibold text-white bg-[#165DAD] hover:bg-[#134e96] rounded-lg transition disabled:opacity-50"
+                        >
+                          {profileSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={profileSaving}
+                          onClick={() => setIsEditingProfile(false)}
+                          className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg transition"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
+                        <span className="text-slate-500">Unique Member ID</span>
+                        <div className="text-sm font-mono font-bold text-[#165DAD]">{user.memberId}</div>
+                      </div>
 
-                    <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">Full Legal Name</span>
-                      <div className="text-sm font-bold text-[#253247]">{user.fullName}</div>
-                    </div>
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
+                        <span className="text-slate-500">Full Legal Name</span>
+                        <div className="text-sm font-bold text-[#253247]">{user.fullName}</div>
+                      </div>
 
-                    <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">Registered Email</span>
-                      <div className="text-sm font-medium text-[#253247]">{user.email}</div>
-                    </div>
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
+                        <span className="text-slate-500">Registered Email</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium text-[#253247] truncate">{user.email}</div>
+                          {user.isEmailVerified ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                              <CheckCircle className="w-3 h-3" /> Verified
+                            </span>
+                          ) : (
+                            <button
+                              onClick={handleSendVerification}
+                              disabled={sendingVerification}
+                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline shrink-0 disabled:opacity-50"
+                            >
+                              {sendingVerification ? 'Sending...' : 'Verify Email'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
 
-                    <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">Mobile Number</span>
-                      <div className="text-sm font-medium text-[#253247]">{user.phone || 'Not Provided'}</div>
-                    </div>
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
+                        <span className="text-slate-500">Mobile Number</span>
+                        <div className="text-sm font-medium text-[#253247]">{user.phone || 'Not Provided'}</div>
+                      </div>
 
-                    <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">Assigned Sponsor</span>
-                      <div className="text-sm font-medium text-[#253247]">
-                        {user.sponsorName ? `${user.sponsorName} (${user.sponsorMemberId})` : 'Direct Root Enrollment'}
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
+                        <span className="text-slate-500">Assigned Sponsor</span>
+                        <div className="text-sm font-medium text-[#253247]">
+                          {user.sponsorName ? `${user.sponsorName} (${user.sponsorMemberId})` : 'Direct Root Enrollment'}
+                        </div>
+                      </div>
+
+                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
+                        <span className="text-slate-500">Account Verification Tier</span>
+                        <div className="text-sm font-bold text-[#15803D] flex items-center gap-1.5 mt-0.5">
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>
+                            {user.isFullQualified
+                              ? 'Full Qualified (Simulated)'
+                              : user.currentPackage === 'BASIC'
+                              ? 'Basic Activated (Simulated)'
+                              : 'Free Starter Account'}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 space-y-1">
-                      <span className="text-slate-500">Account Verification Tier</span>
-                      <div className="text-sm font-bold text-[#15803D] flex items-center gap-1.5 mt-0.5">
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>
-                          {user.isFullQualified
-                            ? 'Full Qualified (Simulated)'
-                            : user.currentPackage === 'BASIC'
-                            ? 'Basic Activated (Simulated)'
-                            : 'Free Starter Account'}
-                        </span>
+                  {/* Share & Referral Section inside Profile */}
+                  <div className="mt-6 pt-6 border-t border-slate-200 space-y-3">
+                    <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">Your Member Referral Link</div>
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <div className="font-mono text-xs text-slate-700 break-all bg-white px-3 py-2 rounded-lg border border-slate-200 flex-1">
+                        {getReferralLink()}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={handleCopyLink}
+                          className="px-3 py-2 text-xs font-semibold text-white bg-[#165DAD] hover:bg-[#134e96] rounded-lg transition inline-flex items-center gap-1.5"
+                        >
+                          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copied ? 'Copied' : 'Copy'}
+                        </button>
+                        <button
+                          onClick={handleShareLink}
+                          className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 rounded-lg transition border border-slate-300 inline-flex items-center gap-1.5"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          Share
+                        </button>
                       </div>
                     </div>
                   </div>

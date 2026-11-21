@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Query, Param, UseGuards, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { MembersService } from './members.service';
+import { BinarySchedulerService } from './binary-scheduler.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -14,7 +15,10 @@ import {
 @Controller('members')
 @UseGuards(JwtAuthGuard)
 export class MembersController {
-  constructor(private readonly membersService: MembersService) {}
+  constructor(
+    private readonly membersService: MembersService,
+    private readonly binaryScheduler: BinarySchedulerService
+  ) {}
 
   @Get('direct-team')
   async getDirectTeam(@CurrentUser() user: any) {
@@ -131,6 +135,30 @@ export class MembersController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
   async getMemberDetails(@Param('id') id: string) {
     return this.membersService.getMemberDetails(id);
+  }
+
+  // =========================================================================
+  // ADMIN AUTOMATED BINARY SIMULATION RUNS
+  // =========================================================================
+
+  @Get('admin/binary-simulation-runs')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getBinarySimulationRuns(@Query('limit') limit?: number) {
+    return this.binaryScheduler.getSimulationRuns(limit ? Number(limit) : 30);
+  }
+
+  @Post('admin/binary-simulation-run')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async triggerBinarySimulationRun(
+    @Body() body: { isDryRun?: boolean; targetDate?: string }
+  ) {
+    return this.binaryScheduler.runDailyBinarySimulation({
+      isDryRun: body?.isDryRun ?? false,
+      targetDate: body?.targetDate,
+      triggeredBy: 'ADMIN_MANUAL',
+    });
   }
 }
 

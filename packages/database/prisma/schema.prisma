@@ -69,13 +69,22 @@ model User {
   twoFactorEnabled       Boolean            @default(false)
   twoFactorRecoveryCodes String[]           @default([])
 
-  wallet              WalletAccount?
-  binaryPlacement     BinaryPlacement?
-  vouchers            ShoppingVoucher[]
-  bookings            EvBooking[]
-  withdrawals         WithdrawalRequest[]
-  membershipRequests  MembershipRequest[]
-  binaryMatches       BinaryMatchEvent[]
+  // Email Verification
+  isEmailVerified        Boolean            @default(false)
+  emailVerifiedAt        DateTime?
+
+  wallet                  WalletAccount?
+  binaryPlacement         BinaryPlacement?
+  vouchers                ShoppingVoucher[]
+  bookings                EvBooking[]
+  withdrawals             WithdrawalRequest[]
+  membershipRequests      MembershipRequest[]
+  binaryMatches           BinaryMatchEvent[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  taxSimulationRecords    TaxSimulationRecord[]
+  retailOrders            RetailOrderRecord[]
+  retailQualifications    RetailQualificationEvent[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -512,4 +521,146 @@ model HomepageHeroSlide {
   @@index([sortOrder])
   @@index([linkedProductId])
 }
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
+}
+
+model BinarySimulationRun {
+  id             String    @id @default(uuid())
+  runDate        String    // YYYY-MM-DD in Asia/Kolkata
+  status         String    // PENDING, RUNNING, COMPLETED, FAILED
+  nodesEvaluated Int       @default(0)
+  nodesSettled   Int       @default(0)
+  pairsSettled   Int       @default(0)
+  totalRewardPaise BigInt  @default(0)
+  executionMode  String    @default("SIMULATION_ONLY")
+  isDryRun       Boolean   @default(false)
+  metadata       Json?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  errorMessage   String?
+  triggeredBy    String    @default("CRON_AUTOMATED") // CRON_AUTOMATED, ADMIN_MANUAL
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([runDate, isDryRun])
+  @@index([runDate])
+  @@index([status])
+}
+
+model TaxSimulationRule {
+  id              String                @id @default(uuid())
+  ruleIdentifier  String                @unique // e.g. "TDS_194H_SIMULATED_2026"
+  ruleName        String                // e.g. "Simulated Brokerage/Commission TDS"
+  incomeCategory  String                // "DIRECT_SPONSOR_COMMISSION", "BINARY_MATCHING_REWARD", "ALL"
+  taxRatePercent  Float                 // e.g. 5.0 (configurable)
+  thresholdPaise  BigInt                @default(0) // e.g. 1500000 (₹15,000 threshold under Section 194H)
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  deductionEvent  String                @default("ON_WALLET_CREDIT") // ON_WALLET_CREDIT, ON_WITHDRAWAL_REQUEST
+  version         Int                   @default(1)
+  isActive        Boolean               @default(true)
+  disclaimer      String                @default("SIMULATED ESTIMATE ONLY: Not actual tax withheld or legal tax remittance.")
+  records         TaxSimulationRecord[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([ruleIdentifier])
+  @@index([isActive])
+}
+
+model TaxSimulationRecord {
+  id                      String            @id @default(uuid())
+  userId                  String
+  user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ruleId                  String
+  rule                    TaxSimulationRule @relation(fields: [ruleId], references: [id])
+  referenceEventType      String            // e.g. "BINARY_MATCHING_REWARD", "QUALIFIED_DIRECT_COMMISSION"
+  referenceEntityId       String?           // e.g. journalEntryId or binaryMatchEventId
+  taxableGrossPaise       BigInt
+  simulatedDeductionPaise BigInt
+  simulatedNetPaise       BigInt
+  appliedRatePercent      Float
+  isSimulated             Boolean           @default(true)
+  idempotencyKey          String?           @unique
+  createdAt               DateTime          @default(now())
+
+  @@index([userId])
+  @@index([ruleId])
+  @@index([referenceEntityId])
+}
+
+model RetailQualificationConfig {
+  id                          String   @id @default(uuid())
+  configKey                   String   @unique @default("DEFAULT_RETAIL_QUALIFICATION")
+  qualificationThresholdPaise BigInt   @default(6000000) // ₹60,000
+  eligibleCategories          String[] @default(["SCOOTER", "BIKE", "CYCLE", "JEEP", "UTILITY"])
+  includeVoucherRedemptions   Boolean  @default(false)
+  evaluationPeriodDays        Int?     // null = all-time / one-time, or e.g. 365
+  allowRefundDeductions       Boolean  @default(true)
+  status                      String   @default("PENDING_BUSINESS_APPROVAL") // PENDING_BUSINESS_APPROVAL, ACTIVE_SIMULATION
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+}
+
+model RetailOrderRecord {
+  id                         String    @id @default(uuid())
+  orderNumber                String    @unique
+  userId                     String
+  user                       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderStatus                String    // COMPLETED, REFUNDED, CANCELLED
+  grossAmountPaise           BigInt
+  netCashPaidPaise           BigInt
+  voucherAppliedPaise        BigInt    @default(0)
+  productCategory            String
+  isEligibleForQualification Boolean   @default(true)
+  completedAt                DateTime  @default(now())
+  refundedAt                 DateTime?
+  refundAmountPaise          BigInt    @default(0)
+  createdAt                  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([orderNumber])
+  @@index([orderStatus])
+}
+
+model RetailQualificationEvent {
+  id                       String   @id @default(uuid())
+  userId                   String
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalQualifyingSpendPaise BigInt
+  thresholdAppliedPaise    BigInt
+  qualifyingOrderIds       String[]
+  status                   String   @default("SIMULATION_PREVIEW") // SIMULATION_PREVIEW, APPROVED
+  isSimulated              Boolean  @default(true)
+  notes                    String?
+  createdAt                DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
 

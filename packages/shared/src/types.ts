@@ -25,6 +25,8 @@ export interface UserProfile {
   role: UserRole;
   currentPackage: MembershipPackage;
   isFullQualified: boolean;
+  isEmailVerified?: boolean;
+  emailVerifiedAt?: string | null;
   sponsorId?: string | null;
   sponsorMemberId?: string | null;
   createdAt: string;
@@ -352,5 +354,103 @@ export interface HomepageHeroSlideItem {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface BinarySimulationRunItem {
+  id: string;
+  runDate: string;
+  status: string;
+  nodesEvaluated: number;
+  nodesSettled: number;
+  pairsSettled: number;
+  totalRewardINR: number;
+  totalRewardPaise: string;
+  executionMode: string;
+  isDryRun: boolean;
+  metadata?: any;
+  startedAt: string;
+  completedAt?: string | null;
+  errorMessage?: string | null;
+  triggeredBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaxSimulationRuleItem {
+  id: string;
+  ruleIdentifier: string;
+  ruleName: string;
+  incomeCategory: string;
+  taxRatePercent: number;
+  thresholdINR: number;
+  thresholdPaise: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  deductionEvent: string;
+  version: number;
+  isActive: boolean;
+  disclaimer: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaxSimulationRecordItem {
+  id: string;
+  userId: string;
+  ruleId: string;
+  referenceEventType: string;
+  referenceEntityId?: string | null;
+  taxableGrossINR: number;
+  simulatedDeductionINR: number;
+  simulatedNetINR: number;
+  taxableGrossPaise: string;
+  simulatedDeductionPaise: string;
+  simulatedNetPaise: string;
+  appliedRatePercent: number;
+  isSimulated: boolean;
+  createdAt: string;
+}
+
+export interface RetailQualificationConfigItem {
+  id: string;
+  configKey: string;
+  qualificationThresholdINR: number;
+  qualificationThresholdPaise: string;
+  eligibleCategories: string[];
+  includeVoucherRedemptions: boolean;
+  evaluationPeriodDays?: number | null;
+  allowRefundDeductions: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetailOrderRecordItem {
+  id: string;
+  orderNumber: string;
+  userId: string;
+  orderStatus: string;
+  grossAmountINR: number;
+  netCashPaidINR: number;
+  voucherAppliedINR: number;
+  productCategory: string;
+  isEligibleForQualification: boolean;
+  completedAt: string;
+  refundedAt?: string | null;
+  refundAmountINR: number;
+  createdAt: string;
+}
+
+export interface RetailQualificationEventItem {
+  id: string;
+  userId: string;
+  totalQualifyingSpendINR: number;
+  thresholdAppliedINR: number;
+  qualifyingOrderIds: string[];
+  status: string;
+  isSimulated: boolean;
+  notes?: string | null;
+  createdAt: string;
+}
+
 
 

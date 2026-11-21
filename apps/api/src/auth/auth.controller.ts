@@ -1,8 +1,19 @@
-import { Controller, Post, Body, Get, UseGuards, Req, Res } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Param, UseGuards, Req, Res, HttpCode, HttpStatus } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto, VerifyMfaDto, DisableMfaDto, ChangePasswordDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  RefreshTokenDto,
+  VerifyMfaDto,
+  DisableMfaDto,
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+  UpdateProfileDto,
+} from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CsrfGuard } from './guards/csrf.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -42,6 +53,39 @@ export class AuthController {
     });
 
     return { csrfToken };
+  }
+
+  @Get('sponsor-lookup/:memberId')
+  async lookupSponsor(@Param('memberId') memberId: string) {
+    return this.authService.lookupSponsor(memberId);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
+    const result = await this.authService.resetPassword(dto);
+    const cookieOpts = this.getCookieOptions(req);
+    // Clear cookies to enforce fresh login with the new password
+    res.clearCookie('askrev_access_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_refresh_token', { ...cookieOpts, path: '/api/auth' });
+    res.clearCookie('askrev_csrf_token', { ...cookieOpts, path: '/' });
+    return result;
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
 
   @Post('register')
@@ -157,6 +201,21 @@ export class AuthController {
   @Get('me')
   async getProfile(@CurrentUser() user: any) {
     return this.authService.getProfile(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, CsrfGuard)
+  @Patch('profile')
+  async updateProfile(
+    @CurrentUser() user: any,
+    @Body() dto: UpdateProfileDto
+  ) {
+    return this.authService.updateProfile(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('send-verification')
+  async sendVerification(@CurrentUser() user: any) {
+    return this.authService.sendEmailVerification(user.id);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { TotpService } from './totp.service';
+import { EmailService } from './email.service';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { TotpService } from './totp.service';
     JwtModule.register({}),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, TotpService],
-  exports: [AuthService, JwtModule, PassportModule, RolesGuard, TotpService],
+  providers: [AuthService, JwtStrategy, RolesGuard, TotpService, EmailService],
+  exports: [AuthService, JwtModule, PassportModule, RolesGuard, TotpService, EmailService],
 })
 export class AuthModule {}

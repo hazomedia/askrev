@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { User, Mail, Phone, Lock, Share2, AlertCircle } from 'lucide-react';
+import { User, Mail, Phone, Lock, Share2, AlertCircle, CheckCircle2, Loader2, UserCheck } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
 import { fetchApi, setAuthSession } from '../../../lib/api';
@@ -17,13 +17,45 @@ function RegisterForm() {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [sponsorMemberId, setSponsorMemberId] = useState('');
+  const [sponsorInfo, setSponsorInfo] = useState<{ memberId: string; fullName: string } | null>(null);
+  const [sponsorChecking, setSponsorChecking] = useState(false);
+  const [sponsorError, setSponsorError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const lookupSponsor = async (code: string) => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) {
+      setSponsorInfo(null);
+      setSponsorError('Sponsor referral code is required.');
+      return;
+    }
+
+    setSponsorChecking(true);
+    setSponsorError(null);
+    try {
+      const data: any = await fetchApi(`/auth/sponsor-lookup/${encodeURIComponent(clean)}`);
+      if (data?.valid) {
+        setSponsorInfo({ memberId: data.memberId, fullName: data.fullName });
+        setSponsorError(null);
+      } else {
+        setSponsorInfo(null);
+        setSponsorError('Invalid or ineligible sponsor code.');
+      }
+    } catch (err: any) {
+      setSponsorInfo(null);
+      setSponsorError(err.message || 'Sponsor code was not found.');
+    } finally {
+      setSponsorChecking(false);
+    }
+  };
 
   useEffect(() => {
     const refCode = searchParams.get('ref');
     if (refCode) {
-      setSponsorMemberId(refCode.toUpperCase().trim());
+      const clean = refCode.toUpperCase().trim();
+      setSponsorMemberId(clean);
+      lookupSponsor(clean);
     }
   }, [searchParams]);
 
@@ -31,6 +63,18 @@ function RegisterForm() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+
+    if (!sponsorMemberId.trim()) {
+      setError('A valid sponsor referral code is mandatory to create a member account.');
+      setLoading(false);
+      return;
+    }
+
+    if (!sponsorInfo) {
+      setError('Please provide a verified sponsor referral code.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const data: any = await fetchApi('/auth/register', {
@@ -40,7 +84,7 @@ function RegisterForm() {
           email,
           password,
           phone: phone || undefined,
-          sponsorMemberId: sponsorMemberId ? sponsorMemberId.trim() : undefined,
+          sponsorMemberId: sponsorMemberId.trim().toUpperCase(),
         }),
       });
 
@@ -145,19 +189,68 @@ function RegisterForm() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#253247] mb-1">
-                Sponsor Member ID (Optional)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-[#253247]">
+                  Sponsor Referral Code <span className="text-red-500">*</span>
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">Mandatory</span>
+              </div>
               <div className="relative">
                 <Share2 className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="text"
+                  required
                   value={sponsorMemberId}
-                  onChange={(e) => setSponsorMemberId(e.target.value.toUpperCase())}
-                  placeholder="e.g. ASKR-100001"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 focus:border-[#165DAD] focus:outline-none text-xs text-[#253247] font-mono uppercase placeholder:text-slate-400"
+                  onChange={(e) => {
+                    const val = e.target.value.toUpperCase();
+                    setSponsorMemberId(val);
+                    if (val.length >= 6) {
+                      lookupSponsor(val);
+                    } else {
+                      setSponsorInfo(null);
+                      setSponsorError(null);
+                    }
+                  }}
+                  onBlur={() => lookupSponsor(sponsorMemberId)}
+                  placeholder="e.g. ASKR-ADMIN-01"
+                  className={`w-full pl-9 pr-9 py-2.5 rounded-lg border text-xs text-[#253247] font-mono uppercase placeholder:text-slate-400 focus:outline-none transition-colors ${
+                    sponsorInfo
+                      ? 'border-emerald-500 bg-emerald-50/20'
+                      : sponsorError
+                      ? 'border-red-400 bg-red-50/20'
+                      : 'border-slate-200 focus:border-[#165DAD]'
+                  }`}
                 />
+                <div className="absolute right-3 top-2.5">
+                  {sponsorChecking ? (
+                    <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                  ) : sponsorInfo ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : sponsorError ? (
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                  ) : null}
+                </div>
               </div>
+
+              {/* Verified Sponsor Identity Card */}
+              {sponsorInfo && (
+                <div className="mt-2 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-emerald-900 font-medium">
+                    <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Sponsor: <strong>{sponsorInfo.fullName}</strong></span>
+                  </div>
+                  <span className="font-mono text-[11px] text-emerald-700 font-semibold px-2 py-0.5 rounded bg-white border border-emerald-200">
+                    {sponsorInfo.memberId}
+                  </span>
+                </div>
+              )}
+
+              {sponsorError && (
+                <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  {sponsorError}
+                </p>
+              )}
             </div>
 
             {/* Membership Activation Policy */}

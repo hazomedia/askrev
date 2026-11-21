@@ -17,8 +17,8 @@ export class RegisterDto {
   phone?: string;
 
   @IsString()
-  @IsOptional()
-  sponsorMemberId?: string;
+  @IsNotEmpty({ message: 'Sponsor referral code is required for registration' })
+  sponsorMemberId: string;
 
   @IsString()
   @IsOptional()
@@ -41,6 +41,44 @@ export class LoginDto {
   @IsOptional()
   recoveryCode?: string;
 }
+
+export class ForgotPasswordDto {
+  @IsEmail({}, { message: 'A valid email address is required' })
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Password reset token is required' })
+  token: string;
+
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
+  newPassword: string;
+
+  @IsString()
+  @IsNotEmpty()
+  confirmPassword: string;
+}
+
+export class VerifyEmailDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Verification token is required' })
+  token: string;
+}
+
+export class UpdateProfileDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Full name cannot be empty' })
+  fullName: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
+}
+
+
+
 
 export class VerifyMfaDto {
   @IsString()
@@ -89,4 +127,7 @@ export class ChangePasswordDto {
   @IsOptional()
   recoveryCode?: string;
 }
+
+
+
 

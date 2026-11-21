@@ -1,19 +1,21 @@
-import { Injectable, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto, DisableMfaDto, ChangePasswordDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, DisableMfaDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, UpdateProfileDto } from './dto/auth.dto';
 import { UserRole, MembershipPackage, paiseToRupees } from '@askrev/shared';
 import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken } from './jwt-secrets';
 import { TotpService } from './totp.service';
+import { EmailService } from './email.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly totpService: TotpService
+    private readonly totpService: TotpService,
+    private readonly emailService: EmailService
   ) {}
 
   /**
@@ -60,16 +62,23 @@ export class AuthService {
       }
     }
 
-    let sponsorId: string | null = null;
-    if (dto.sponsorMemberId) {
-      const sponsor = await this.prisma.user.findUnique({
-        where: { memberId: dto.sponsorMemberId.trim() },
-      });
-      if (!sponsor) {
-        throw new BadRequestException(`Sponsor with Member ID "${dto.sponsorMemberId}" does not exist`);
-      }
-      sponsorId = sponsor.id;
+    if (!dto.sponsorMemberId || !dto.sponsorMemberId.trim()) {
+      throw new BadRequestException('Sponsor referral code is required for registration.');
     }
+
+    const cleanSponsorCode = dto.sponsorMemberId.trim().toUpperCase();
+    const sponsor = await this.prisma.user.findUnique({
+      where: { memberId: cleanSponsorCode },
+    });
+    if (!sponsor) {
+      throw new BadRequestException(`Sponsor with Member ID "${cleanSponsorCode}" does not exist.`);
+    }
+
+    if (sponsor.email.toLowerCase() === dto.email.toLowerCase().trim()) {
+      throw new BadRequestException('Self-sponsoring is strictly prohibited.');
+    }
+
+    const sponsorId = sponsor.id;
 
     const memberId = await this.generateUniqueMemberId();
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -612,6 +621,274 @@ export class AuthService {
     };
   }
 
+  /**
+   * Pre-flight public sponsor lookup endpoint to preview sponsor identity on frontend
+   */
+  async lookupSponsor(memberId: string) {
+    if (!memberId || !memberId.trim()) {
+      throw new BadRequestException('Sponsor code is required.');
+    }
+    const cleanCode = memberId.trim().toUpperCase();
+    const sponsor = await this.prisma.user.findUnique({
+      where: { memberId: cleanCode },
+      select: {
+        id: true,
+        memberId: true,
+        fullName: true,
+        role: true,
+        currentPackage: true,
+      },
+    });
+
+    if (!sponsor) {
+      throw new NotFoundException(`Sponsor referral code "${cleanCode}" was not found.`);
+    }
+
+    return {
+      valid: true,
+      memberId: sponsor.memberId,
+      fullName: sponsor.fullName,
+    };
+  }
+
+  /**
+   * Initiates single-use, rate-limited password reset flow.
+   * Protects against email enumeration by returning a uniform response.
+   */
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const cleanEmail = dto.email.toLowerCase().trim();
+    const genericResponse = {
+      message: 'If an account exists with this email address, a password reset link has been dispatched.',
+      success: true,
+    };
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: cleanEmail },
+      select: { id: true, email: true, fullName: true },
+    });
+
+    if (!user) {
+      return genericResponse;
+    }
+
+    // Invalidate any existing unused reset tokens for this user
+    await this.prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id },
+    });
+
+    // Generate secure 256-bit single-use token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute expiry
+
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    await this.emailService.sendPasswordResetEmail(user.email, user.fullName, rawToken);
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_PASSWORD_RESET_REQUESTED',
+          entityType: 'User',
+          entityId: user.id,
+          metadata: { email: user.email },
+        },
+      });
+    } catch {}
+
+    return genericResponse;
+  }
+
+  /**
+   * Completes single-use password reset, updates passwordHash, and revokes all active sessions.
+   */
+  async resetPassword(dto: ResetPasswordDto) {
+    if (!dto.token || !dto.token.trim()) {
+      throw new BadRequestException('Password reset token is required.');
+    }
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('New password and confirm password do not match.');
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(dto.token.trim()).digest('hex');
+    const tokenRecord = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!tokenRecord || tokenRecord.usedAt || tokenRecord.expiresAt < new Date()) {
+      throw new BadRequestException('Password reset link is invalid, expired, or has already been used.');
+    }
+
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
+
+    // Atomically mark token as used, update password, and revoke all active sessions
+    await this.prisma.$transaction([
+      this.prisma.passwordResetToken.update({
+        where: { id: tokenRecord.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: tokenRecord.userId },
+        data: {
+          passwordHash: newPasswordHash,
+          refreshTokenHash: null, // Revokes all active refresh sessions
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_PASSWORD_RESET_COMPLETED',
+          entityType: 'User',
+          entityId: tokenRecord.userId,
+          metadata: { email: tokenRecord.user.email },
+        },
+      }),
+    ]);
+
+    return {
+      message: 'Your password has been successfully reset. Please sign in with your new password.',
+      success: true,
+    };
+  }
+
+  /**
+   * Updates allowed profile attributes for the authenticated member
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const cleanPhone = dto.phone?.trim() || null;
+    if (cleanPhone && cleanPhone !== user.phone) {
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone: cleanPhone, id: { not: userId } },
+        select: { id: true },
+      });
+      if (existingPhone) {
+        throw new ConflictException('This phone number is already registered to another account.');
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        fullName: dto.fullName.trim(),
+        phone: cleanPhone,
+      },
+      include: {
+        wallet: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_PROFILE_UPDATED',
+          entityType: 'User',
+          entityId: userId,
+          actorId: userId,
+          metadata: { fullName: updatedUser.fullName, phone: updatedUser.phone },
+        },
+      });
+    } catch {}
+
+    return {
+      message: 'Profile updated successfully',
+      user: this.formatUserProfile(updatedUser),
+    };
+  }
+
+  /**
+   * Dispatches email address verification token to the authenticated member
+   */
+  async sendEmailVerification(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (user.isEmailVerified) {
+      return { message: 'Email address is already verified.', alreadyVerified: true };
+    }
+
+    await this.prisma.emailVerificationToken.deleteMany({
+      where: { userId },
+    });
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await this.prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    await this.emailService.sendEmailVerification(user.email, user.fullName, rawToken);
+
+    return {
+      message: 'Verification email has been dispatched.',
+      success: true,
+    };
+  }
+
+  /**
+   * Verifies member email address via verification token
+   */
+  async verifyEmail(dto: VerifyEmailDto) {
+    const tokenHash = crypto.createHash('sha256').update(dto.token.trim()).digest('hex');
+    const tokenRecord = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!tokenRecord || tokenRecord.usedAt || tokenRecord.expiresAt < new Date()) {
+      throw new BadRequestException('Verification link is invalid, expired, or has already been used.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.emailVerificationToken.update({
+        where: { id: tokenRecord.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: tokenRecord.userId },
+        data: {
+          isEmailVerified: true,
+          emailVerifiedAt: new Date(),
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          action: 'AUTH_EMAIL_VERIFIED',
+          entityType: 'User',
+          entityId: tokenRecord.userId,
+          metadata: { email: tokenRecord.user.email },
+        },
+      }),
+    ]);
+
+    return {
+      message: 'Email address successfully verified.',
+      success: true,
+    };
+  }
+
   public formatUserProfile(user: any) {
     const isSuperAdmin = user.role === UserRole.SUPER_ADMIN;
     return {
@@ -624,6 +901,8 @@ export class AuthService {
       currentPackage: user.currentPackage,
       isFullQualified: user.isFullQualified,
       qualificationMethod: user.qualificationMethod,
+      isEmailVerified: user.isEmailVerified ?? false,
+      emailVerifiedAt: user.emailVerifiedAt ?? null,
       twoFactorEnabled: user.twoFactorEnabled ?? false,
       mfaEnforced: isSuperAdmin,
       mfaSetupRequired: isSuperAdmin && !user.twoFactorEnabled,

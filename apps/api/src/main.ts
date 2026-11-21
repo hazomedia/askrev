@@ -135,6 +135,29 @@ async function bootstrap() {
             retryAfterSeconds: refCheck.retryAfter,
           });
         }
+      } else if (reqPath === '/api/auth/forgot-password') {
+        const emailKey = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+        const forgotCheck = checkRateLimit(`forgot:${clientIp}:${emailKey}`, 5, windowMs);
+        const ipForgotCheck = checkRateLimit(`forgot-ip:${clientIp}`, 20, windowMs);
+        if (!forgotCheck.allowed || !ipForgotCheck.allowed) {
+          const retryAfter = Math.max(forgotCheck.retryAfter, ipForgotCheck.retryAfter);
+          res.setHeader('Retry-After', String(retryAfter));
+          return res.status(429).json({
+            statusCode: 429,
+            message: 'Too many password reset requests. Please wait before trying again.',
+            retryAfterSeconds: retryAfter,
+          });
+        }
+      } else if (reqPath === '/api/auth/reset-password') {
+        const resetCheck = checkRateLimit(`reset:${clientIp}`, 10, windowMs);
+        if (!resetCheck.allowed) {
+          res.setHeader('Retry-After', String(resetCheck.retryAfter));
+          return res.status(429).json({
+            statusCode: 429,
+            message: 'Too many reset attempts. Please wait before trying again.',
+            retryAfterSeconds: resetCheck.retryAfter,
+          });
+        }
       }
     }
 

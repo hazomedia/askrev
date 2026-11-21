@@ -41,19 +41,56 @@ describe('AuthService & TotpService Security Enhancements', () => {
     mockPrisma = {
       user: {
         findUnique: vi.fn().mockImplementation(({ where }) => {
-          if (where.id === mockUser.id || where.email === mockUser.email) {
+          if (where.id === mockUser.id || where.email === mockUser.email || where.memberId === mockUser.memberId) {
             return Promise.resolve({ ...mockUser });
           }
           return Promise.resolve(null);
+        }),
+        findFirst: vi.fn().mockImplementation(({ where }) => {
+          if (where.phone && where.phone === mockUser.phone && where.id?.not !== mockUser.id) {
+            return Promise.resolve({ ...mockUser });
+          }
+          return Promise.resolve(null);
+        }),
+        create: vi.fn().mockImplementation(({ data }) => {
+          return Promise.resolve({
+            id: 'new-user-1',
+            memberId: 'ASKR-NEW-01',
+            ...data,
+            wallet: null,
+            sponsor: null,
+            createdAt: new Date(),
+          });
         }),
         update: vi.fn().mockImplementation(({ where, data }) => {
           Object.assign(mockUser, data);
           return Promise.resolve({ ...mockUser });
         }),
+        count: vi.fn().mockResolvedValue(1),
+      },
+      wallet: {
+        create: vi.fn().mockResolvedValue({ id: 'wallet-1', userId: 'new-user-1' }),
+      },
+      passwordResetToken: {
+        create: vi.fn().mockResolvedValue({ id: 'prt-1' }),
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn(),
+        update: vi.fn(),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      emailVerificationToken: {
+        create: vi.fn().mockResolvedValue({ id: 'evt-1' }),
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn(),
+        update: vi.fn(),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       auditLog: {
         create: vi.fn().mockResolvedValue({ id: 'audit-log-1' }),
       },
+      $transaction: vi.fn().mockImplementation((promises) =>
+        Array.isArray(promises) ? Promise.all(promises) : promises(mockPrisma)
+      ),
     };
 
     mockJwtService = {
@@ -61,7 +98,12 @@ describe('AuthService & TotpService Security Enhancements', () => {
       decode: vi.fn().mockReturnValue({ exp: Math.floor(Date.now() / 1000) + 3600 }),
     };
 
-    authService = new AuthService(mockPrisma as any, mockJwtService as any, totpService);
+    const mockEmailService = {
+      sendPasswordResetEmail: vi.fn().mockResolvedValue(true),
+      sendEmailVerification: vi.fn().mockResolvedValue(true),
+    };
+
+    authService = new AuthService(mockPrisma as any, mockJwtService as any, totpService, mockEmailService as any);
   });
 
   describe('TotpService Features', () => {
@@ -277,6 +319,209 @@ describe('AuthService & TotpService Security Enhancements', () => {
       expect(disableResult.message).toContain('disabled');
       expect(mockUser.twoFactorEnabled).toBe(false);
       expect(mockUser.twoFactorSecret).toBeNull();
+    });
+  });
+
+  describe('Phase 1: Member Registration & Mandatory Sponsor Validation', () => {
+    it('should reject registration when sponsor referral code does not exist', async () => {
+      mockPrisma.user.findUnique.mockImplementation(({ where }) => {
+        if (where.memberId === 'NONEXISTENT') return Promise.resolve(null);
+        return Promise.resolve(null);
+      });
+
+      await expect(
+        authService.register({
+          email: 'newuser@askrevdrive.com',
+          password: 'SecurePassword@2026',
+          fullName: 'New Member',
+          phone: '+919876543210',
+          sponsorMemberId: 'NONEXISTENT',
+        })
+      ).rejects.toThrow('does not exist');
+    });
+
+    it('should reject self-sponsoring when applicant registers with sponsor own email', async () => {
+      mockPrisma.user.findUnique.mockImplementation(({ where }) => {
+        if (where.memberId === mockUser.memberId) return Promise.resolve(mockUser);
+        return Promise.resolve(null);
+      });
+
+      await expect(
+        authService.register({
+          email: mockUser.email, // same email as sponsor
+          password: 'SecurePassword@2026',
+          fullName: 'Self Sponsor Attempt',
+          phone: '+919876543210',
+          sponsorMemberId: mockUser.memberId,
+        })
+      ).rejects.toThrow('Self-sponsoring is strictly prohibited');
+    });
+
+    it('should successfully register a member with a valid sponsor referral code', async () => {
+      mockPrisma.user.findUnique.mockImplementation(({ where }) => {
+        if (where.memberId === mockUser.memberId) return Promise.resolve(mockUser);
+        return Promise.resolve(null);
+      });
+
+      const result = await authService.register({
+        email: 'applicant@askrevdrive.com',
+        password: 'ValidMemberPassword@2026',
+        fullName: 'Valid Member',
+        phone: '+919123456789',
+        sponsorMemberId: mockUser.memberId,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.user).toBeDefined();
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sponsorId: mockUser.id,
+            email: 'applicant@askrevdrive.com',
+          }),
+        })
+      );
+    });
+
+    it('should lookup valid sponsor and return identity preview', async () => {
+      mockPrisma.user.findUnique.mockImplementation(({ where }) => {
+        if (where.memberId === mockUser.memberId) return Promise.resolve(mockUser);
+        return Promise.resolve(null);
+      });
+
+      const validLookup = await authService.lookupSponsor(mockUser.memberId);
+      expect(validLookup.valid).toBe(true);
+      expect(validLookup.fullName).toBe(mockUser.fullName);
+      expect(validLookup.memberId).toBe(mockUser.memberId);
+
+      await expect(authService.lookupSponsor('INVALID_CODE')).rejects.toThrow('was not found');
+    });
+  });
+
+  describe('Phase 1: Forgot Password, Reset Flow & Anti-Enumeration', () => {
+    it('should return identical success response regardless of email existence (anti-enumeration)', async () => {
+      // Existing email
+      const resExisting = await authService.forgotPassword({ email: mockUser.email });
+      expect(resExisting.message).toContain('If an account exists with this email address');
+
+      // Non-existing email
+      const resNonExisting = await authService.forgotPassword({ email: 'unknown@askrevdrive.com' });
+      expect(resNonExisting.message).toBe(resExisting.message);
+    });
+
+    it('should reject reset password with invalid or non-existent token', async () => {
+      mockPrisma.passwordResetToken.findUnique.mockResolvedValue(null);
+
+      await expect(
+        authService.resetPassword({
+          token: 'invalid-or-fake-token',
+          newPassword: 'BrandNewSecurePassword@2026',
+          confirmPassword: 'BrandNewSecurePassword@2026',
+        })
+      ).rejects.toThrow('Password reset link is invalid, expired, or has already been used');
+    });
+
+    it('should reject reset password when token is already used or expired', async () => {
+      mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+        id: 'prt-expired',
+        tokenHash: 'hashed-token',
+        usedAt: new Date(), // already used
+        expiresAt: new Date(Date.now() - 10000), // expired
+        user: mockUser,
+      });
+
+      await expect(
+        authService.resetPassword({
+          token: 'expired-token',
+          newPassword: 'BrandNewSecurePassword@2026',
+          confirmPassword: 'BrandNewSecurePassword@2026',
+        })
+      ).rejects.toThrow('Password reset link is invalid, expired, or has already been used');
+    });
+
+    it('should successfully reset password, revoke all refresh sessions, and mark token used', async () => {
+      mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+        id: 'prt-valid',
+        userId: mockUser.id,
+        tokenHash: 'hashed-token',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 600000), // valid for 10 min
+        user: mockUser,
+      });
+
+      const result = await authService.resetPassword({
+        token: 'valid-reset-token-sample',
+        newPassword: 'BrandNewSecurePassword@2026',
+        confirmPassword: 'BrandNewSecurePassword@2026',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('successfully reset');
+
+      // User password updated and refresh tokens revoked
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockUser.id },
+          data: expect.objectContaining({ refreshTokenHash: null }),
+        })
+      );
+    });
+  });
+
+  describe('Phase 1: Profile Update & Verification', () => {
+    it('should successfully update full legal name and phone number', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null); // phone not duplicate
+
+      const updated = await authService.updateProfile(mockUser.id, {
+        fullName: 'Updated Legal Name',
+        phone: '+919876543210',
+      });
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockUser.id },
+          data: expect.objectContaining({
+            fullName: 'Updated Legal Name',
+            phone: '+919876543210',
+          }),
+        })
+      );
+    });
+
+    it('should reject phone update if phone number is already registered to another account', async () => {
+      mockUser.phone = '+919999999999';
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'other-user', phone: '+919876543210' });
+
+      await expect(
+        authService.updateProfile(mockUser.id, {
+          fullName: 'Security Test Admin',
+          phone: '+919876543210',
+        })
+      ).rejects.toThrow('This phone number is already registered to another account');
+    });
+
+    it('should verify email with valid verification token', async () => {
+      mockPrisma.emailVerificationToken.findUnique.mockResolvedValue({
+        id: 'evt-valid',
+        userId: mockUser.id,
+        tokenHash: 'hashed-verification-token',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 86400000),
+        user: mockUser,
+      });
+
+      const result = await authService.verifyEmail({ token: 'valid-email-token' });
+
+      expect(result.success).toBe(true);
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockUser.id },
+          data: expect.objectContaining({
+            isEmailVerified: true,
+            emailVerifiedAt: expect.any(Date),
+          }),
+        })
+      );
     });
   });
 });
