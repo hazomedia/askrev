@@ -48,6 +48,10 @@ playwright-report
 backups/
 *.sql
 !packages/database/prisma/migrations/**/*.sql
+
+# Local credentials
+Personal.txt
+*.personal.txt
 *.dump
 
 # Local uploads
