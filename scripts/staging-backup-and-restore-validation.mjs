@@ -3,14 +3,37 @@ import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { PrismaClient } from '../packages/database/node_modules/@prisma/client/index.js';
 
+// Load .env safely if present without hardcoded credentials
+if (!process.env.DATABASE_URL && fs.existsSync('.env')) {
+  const envContent = fs.readFileSync('.env', 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const idx = trimmed.indexOf('=');
+      if (idx !== -1) {
+        const key = trimmed.slice(0, idx).trim();
+        const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  }
+}
+
 async function backupAndRestoreValidation() {
   console.log('='.repeat(80));
   console.log('   STEP 2: DATABASE BACKUP & RESTORE VALIDATION IN ISOLATED ENVIRONMENT');
   console.log('='.repeat(80));
 
-  const sourceDbUrl = 'postgresql://postgres:postgres@localhost:5432/askrev?schema=public';
-  const rootDbUrl = 'postgresql://postgres:postgres@localhost:5432/postgres?schema=public';
-  const restoreDbUrl = 'postgresql://postgres:postgres@localhost:5432/askrev_restore_validation?schema=public';
+  const dbUrlRaw = process.env.DATABASE_URL;
+  if (!dbUrlRaw) {
+    console.error('❌ DATABASE_URL is required in environment.');
+    process.exit(1);
+  }
+
+  const parsedUrl = new URL(dbUrlRaw);
+  const sourceDbUrl = dbUrlRaw;
+  const rootDbUrl = `${parsedUrl.protocol}//${parsedUrl.username}:${parsedUrl.password}@${parsedUrl.host}/postgres${parsedUrl.search}`;
+  const restoreDbUrl = `${parsedUrl.protocol}//${parsedUrl.username}:${parsedUrl.password}@${parsedUrl.host}/askrev_restore_validation${parsedUrl.search}`;
 
   const sourcePrisma = new PrismaClient({ datasources: { db: { url: sourceDbUrl } } });
   const rootPrisma = new PrismaClient({ datasources: { db: { url: rootDbUrl } } });
@@ -60,7 +83,7 @@ async function backupAndRestoreValidation() {
 
   const backupData = {
     metadata: {
-      sourceDatabase: 'askrev',
+      sourceDatabase: parsedUrl.pathname.replace(/^\//, ''),
       timestamp: new Date().toISOString(),
       totalTables: tables.length,
       tableCounts: counts

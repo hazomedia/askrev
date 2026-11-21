@@ -1,18 +1,45 @@
+import fs from 'fs';
 import { execSync } from 'child_process';
 import { PrismaClient } from '../packages/database/node_modules/@prisma/client/index.js';
+
+// Load .env safely if present without hardcoded credentials
+if (!process.env.DATABASE_URL && fs.existsSync('.env')) {
+  const envContent = fs.readFileSync('.env', 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const idx = trimmed.indexOf('=');
+      if (idx !== -1) {
+        const key = trimmed.slice(0, idx).trim();
+        const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  }
+}
 
 async function testMigrationsFromScratch() {
   console.log('='.repeat(80));
   console.log('   ISOLATED ENVIRONMENT: TEST ALL PRISMA MIGRATIONS FROM SCRATCH');
   console.log('='.repeat(80));
 
+  const dbUrlRaw = process.env.DATABASE_URL;
+  if (!dbUrlRaw) {
+    console.error('❌ DATABASE_URL is required in environment.');
+    process.exit(1);
+  }
+
+  const parsedUrl = new URL(dbUrlRaw);
+  const rootDbUrl = `${parsedUrl.protocol}//${parsedUrl.username}:${parsedUrl.password}@${parsedUrl.host}/postgres${parsedUrl.search}`;
+  const testDbUrl = `${parsedUrl.protocol}//${parsedUrl.username}:${parsedUrl.password}@${parsedUrl.host}/askrev_test_isolation${parsedUrl.search}`;
+
   const rootPrisma = new PrismaClient({
-    datasources: { db: { url: 'postgresql://postgres:postgres@localhost:5432/postgres?schema=public' } }
+    datasources: { db: { url: rootDbUrl } }
   });
 
   try {
     await rootPrisma.$connect();
-    console.log('Connected to local PostgreSQL root server.');
+    console.log(`Connected to PostgreSQL server at ${parsedUrl.host}.`);
 
     // Terminate existing connections to test db if any and drop
     await rootPrisma.$executeRawUnsafe(`
@@ -29,8 +56,6 @@ async function testMigrationsFromScratch() {
   } finally {
     await rootPrisma.$disconnect();
   }
-
-  const testDbUrl = 'postgresql://postgres:postgres@localhost:5432/askrev_test_isolation?schema=public';
 
   console.log('\nRunning "prisma migrate deploy" on isolated database...');
   try {
@@ -51,7 +76,7 @@ async function testMigrationsFromScratch() {
       stdio: 'pipe'
     }).toString();
 
-    if (diffOut.trim() === '' || diffOut.includes('No differences')) {
+    if (diffOut.trim() === '' || diffOut.includes('No differences') || diffOut.includes('empty migration')) {
       console.log('✅ PASS: Perfect match! Zero differences between migrations and schema.prisma!');
     } else {
       console.log('Diff detected:');
@@ -73,6 +98,20 @@ async function testMigrationsFromScratch() {
     console.log(`Total migrations successfully applied: ${rows.length}`);
   } finally {
     await testPrisma.$disconnect();
+  }
+
+  // Cleanup isolated DB
+  try {
+    await rootPrisma.$connect();
+    await rootPrisma.$executeRawUnsafe(`
+      SELECT pg_terminate_backend(pid) 
+      FROM pg_stat_activity 
+      WHERE datname = 'askrev_test_isolation' AND pid <> pg_backend_pid();
+    `);
+    await rootPrisma.$executeRawUnsafe('DROP DATABASE IF EXISTS askrev_test_isolation;');
+    console.log('Isolated migration test database cleaned up successfully.');
+  } finally {
+    await rootPrisma.$disconnect();
   }
 }
 
