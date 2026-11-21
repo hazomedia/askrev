@@ -109,24 +109,62 @@ async function run() {
     'CSRF cookie verified'
   );
 
-  // Programmatic service-to-service login
-  const serviceLoginRes = await fetch(`${API_BASE}/auth/login`, {
+  // Verify X-Auth-Client header is IGNORED and does NOT expose tokens from public login
+  const serviceHeaderLoginRes = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Auth-Client': 'service',
+      'X-Client-Type': 'service',
     },
     body: JSON.stringify({
       email: testUserEmail,
       password: testUserPassword,
     }),
   });
-  const serviceLoginData = await serviceLoginRes.json();
+  const serviceHeaderLoginData = await serviceHeaderLoginRes.json();
 
   assert(
-    serviceLoginData.tokens?.accessToken && serviceLoginData.tokens?.refreshToken,
-    'Service-to-service client with X-Auth-Client: service receives properly scoped tokens',
-    'Service tokens returned'
+    serviceHeaderLoginData.tokens === undefined,
+    'Client-controlled X-Auth-Client / X-Client-Type headers do NOT expose tokens from public login endpoint',
+    'Tokens strictly absent from JSON'
+  );
+
+  // Dedicated machine-to-machine service token flow
+  process.env.SERVICE_CLIENT_ID = process.env.SERVICE_CLIENT_ID || 'askrev-backend-service';
+  process.env.SERVICE_CLIENT_SECRET = process.env.SERVICE_CLIENT_SECRET || 'askrev-dev-service-client-secret-12345!';
+
+  const dedicatedServiceRes = await fetch(`${API_BASE}/auth/service/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      clientId: process.env.SERVICE_CLIENT_ID,
+      clientSecret: process.env.SERVICE_CLIENT_SECRET,
+      scope: 'service:reconciliation',
+    }),
+  });
+  const dedicatedServiceData = await dedicatedServiceRes.json();
+
+  assert(
+    dedicatedServiceRes.status === 200 && dedicatedServiceData.accessToken && dedicatedServiceData.tokenType === 'Bearer',
+    'Dedicated POST /api/auth/service/token successfully issues machine-to-machine service token',
+    `TokenType: ${dedicatedServiceData.tokenType}`
+  );
+
+  // Dedicated service token flow with invalid secret must be rejected
+  const invalidServiceRes = await fetch(`${API_BASE}/auth/service/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      clientId: process.env.SERVICE_CLIENT_ID,
+      clientSecret: 'wrong-unauthorized-secret',
+    }),
+  });
+
+  assert(
+    invalidServiceRes.status === 401,
+    'Dedicated service token endpoint rejects invalid credentials with 401 Unauthorized',
+    `Status: ${invalidServiceRes.status}`
   );
 
   console.log('\n--- 2. CSRF PROTECTION & BEARER BYPASS PREVENTION ---');
@@ -185,6 +223,24 @@ async function run() {
     validCsrfRes.status === 200,
     'Legitimate mutation with matching session cookie and X-CSRF-Token succeeds',
     `Status: ${validCsrfRes.status}`
+  );
+
+  // Cross-origin attack with untrusted Origin header must be rejected by OWASP origin check
+  const untrustedOriginRes = await fetch(`${API_BASE}/auth/profile`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieHeaderStr,
+      'X-CSRF-Token': csrfToken,
+      Origin: 'https://evil-phishing-attacker.com',
+    },
+    body: JSON.stringify({ fullName: 'Untrusted Origin Mutation' }),
+  });
+
+  assert(
+    untrustedOriginRes.status === 403,
+    'Untrusted cross-origin request is rejected with 403 Forbidden via OWASP Origin validation',
+    `Status: ${untrustedOriginRes.status}`
   );
 
   console.log('\n--- 3. PRIVILEGED ADMIN MFA ENROLLMENT & BOOTSTRAP AUDIT ---');

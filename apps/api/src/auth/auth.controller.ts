@@ -15,6 +15,7 @@ import {
   ResetPasswordDto,
   VerifyEmailDto,
   UpdateProfileDto,
+  ServiceTokenRequestDto,
 } from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CsrfGuard } from './guards/csrf.guard';
@@ -123,14 +124,11 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
-
     return {
       message: result.message,
       emailVerificationSent: result.emailVerificationSent,
       csrfToken,
       user: result.user,
-      ...(isServiceClient ? { tokens: result.tokens } : {}),
     };
   }
 
@@ -178,13 +176,10 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
-
     return {
       message: result.message,
       csrfToken,
       user: result.user,
-      ...(isServiceClient ? { tokens: result.tokens } : {}),
     };
   }
 
@@ -222,13 +217,10 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
-
     return {
       message: result.message,
       csrfToken,
       user: result.user,
-      ...(isServiceClient ? { tokens: result.tokens } : {}),
     };
   }
 
@@ -272,16 +264,23 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    const isServiceClient = req.headers['x-auth-client'] === 'service' || req.headers['x-client-type'] === 'service';
-
     return {
       message: result.message,
       success: true,
       recoveryCodes: result.recoveryCodes,
       csrfToken,
       user: result.user,
-      ...(isServiceClient ? { tokens: result.tokens } : {}),
     };
+  }
+
+  /**
+   * Dedicated machine-to-machine service token endpoint.
+   * Requires strict client secret authentication.
+   */
+  @Post('service/token')
+  @HttpCode(HttpStatus.OK)
+  async issueServiceToken(@Body() dto: ServiceTokenRequestDto) {
+    return this.authService.issueServiceToken(dto);
   }
 
   @UseGuards(JwtAuthGuard)

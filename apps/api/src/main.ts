@@ -105,7 +105,7 @@ async function bootstrap() {
         reqPath.startsWith('/api/wallet/request-withdrawal') ||
         reqPath.startsWith('/api/members/binary/run-matching'))
     ) {
-      const mutCheck = await rateLimiter.checkLimit(`financial-mut:${clientIp}`, 30, windowMs);
+      const mutCheck = await rateLimiter.checkLimit(`financial-mut:${clientIp}`, 30, windowMs, true);
       if (!mutCheck.allowed) {
         res.setHeader('Retry-After', String(mutCheck.retryAfter));
         return res.status(429).json({
@@ -119,8 +119,8 @@ async function bootstrap() {
     if (req.method === 'POST' && reqPath.startsWith('/api/auth/')) {
       if (reqPath === '/api/auth/login') {
         const emailKey = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
-        const targetCheck = await rateLimiter.checkLimit(`login:${clientIp}:${emailKey}`, 25, windowMs);
-        const ipCheck = await rateLimiter.checkLimit(`login-ip:${clientIp}`, 200, windowMs);
+        const targetCheck = await rateLimiter.checkLimit(`login:${clientIp}:${emailKey}`, 25, windowMs, true);
+        const ipCheck = await rateLimiter.checkLimit(`login-ip:${clientIp}`, 200, windowMs, true);
         if (!targetCheck.allowed || !ipCheck.allowed) {
           const retryAfter = Math.max(targetCheck.retryAfter, ipCheck.retryAfter);
           res.setHeader('Retry-After', String(retryAfter));
@@ -131,7 +131,7 @@ async function bootstrap() {
           });
         }
       } else if (reqPath === '/api/auth/register') {
-        const regCheck = await rateLimiter.checkLimit(`register:${clientIp}`, 40, windowMs);
+        const regCheck = await rateLimiter.checkLimit(`register:${clientIp}`, 40, windowMs, true);
         if (!regCheck.allowed) {
           res.setHeader('Retry-After', String(regCheck.retryAfter));
           return res.status(429).json({
@@ -141,7 +141,7 @@ async function bootstrap() {
           });
         }
       } else if (reqPath === '/api/auth/refresh') {
-        const refCheck = await rateLimiter.checkLimit(`refresh:${clientIp}`, 60, windowMs);
+        const refCheck = await rateLimiter.checkLimit(`refresh:${clientIp}`, 60, windowMs, true);
         if (!refCheck.allowed) {
           res.setHeader('Retry-After', String(refCheck.retryAfter));
           return res.status(429).json({
@@ -152,8 +152,8 @@ async function bootstrap() {
         }
       } else if (reqPath === '/api/auth/forgot-password') {
         const emailKey = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
-        const forgotCheck = await rateLimiter.checkLimit(`forgot:${clientIp}:${emailKey}`, 5, windowMs);
-        const ipForgotCheck = await rateLimiter.checkLimit(`forgot-ip:${clientIp}`, 20, windowMs);
+        const forgotCheck = await rateLimiter.checkLimit(`forgot:${clientIp}:${emailKey}`, 5, windowMs, true);
+        const ipForgotCheck = await rateLimiter.checkLimit(`forgot-ip:${clientIp}`, 20, windowMs, true);
         if (!forgotCheck.allowed || !ipForgotCheck.allowed) {
           const retryAfter = Math.max(forgotCheck.retryAfter, ipForgotCheck.retryAfter);
           res.setHeader('Retry-After', String(retryAfter));
@@ -164,7 +164,7 @@ async function bootstrap() {
           });
         }
       } else if (reqPath === '/api/auth/reset-password') {
-        const resetCheck = await rateLimiter.checkLimit(`reset:${clientIp}`, 10, windowMs);
+        const resetCheck = await rateLimiter.checkLimit(`reset:${clientIp}`, 10, windowMs, true);
         if (!resetCheck.allowed) {
           res.setHeader('Retry-After', String(resetCheck.retryAfter));
           return res.status(429).json({
@@ -174,7 +174,7 @@ async function bootstrap() {
           });
         }
       } else if (reqPath.startsWith('/api/auth/mfa/')) {
-        const mfaCheck = await rateLimiter.checkLimit(`mfa-setup:${clientIp}`, 15, windowMs);
+        const mfaCheck = await rateLimiter.checkLimit(`mfa-setup:${clientIp}`, 15, windowMs, true);
         if (!mfaCheck.allowed) {
           res.setHeader('Retry-After', String(mfaCheck.retryAfter));
           return res.status(429).json({

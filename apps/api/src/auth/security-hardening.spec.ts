@@ -107,6 +107,48 @@ describe('Pre-Production Security Hardening & Session Suite', () => {
 
       expect(guard.canActivate(mockContext)).toBe(true);
     });
+
+    it('should REJECT POST requests with untrusted Origin header', () => {
+      const validToken = '8f3a1b0c9d8e7f6a5b4c3d2e1f0a9b8c';
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              'x-csrf-token': validToken,
+              origin: 'https://evil-phishing-attacker.com',
+            },
+            cookies: {
+              askrev_access_token: 'session-jwt',
+              askrev_csrf_token: validToken,
+            },
+          }),
+        }),
+      } as unknown as ExecutionContext;
+
+      expect(() => guard.canActivate(mockContext)).toThrow(ForbiddenException);
+    });
+
+    it('should ACCEPT POST requests with valid AskREV domain Origin header', () => {
+      const validToken = '8f3a1b0c9d8e7f6a5b4c3d2e1f0a9b8c';
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              'x-csrf-token': validToken,
+              origin: 'https://admin.askrevdrive.com',
+            },
+            cookies: {
+              askrev_access_token: 'session-jwt',
+              askrev_csrf_token: validToken,
+            },
+          }),
+        }),
+      } as unknown as ExecutionContext;
+
+      expect(guard.canActivate(mockContext)).toBe(true);
+    });
   });
 
   describe('Priority 2 — Privileged Admin MFA Enrollment & Bootstrap', () => {
@@ -242,6 +284,15 @@ describe('Pre-Production Security Hardening & Session Suite', () => {
           }),
         })
       );
+
+      // Replaying the same enrollment token must be strictly rejected
+      await expect(
+        authService.confirmMfaEnrollment({
+          enrollmentToken: 'valid-enrollment-token',
+          secret: 'MOCK_BASE32_SECRET',
+          code: '123456',
+        })
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('should reject refresh tokens for privileged admins when MFA is not enabled', async () => {
@@ -258,6 +309,30 @@ describe('Pre-Production Security Hardening & Session Suite', () => {
       });
 
       await expect(authService.refresh(rawRefreshToken)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should issue service tokens for authenticated service clients and reject invalid credentials', async () => {
+      process.env.SERVICE_CLIENT_ID = 'askrev-backend-service';
+      process.env.SERVICE_CLIENT_SECRET = 'super-secret-service-key-32chars!';
+
+      const serviceRes = await authService.issueServiceToken({
+        clientId: 'askrev-backend-service',
+        clientSecret: 'super-secret-service-key-32chars!',
+        scope: 'service:reconciliation',
+      });
+
+      expect(serviceRes.tokenType).toBe('Bearer');
+      expect(serviceRes.accessToken).toBeDefined();
+      expect(serviceRes.expiresIn).toBe(3600);
+      expect(serviceRes.scope).toBe('service:reconciliation');
+
+      // Invalid secret must be rejected with UnauthorizedException
+      await expect(
+        authService.issueServiceToken({
+          clientId: 'askrev-backend-service',
+          clientSecret: 'wrong-secret',
+        })
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -297,6 +372,22 @@ describe('Pre-Production Security Hardening & Session Suite', () => {
 
       const clientIp = getClientIp(mockReq);
       expect(clientIp).toBe('203.0.113.195');
+    });
+
+    it('should fail closed for sensitive operations when shared Redis is unavailable in strict mode', async () => {
+      process.env.RATE_LIMIT_STRICT = 'true';
+      const strictLimiter = new RateLimiterService();
+
+      // Check sensitive operation when Redis is not available
+      const sensitiveResult = await strictLimiter.checkLimit('auth-login:127.0.0.1', 10, 60000, true);
+      expect(sensitiveResult.allowed).toBe(false);
+      expect(sensitiveResult.retryAfter).toBe(60);
+
+      // Non-sensitive operation should still function in local fallback mode
+      const nonSensitiveResult = await strictLimiter.checkLimit('public-catalog:127.0.0.1', 10, 60000, false);
+      expect(nonSensitiveResult.allowed).toBe(true);
+
+      delete process.env.RATE_LIMIT_STRICT;
     });
   });
 

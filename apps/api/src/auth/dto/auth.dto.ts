@@ -152,6 +152,21 @@ export class ChangePasswordDto {
   recoveryCode?: string;
 }
 
+export class ServiceTokenRequestDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Client ID is required' })
+  clientId: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'Client secret is required' })
+  clientSecret: string;
+
+  @IsString()
+  @IsOptional()
+  scope?: string;
+}
+
+
 
 
 

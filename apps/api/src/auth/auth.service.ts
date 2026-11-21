@@ -4,9 +4,9 @@ import { BinaryLeg } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto, DisableMfaDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, UpdateProfileDto, MfaEnrollmentSetupDto, MfaEnrollmentConfirmDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, DisableMfaDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, UpdateProfileDto, MfaEnrollmentSetupDto, MfaEnrollmentConfirmDto, ServiceTokenRequestDto } from './dto/auth.dto';
 import { UserRole, MembershipPackage, paiseToRupees } from '@askrev/shared';
-import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken } from './jwt-secrets';
+import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken, isAccessTokenRevoked } from './jwt-secrets';
 import { TotpService } from './totp.service';
 import { EmailService } from './email.service';
 
@@ -198,7 +198,7 @@ export class AuthService {
         };
         const enrollmentToken = await this.jwtService.signAsync(enrollmentPayload, {
           secret: getJwtAccessSecret(),
-          expiresIn: '15m',
+          expiresIn: '10m',
         });
 
         try {
@@ -479,6 +479,10 @@ export class AuthService {
    * Requires a valid short-lived enrollment token.
    */
   async setupMfaEnrollment(dto: MfaEnrollmentSetupDto) {
+    if (isAccessTokenRevoked(dto.enrollmentToken)) {
+      throw new UnauthorizedException('MFA enrollment session has already been used or revoked. Please sign in again.');
+    }
+
     let payload: any;
     try {
       payload = await this.jwtService.verifyAsync(dto.enrollmentToken, {
@@ -514,6 +518,10 @@ export class AuthService {
    * stores hashed recovery codes, and issues full session credentials.
    */
   async confirmMfaEnrollment(dto: MfaEnrollmentConfirmDto) {
+    if (isAccessTokenRevoked(dto.enrollmentToken)) {
+      throw new UnauthorizedException('MFA enrollment session has already been used or revoked. Please sign in again.');
+    }
+
     let payload: any;
     try {
       payload = await this.jwtService.verifyAsync(dto.enrollmentToken, {
@@ -553,6 +561,9 @@ export class AuthService {
       },
     });
 
+    // Invalidate enrollment token immediately upon successful confirmation
+    revokeAccessToken(dto.enrollmentToken, payload.exp);
+
     try {
       await this.prisma.auditLog.create({
         data: {
@@ -573,6 +584,57 @@ export class AuthService {
       recoveryCodes: rawRecoveryCodes,
       tokens,
       user: this.formatUserProfile(user),
+    };
+  }
+
+  /**
+   * Dedicated machine-to-machine service token generation.
+   * Requires strict pre-shared client credentials authentication.
+   */
+  async issueServiceToken(dto: ServiceTokenRequestDto) {
+    const configuredSecret =
+      process.env.SERVICE_CLIENT_SECRET ||
+      (process.env.NODE_ENV !== 'production' ? 'askrev-dev-service-client-secret-12345!' : undefined);
+    const configuredId = process.env.SERVICE_CLIENT_ID || 'askrev-backend-service';
+
+    if (!configuredSecret) {
+      throw new ForbiddenException('Service-to-service authentication is not configured');
+    }
+
+    const idBuffer = Buffer.from(dto.clientId);
+    const expectedIdBuffer = Buffer.from(configuredId);
+    const isIdValid =
+      idBuffer.length === expectedIdBuffer.length &&
+      crypto.timingSafeEqual(idBuffer, expectedIdBuffer);
+
+    const secretBuffer = Buffer.from(dto.clientSecret);
+    const expectedSecretBuffer = Buffer.from(configuredSecret);
+    const isSecretValid =
+      secretBuffer.length === expectedSecretBuffer.length &&
+      crypto.timingSafeEqual(secretBuffer, expectedSecretBuffer);
+
+    if (!isIdValid || !isSecretValid) {
+      throw new UnauthorizedException('Invalid service client credentials');
+    }
+
+    const payload = {
+      sub: `service:${dto.clientId}`,
+      clientId: dto.clientId,
+      role: 'SERVICE_CLIENT',
+      scope: dto.scope || 'service:read_write',
+      jti: crypto.randomUUID(),
+    };
+
+    const token = await this.jwtService.signAsync(payload, {
+      secret: getJwtAccessSecret(),
+      expiresIn: '1h',
+    });
+
+    return {
+      tokenType: 'Bearer',
+      accessToken: token,
+      expiresIn: 3600,
+      scope: payload.scope,
     };
   }
 
