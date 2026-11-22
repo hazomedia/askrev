@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query, Param, UseGuards, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { BinarySchedulerService } from './binary-scheduler.service';
+import { InstantBinaryMatchingService } from './instant-binary-matching.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,7 +18,8 @@ import {
 export class MembersController {
   constructor(
     private readonly membersService: MembersService,
-    private readonly binaryScheduler: BinarySchedulerService
+    private readonly binaryScheduler: BinarySchedulerService,
+    private readonly instantMatchingService: InstantBinaryMatchingService
   ) {}
 
   @Get('direct-team')
@@ -82,6 +84,14 @@ export class MembersController {
     @CurrentUser() user: any,
     @Body() dto: RunBinaryMatchDto
   ) {
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    if (complianceMode !== 'SIMULATION_ONLY' || enableLivePayouts) {
+      throw new ForbiddenException(
+        'Live binary payouts are strictly disabled. Matching calculations are restricted to SIMULATION_ONLY mode.'
+      );
+    }
+
     // CORRECTIVE AUDIT (Requirement 6): Regular members cannot initiate binary matching settlements,
     // even for their own account. Settlement execution is strictly restricted to authorized administrators.
     if (!dto.userId) {
@@ -159,6 +169,31 @@ export class MembersController {
       targetDate: body?.targetDate,
       triggeredBy: 'ADMIN_MANUAL',
     });
+  }
+
+  // =========================================================================
+  // ADMIN INSTANT BINARY MATCHING OUTBOX
+  // =========================================================================
+
+  @Get('admin/binary-outbox')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getBinaryOutboxStats() {
+    return this.instantMatchingService.getOutboxStats();
+  }
+
+  @Post('admin/binary-outbox/retry-failed')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async retryFailedOutboxTasks() {
+    return this.instantMatchingService.retryFailedTasks();
+  }
+
+  @Post('admin/binary-outbox/requeue-dead-letter')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async requeueDeadLetterTasks(@Body() body?: { taskIds?: string[] }) {
+    return this.instantMatchingService.requeueDeadLetterTasks(body?.taskIds);
   }
 }
 

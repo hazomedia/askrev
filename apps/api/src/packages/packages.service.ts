@@ -1,5 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { InstantBinaryMatchingService } from '../members/instant-binary-matching.service';
 import {
   Prisma,
   User,
@@ -24,7 +25,14 @@ import {
 
 @Injectable()
 export class PackagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PackagesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => InstantBinaryMatchingService))
+    @Optional()
+    private readonly instantBinaryMatchingService?: InstantBinaryMatchingService
+  ) {}
 
   getAllPackages() {
     return [
@@ -280,7 +288,9 @@ export class PackagesService {
     adminId: string,
     dto: ReviewMembershipRequestDto
   ) {
-    return await this.prisma.$transaction(async (tx) => {
+    const pendingImmediateAncestors: string[] = [];
+
+    const result = await this.prisma.$transaction(async (tx) => {
       const req = await tx.membershipRequest.findUnique({
         where: { id: requestId },
         include: {
@@ -555,14 +565,20 @@ export class PackagesService {
         });
 
         if (existingPlacement && existingPlacement.parentId && existingPlacement.leg) {
-          await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
+          const ancestors = await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
+          pendingImmediateAncestors.push(...ancestors);
           binaryPlacementResult = {
             action: 'VOLUME_PROPAGATED',
             parentId: existingPlacement.parentId,
             leg: existingPlacement.leg,
+            affectedAncestors: ancestors,
           };
         } else {
-          binaryPlacementResult = await this.autoPlaceMemberInBinaryTree(tx, user);
+          const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user);
+          if (autoRes?.affectedAncestors) {
+            pendingImmediateAncestors.push(...autoRes.affectedAncestors);
+          }
+          binaryPlacementResult = autoRes;
         }
       }
 
@@ -603,6 +619,17 @@ export class PackagesService {
         binaryPlacement: binaryPlacementResult,
       };
     });
+
+    // Trigger instant matching evaluation post-commit
+    if (pendingImmediateAncestors.length > 0 && this.instantBinaryMatchingService) {
+      try {
+        await this.instantBinaryMatchingService.processOutboxImmediate(pendingImmediateAncestors);
+      } catch (err: any) {
+        this.logger.error(`Error in instant binary matching outbox processing: ${err.message}`, err.stack);
+      }
+    }
+
+    return result;
   }
 
   async rejectMembershipRequest(
@@ -1220,25 +1247,26 @@ export class PackagesService {
   }
 
   /**
-   * Propagates qualified volume (+1 unit) up the binary tree ancestor chain
-   * when a member transitions to Full Qualification.
-   */
+  * Propagates qualified volume (+1 unit) up the binary tree ancestor chain
+  * when a member transitions to Full Qualification.
+  */
   private async propagateBinaryVolumeOnFullQualification(
     tx: Prisma.TransactionClient,
     userId: string
-  ) {
+  ): Promise<string[]> {
     const placement = await tx.binaryPlacement.findUnique({
       where: { userId },
       select: { parentId: true, leg: true },
     });
 
     if (!placement || !placement.parentId || !placement.leg) {
-      return; // Not yet placed in binary tree
+      return []; // Not yet placed in binary tree
     }
 
     let currParentId: string | null = placement.parentId;
     let currLeg: BinaryLeg | null = placement.leg;
     const visited = new Set<string>();
+    const affectedAncestors: string[] = [];
 
     while (currParentId && currLeg) {
       if (visited.has(currParentId)) {
@@ -1266,10 +1294,38 @@ export class PackagesService {
         data: updateData,
       });
 
+      affectedAncestors.push(currParentId);
+
       if (!parentPlacement.parentId || !parentPlacement.leg) break;
       currLeg = parentPlacement.leg;
       currParentId = parentPlacement.parentId;
     }
+
+    // Queue outbox records for ancestors in tx
+    if (tx.binaryMatchingOutbox) {
+      for (const ancestorId of affectedAncestors) {
+        await tx.binaryMatchingOutbox.create({
+          data: {
+            userId: ancestorId,
+            triggerReason: 'UPGRADE',
+            triggerUserId: userId,
+            status: 'PENDING',
+          },
+        });
+      }
+      // Also queue the upgraded member so any carried-forward pairs can match!
+      await tx.binaryMatchingOutbox.create({
+        data: {
+          userId,
+          triggerReason: 'UPGRADE',
+          triggerUserId: userId,
+          status: 'PENDING',
+        },
+      });
+    }
+    affectedAncestors.push(userId);
+
+    return affectedAncestors;
   }
 
   /**
@@ -1356,6 +1412,7 @@ export class PackagesService {
     let currParentId: string | null = targetParentId;
     let currLeg: BinaryLeg | null = intendedSide;
     const visitedPropagate = new Set<string>();
+    const affectedAncestors: string[] = [];
 
     while (currParentId && currLeg) {
       if (visitedPropagate.has(currParentId)) break;
@@ -1384,9 +1441,25 @@ export class PackagesService {
         data: updateData,
       });
 
+      affectedAncestors.push(currParentId);
+
       if (!parentNode.parentId || !parentNode.leg) break;
       currLeg = parentNode.leg;
       currParentId = parentNode.parentId;
+    }
+
+    // Queue outbox records for ancestors in tx
+    if (tx.binaryMatchingOutbox) {
+      for (const ancestorId of affectedAncestors) {
+        await tx.binaryMatchingOutbox.create({
+          data: {
+            userId: ancestorId,
+            triggerReason: 'FULL_ACTIVATION',
+            triggerUserId: targetUser.id,
+            status: 'PENDING',
+          },
+        });
+      }
     }
 
     return {
@@ -1394,6 +1467,7 @@ export class PackagesService {
       placedUserId: targetUser.id,
       parentId: targetParentId,
       leg: intendedSide,
+      affectedAncestors,
     };
   }
 }

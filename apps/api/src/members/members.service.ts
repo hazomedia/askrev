@@ -1,7 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Inject, forwardRef, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipPackage, paiseToRupees, FINANCIAL_RULES, UserRole } from '@askrev/shared';
 import { BinaryLeg, Prisma } from '@prisma/client';
+import { InstantBinaryMatchingService } from './instant-binary-matching.service';
 import {
   PlaceBinaryNodeDto,
   QueryBinaryHistoryDto,
@@ -10,7 +11,14 @@ import {
 
 @Injectable()
 export class MembersService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MembersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => InstantBinaryMatchingService))
+    @Optional()
+    private readonly instantBinaryMatchingService?: InstantBinaryMatchingService
+  ) {}
 
   /**
    * Get direct referrals of a member with detailed qualification metrics
@@ -73,7 +81,10 @@ export class MembersService {
    * - Propagates counts and qualified volumes up the ancestor tree
    */
   async placeBinaryNode(actorId: string, dto: PlaceBinaryNodeDto) {
-    return await this.prisma.$transaction(async (tx) => {
+    const affectedAncestors: string[] = [];
+    let isTargetQualified = false;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Self-placement check
       if (dto.userId === dto.parentId) {
         throw new BadRequestException('Self-placement is strictly prohibited.');
@@ -223,6 +234,7 @@ export class MembersService {
       let currParentId: string | null = dto.parentId;
       let currLeg: BinaryLeg | null = dto.leg;
       const isQualified = targetUser.isFullQualified;
+      isTargetQualified = isQualified;
       const visitedPropagate = new Set<string>();
 
       while (currParentId && currLeg) {
@@ -255,9 +267,27 @@ export class MembersService {
           data: updateData,
         });
 
+        if (isQualified) {
+          affectedAncestors.push(currParentId);
+        }
+
         if (!parentNode.parentId || !parentNode.leg) break;
         currLeg = parentNode.leg;
         currParentId = parentNode.parentId;
+      }
+
+      // Transactional Outbox Queue for affected ancestors
+      if (isQualified && affectedAncestors.length > 0 && tx.binaryMatchingOutbox) {
+        for (const ancestorId of affectedAncestors) {
+          await tx.binaryMatchingOutbox.create({
+            data: {
+              userId: ancestorId,
+              triggerReason: 'PLACEMENT',
+              triggerUserId: targetUser.id,
+              status: 'PENDING',
+            },
+          });
+        }
       }
 
       // 8. Record Administrative Audit Log
@@ -282,6 +312,17 @@ export class MembersService {
         placement,
       };
     });
+
+    // Trigger instant matching evaluation post-commit
+    if (isTargetQualified && affectedAncestors.length > 0 && this.instantBinaryMatchingService) {
+      try {
+        await this.instantBinaryMatchingService.processOutboxImmediate(affectedAncestors);
+      } catch (err: any) {
+        this.logger.error(`Error in instant binary matching post-placement: ${err.message}`);
+      }
+    }
+
+    return result;
   }
 
   // =========================================================================
@@ -300,6 +341,14 @@ export class MembersService {
    * - Idempotency & row-level locking concurrency protection
    */
   async settleBinaryMatching(beneficiaryUserId: string, idempotencyKey?: string) {
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    if (complianceMode !== 'SIMULATION_ONLY' || enableLivePayouts) {
+      throw new ForbiddenException(
+        'Live binary payouts are strictly disabled. Matching calculations are restricted to SIMULATION_ONLY mode.'
+      );
+    }
+
     return await this.prisma.$transaction(async (tx) => {
       // 1. Idempotency Check
       if (idempotencyKey) {
@@ -445,47 +494,50 @@ export class MembersService {
         },
       });
 
-      // 8. Record Immutable BinaryMatchEvent History
-      const matchEvent = await tx.binaryMatchEvent.create({
-        data: {
-          userId: beneficiaryUserId,
-          matchDate: todayStr,
-          matchesEvaluated: matchesFound,
-          matchesSettled: payableMatches,
-          cappedOutMatches,
-          leftUnitsUsed: payableLeftUsed,
-          rightUnitsUsed: payableRightUsed,
-          previousCarryLeft: totalLeft,
-          previousCarryRight: totalRight,
-          newCarryLeft,
-          newCarryRight,
-          rewardPaise,
-          journalEntryId,
-          idempotencyKey: idempotencyKey || null,
-          isSimulated: true,
-        },
-      });
-
-      // 9. Record Audit Log
-      await tx.auditLog.create({
-        data: {
-          actorId: beneficiaryUserId,
-          action: 'BINARY_MATCH_SETTLED',
-          entityType: 'BINARY_PLACEMENT',
-          entityId: updatedPlacement.id,
-          metadata: {
-            memberId: user.memberId,
+      // 8. Record Immutable BinaryMatchEvent History & Audit Log (when payable matches > 0 or explicit idempotency key provided)
+      let matchEvent: any = null;
+      if (payableMatches > 0 || idempotencyKey) {
+        matchEvent = await tx.binaryMatchEvent.create({
+          data: {
+            userId: beneficiaryUserId,
             matchDate: todayStr,
-            matchesFound,
-            payableMatches,
+            matchesEvaluated: matchesFound,
+            matchesSettled: payableMatches,
             cappedOutMatches,
-            rewardINR: paiseToRupees(rewardPaise),
-            carryLeft: newCarryLeft,
-            carryRight: newCarryRight,
-            complianceMode: 'SIMULATION_ONLY',
+            leftUnitsUsed: payableLeftUsed,
+            rightUnitsUsed: payableRightUsed,
+            previousCarryLeft: totalLeft,
+            previousCarryRight: totalRight,
+            newCarryLeft,
+            newCarryRight,
+            rewardPaise,
+            journalEntryId,
+            idempotencyKey: idempotencyKey || null,
+            isSimulated: true,
           },
-        },
-      });
+        });
+
+        // 9. Record Audit Log
+        await tx.auditLog.create({
+          data: {
+            actorId: beneficiaryUserId,
+            action: 'BINARY_MATCH_SETTLED',
+            entityType: 'BINARY_PLACEMENT',
+            entityId: updatedPlacement.id,
+            metadata: {
+              memberId: user.memberId,
+              matchDate: todayStr,
+              matchesFound,
+              payableMatches,
+              cappedOutMatches,
+              rewardINR: paiseToRupees(rewardPaise),
+              carryLeft: newCarryLeft,
+              carryRight: newCarryRight,
+              complianceMode: 'SIMULATION_ONLY',
+            },
+          },
+        });
+      }
 
       return {
         success: true,
