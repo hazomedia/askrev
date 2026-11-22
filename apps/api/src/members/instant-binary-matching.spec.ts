@@ -95,8 +95,93 @@ export function createInstantMatchingMockPrisma() {
     return out;
   };
 
+  let activeWorkerId = 'mock-worker';
+
   const tx: any = {
-    $queryRaw: async () => [],
+    $queryRaw: async (queryOrStrings: any, ...values: any[]) => {
+      const rawText = Array.isArray(queryOrStrings) ? queryOrStrings.join(' ') : String(queryOrStrings);
+      if (rawText.includes('BinaryMatchingOutbox') && rawText.includes('FOR UPDATE SKIP LOCKED')) {
+        const claimable: any[] = [];
+        const now = new Date();
+        for (const item of state.outbox.values()) {
+          const isPending = item.status === 'PENDING' && (!item.nextRetryAt || item.nextRetryAt <= now);
+          const isExpiredProcessing = item.status === 'PROCESSING' && item.leaseExpiresAt && item.leaseExpiresAt <= now;
+          if ((isPending || isExpiredProcessing) && (item.attempts || 0) < (item.maxAttempts || 5)) {
+            item.status = 'PROCESSING';
+            item.attempts = (item.attempts || 0) + 1;
+            item.lockedBy = activeWorkerId;
+            item.lockedAt = now;
+            item.leaseExpiresAt = new Date(Date.now() + 120000);
+            item.updatedAt = now;
+            claimable.push({ ...item });
+          }
+        }
+        return claimable;
+      }
+      return [];
+    },
+    $executeRaw: async (queryOrStrings: any, ...values: any[]) => {
+      const rawText = typeof queryOrStrings === 'string'
+        ? queryOrStrings
+        : Array.isArray(queryOrStrings)
+        ? queryOrStrings.join(' ')
+        : (queryOrStrings?.text || queryOrStrings?.strings?.join(' ') || JSON.stringify(queryOrStrings));
+      const now = new Date();
+      if (rawText.includes('UPDATE "BinaryMatchingOutbox"')) {
+        if (rawText.includes("SET status = 'COMPLETED'")) {
+          for (const item of state.outbox.values()) {
+            if (item.status === 'PROCESSING') {
+              item.status = 'COMPLETED';
+              item.processedAt = now;
+              item.lastError = null;
+              item.lockedBy = null;
+              item.leaseExpiresAt = null;
+              item.updatedAt = now;
+              return 1;
+            }
+          }
+          return 0;
+        } else if (rawText.includes("SET status = 'DEAD_LETTER'")) {
+          let count = 0;
+          for (const item of state.outbox.values()) {
+            if (item.status === 'PROCESSING' && item.attempts >= (item.maxAttempts || 5)) {
+              item.status = 'DEAD_LETTER';
+              item.deadLetteredAt = now;
+              item.leaseExpiresAt = null;
+              item.lockedBy = null;
+              item.updatedAt = now;
+              count++;
+            }
+          }
+          return count;
+        } else if (rawText.includes("SET status = 'PENDING'")) {
+          let count = 0;
+          for (const item of state.outbox.values()) {
+            if (rawText.includes("WHERE status = 'DEAD_LETTER'")) {
+              if (item.status === 'DEAD_LETTER') {
+                item.status = 'PENDING';
+                item.attempts = 0;
+                item.nextRetryAt = null;
+                item.deadLetteredAt = null;
+                item.lastError = null;
+                item.lockedBy = null;
+                item.leaseExpiresAt = null;
+                item.updatedAt = now;
+                count++;
+              }
+            } else if (item.status === 'PROCESSING') {
+              item.status = 'PENDING';
+              item.leaseExpiresAt = null;
+              item.lockedBy = null;
+              item.updatedAt = now;
+              count++;
+            }
+          }
+          return count;
+        }
+      }
+      return 0;
+    },
     user: {
       findUnique: async ({ where, include, select }: any) => {
         const u = state.users.get(where.id);
@@ -264,10 +349,16 @@ export function createInstantMatchingMockPrisma() {
           triggerUserId: data.triggerUserId || null,
           status: data.status || 'PENDING',
           attempts: data.attempts || 0,
+          maxAttempts: data.maxAttempts || 5,
+          lockedBy: data.lockedBy || null,
+          lockedAt: data.lockedAt || null,
+          leaseExpiresAt: data.leaseExpiresAt || null,
+          nextRetryAt: data.nextRetryAt || null,
+          deadLetteredAt: data.deadLetteredAt || null,
           lastError: null,
-          idempotencyKey: data.idempotencyKey || null,
           createdAt: new Date(),
           processedAt: null,
+          updatedAt: new Date(),
         };
         state.outbox.set(item.id, item);
         return item;
@@ -327,7 +418,7 @@ export function createInstantMatchingMockPrisma() {
 
   let txLock = Promise.resolve();
 
-  return { prisma: tx, state, addUser };
+  return { prisma: tx, state, addUser, setActiveWorkerId: (id: string) => { activeWorkerId = id; } };
 }
 
 describe('Instant Binary Matching Engine Specification & Invariants', () => {
@@ -340,11 +431,15 @@ describe('Instant Binary Matching Engine Specification & Invariants', () => {
   let memberC: any;
 
   beforeEach(() => {
+    process.env.COMPLIANCE_MODE = 'SIMULATION_ONLY';
+    process.env.ENABLE_LIVE_PAYOUTS = 'false';
+
     mock = createInstantMatchingMockPrisma();
     membersService = new MembersService(mock.prisma);
     instantMatchingService = new InstantBinaryMatchingService(mock.prisma, membersService);
     // Wire mutual dependency
     (membersService as any).instantBinaryMatchingService = instantMatchingService;
+    mock.setActiveWorkerId(instantMatchingService.workerId);
 
     rootUser = mock.addUser({
       id: 'usr-root',
@@ -567,5 +662,42 @@ describe('Instant Binary Matching Engine Specification & Invariants', () => {
 
     // Verify member earned ₹6,000 for the 2 pairs
     expect(mock.state.wallets.get(memberA.id).availableEarningsPaise).toBe(600000n);
+  });
+
+  it('Scenario 8 (Strict Compliance & Live Payouts Guard): rejects live payouts when ENABLE_LIVE_PAYOUTS=true', async () => {
+    process.env.ENABLE_LIVE_PAYOUTS = 'true';
+
+    await expect(membersService.settleBinaryMatching(memberA.id)).rejects.toThrow(
+      'Live binary payouts are strictly disabled. Matching calculations are restricted to SIMULATION_ONLY mode.'
+    );
+
+    await expect(instantMatchingService.processBeneficiaryMatching(memberA.id)).rejects.toThrow(
+      'Live binary payouts are strictly disabled. Restricted to SIMULATION_ONLY mode.'
+    );
+
+    // Reset environment
+    process.env.ENABLE_LIVE_PAYOUTS = 'false';
+  });
+
+  it('Scenario 9 (Dead-Letter Requeuing): requeues DEAD_LETTER tasks back to PENDING with attempts reset', async () => {
+    const task = await mock.prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberA.id,
+        triggerReason: 'DEAD_LETTER_TEST',
+        status: 'DEAD_LETTER',
+        attempts: 5,
+        deadLetteredAt: new Date(),
+      },
+    });
+
+    const res = await instantMatchingService.requeueDeadLetterTasks([task.id]);
+    expect(res.requeuedCount).toBe(1);
+
+    // Allow background processing to settle
+    await new Promise((r) => setTimeout(r, 20));
+
+    const updatedTask = mock.state.outbox.get(task.id);
+    expect(['PENDING', 'PROCESSING', 'COMPLETED']).toContain(updatedTask.status);
+    expect(updatedTask.deadLetteredAt).toBeNull();
   });
 });

@@ -26,12 +26,23 @@ export class BinarySchedulerService {
 
   /**
    * Daily Automated Binary Simulation Schedule
-   * Fires every day at 00:01 Asia/Kolkata (IST)
+   * Fires every day at 00:01 Asia/Kolkata (IST).
+   * Unconditionally runs the outbox recovery sweep first, then runs daily simulation.
    */
   @Cron('1 0 * * *', { timeZone: 'Asia/Kolkata' })
   async handleScheduledDailyBinaryRun() {
     this.logger.log('⏰ Automated Binary Matching Scheduler Triggered at 00:01 IST');
     try {
+      // 1. Unconditionally execute outbox recovery sweep (expired leases, pending tasks, dead letters)
+      if (this.instantBinaryMatchingService) {
+        try {
+          await this.instantBinaryMatchingService.runRecoverySweep();
+        } catch (sweepErr: any) {
+          this.logger.warn(`Scheduler pre-simulation recovery sweep warning: ${sweepErr.message}`);
+        }
+      }
+
+      // 2. Execute daily binary simulation run
       await this.runDailyBinarySimulation({
         isDryRun: false,
         triggeredBy: 'CRON_AUTOMATED',
@@ -44,19 +55,23 @@ export class BinarySchedulerService {
   /**
    * Core Distributed-Locked Binary Simulation Run
    * Enforces:
-   * 1. Runs strictly under COMPLIANCE_MODE=SIMULATION_ONLY.
+   * 1. Runs strictly under COMPLIANCE_MODE=SIMULATION_ONLY with live payouts disabled.
    * 2. Uses PostgreSQL advisory lock to ensure single execution across horizontally scaled workers.
-   * 3. Single logical processing run per business date (Asia/Kolkata).
-   * 4. Idempotency per member, pair, and settlement date.
-   * 5. 15 pairs cap per member per IST calendar day.
-   * 6. Preserves valid unmatched volume carry-forward.
-   * 7. Supports dry-run simulation previews.
+   * 3. Always executes outbox recovery sweep even if daily simulation run was previously completed.
+   * 4. Single logical processing run per business date (Asia/Kolkata).
+   * 5. Idempotency per member, pair, and settlement date.
+   * 6. 15 pairs cap per member per IST calendar day (₹45,000 max simulated reward).
+   * 7. Preserves valid unmatched volume carry-forward.
+   * 8. Supports dry-run simulation previews.
    */
   async runDailyBinarySimulation(options: RunSimulationOptions = {}) {
     const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
-    if (complianceMode !== 'SIMULATION_ONLY') {
-      this.logger.warn(`⚠️ Binary simulation skipped: COMPLIANCE_MODE is '${complianceMode}' (must be SIMULATION_ONLY).`);
-      return { skipped: true, reason: 'COMPLIANCE_MODE is not SIMULATION_ONLY' };
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    if (complianceMode !== 'SIMULATION_ONLY' || enableLivePayouts) {
+      this.logger.warn(
+        `⚠️ Binary simulation skipped: COMPLIANCE_MODE is '${complianceMode}', ENABLE_LIVE_PAYOUTS is '${enableLivePayouts}' (must be SIMULATION_ONLY with live payouts false).`
+      );
+      return { skipped: true, reason: 'Live payouts disabled; SIMULATION_ONLY required' };
     }
 
     if (this.isProcessing) {
@@ -84,7 +99,11 @@ export class BinarySchedulerService {
         if (lockRes?.[0]?.acquired) {
           lockAcquired = true;
         } else {
-          this.logger.warn(`⚠️ Distributed advisory lock already held by another worker. Skipping run for date: ${todayStr}`);
+          this.logger.warn(`⚠️ Distributed advisory lock already held by another worker. Skipping simulation run for date: ${todayStr}`);
+          // Still execute outbox recovery sweep on this node
+          if (!isDryRun && this.instantBinaryMatchingService) {
+            await this.instantBinaryMatchingService.runRecoverySweep().catch(() => {});
+          }
           return { skipped: true, reason: 'Advisory lock held by another worker' };
         }
       } catch (lockErr: any) {
@@ -92,6 +111,7 @@ export class BinarySchedulerService {
       }
 
       // 2. Check if a non-dry run has already completed for this business date
+      // CRITICAL FIX (Requirement 5): Recovery sweep MUST run even if daily matching was already completed!
       if (!isDryRun) {
         const existingRun = await this.prisma.binarySimulationRun.findUnique({
           where: {
@@ -103,11 +123,20 @@ export class BinarySchedulerService {
         });
 
         if (existingRun && existingRun.status === 'COMPLETED') {
-          this.logger.log(`ℹ️ Binary matching simulation for ${todayStr} has already completed. Skipping.`);
+          this.logger.log(`ℹ️ Binary matching simulation for ${todayStr} has already completed. Running outbox recovery sweep unconditionally.`);
+          let sweepResult = null;
+          if (this.instantBinaryMatchingService) {
+            try {
+              sweepResult = await this.instantBinaryMatchingService.runRecoverySweep();
+            } catch (sweepErr: any) {
+              this.logger.warn(`Recovery sweep warning during completed run check: ${sweepErr.message}`);
+            }
+          }
           return {
             skipped: true,
             reason: `Run for ${todayStr} already completed`,
             run: existingRun,
+            recoverySweep: sweepResult,
           };
         }
       }
@@ -221,7 +250,7 @@ export class BinarySchedulerService {
       // 5b. Recover & process any pending or interrupted instant matching outbox tasks
       if (!isDryRun && this.instantBinaryMatchingService) {
         try {
-          await this.instantBinaryMatchingService.processOutboxImmediate();
+          await this.instantBinaryMatchingService.runRecoverySweep();
         } catch (sweepErr: any) {
           this.logger.warn(`Scheduler outbox sweep notice: ${sweepErr.message}`);
         }

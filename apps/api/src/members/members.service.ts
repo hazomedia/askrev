@@ -341,6 +341,14 @@ export class MembersService {
    * - Idempotency & row-level locking concurrency protection
    */
   async settleBinaryMatching(beneficiaryUserId: string, idempotencyKey?: string) {
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    if (complianceMode !== 'SIMULATION_ONLY' || enableLivePayouts) {
+      throw new ForbiddenException(
+        'Live binary payouts are strictly disabled. Matching calculations are restricted to SIMULATION_ONLY mode.'
+      );
+    }
+
     return await this.prisma.$transaction(async (tx) => {
       // 1. Idempotency Check
       if (idempotencyKey) {

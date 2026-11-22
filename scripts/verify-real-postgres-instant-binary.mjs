@@ -4,7 +4,7 @@ import { InstantBinaryMatchingService } from '../apps/api/dist/members/instant-b
 import { BinarySchedulerService } from '../apps/api/dist/members/binary-scheduler.service.js';
 import { PackagesService } from '../apps/api/dist/packages/packages.service.js';
 
-const TEST_DB_URL = 'postgresql://postgres:postgres@localhost:5432/askrev_test_instant_binary?schema=public';
+const TEST_DB_URL = process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/askrev_test_instant_binary?schema=public';
 
 async function runRealPostgresVerification() {
   console.log('='.repeat(80));
@@ -38,7 +38,7 @@ async function runRealPostgresVerification() {
   }
 
   try {
-    // Clean test database tables
+    // 0. Clean test database tables
     console.log('\n--- 0. RESETTING CLEAN TEST DATABASE STATE ---');
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE "AuditLog", "JournalLine", "JournalEntry", "BinaryMatchEvent",
@@ -240,14 +240,13 @@ async function runRealPostgresVerification() {
     assert(sameDayRetry.carryLeft === 10, 'Same-day second run preserves carryLeft=10');
     assert(sameDayRetry.carryRight === 10, 'Same-day second run preserves carryRight=10');
 
-    // Simulate IST Date Rollover to next calendar day
+    // Advance lastMatchDate to yesterday (2026-11-21) to simulate midnight IST rollover
     console.log('  Advancing lastMatchDate to yesterday (2026-11-21) to simulate midnight IST rollover...');
     await prisma.binaryPlacement.update({
       where: { userId: memberConc.id },
       data: { lastMatchDate: '2026-11-21', dailyMatchesCount: 15 },
     });
 
-    // Run scheduler carry-forward recovery simulation
     console.log('  Running daily binary simulation recovery at 00:01 IST...');
     const schedResult = await schedulerService.runDailyBinarySimulation({
       isDryRun: false,
@@ -264,121 +263,209 @@ async function runRealPostgresVerification() {
     assert(bpConcDay2.carryRightPaise === 0n, 'Carry Right volume fully settled to 0');
 
     const walletConcDay2 = await prisma.walletAccount.findUnique({ where: { userId: memberConc.id } });
-    // Day 1 (₹45,000) + Day 2 (10 * ₹3,000 = ₹30,000) = ₹75,000 (7,500,000 paise)
     assert(walletConcDay2.availableEarningsPaise === 7500000n, 'Wallet reflects cumulative Day 1 + Day 2 earnings: ₹75,000');
 
     // =========================================================================
-    // TEST 4: LOST NOTIFICATION & CRASH/RESTART RECOVERY
+    // TEST 4: UNCONDITIONAL 12:01 AM SCHEDULER RECOVERY SWEEP (REQUIREMENT 5)
     // =========================================================================
-    console.log('\n--- TEST 4: LOST IMMEDIATE NOTIFICATION & STARTUP RECOVERY ---');
-    const memberCrash = await prisma.user.create({
+    console.log('\n--- TEST 4: UNCONDITIONAL SCHEDULER RECOVERY SWEEP ON COMPLETED RUN ---');
+    // Insert a pending outbox task for Member A
+    const pendingSweepTask = await prisma.binaryMatchingOutbox.create({
       data: {
-        id: 'usr-member-crash',
-        memberId: 'ASKR-MEM-CRASH',
-        fullName: 'Crash Recovery Test User',
-        email: 'crash@test.com',
-        passwordHash: 'dummy',
-        role: 'MEMBER',
-        currentPackage: 'FULL',
-        isFullQualified: true,
-        sponsorId: rootAdmin.id,
-        binaryPlacement: {
-          create: {
-            leftCount: 4,
-            rightCount: 4,
-            carryLeftPaise: 4n,
-            carryRightPaise: 4n,
-          },
-        },
-        wallet: {
-          create: {
-            availableEarningsPaise: 0n,
-            totalEarnedPaise: 0n,
-          },
-        },
-      },
-    });
-
-    // Simulate transaction commit followed by lost immediate notification (server crashed before processing)
-    const orphanedTask = await prisma.binaryMatchingOutbox.create({
-      data: {
-        userId: memberCrash.id,
-        triggerReason: 'FULL_ACTIVATION',
-        status: 'PENDING',
-        attempts: 0,
-      },
-    });
-    assert(orphanedTask.status === 'PENDING', 'Orphaned outbox task successfully committed in PENDING status');
-
-    // Simulate application restart
-    console.log('  Simulating worker reboot: invoking onApplicationBootstrap()...');
-    await instantMatchingService.onApplicationBootstrap();
-
-    const recoveredTask = await prisma.binaryMatchingOutbox.findUnique({ where: { id: orphanedTask.id } });
-    assert(recoveredTask.status === 'COMPLETED', 'Orphaned task was recovered and marked COMPLETED');
-    assert(recoveredTask.processedAt !== null, 'processedAt timestamp was recorded');
-
-    const walletCrash = await prisma.walletAccount.findUnique({ where: { userId: memberCrash.id } });
-    assert(walletCrash.availableEarningsPaise === 1200000n, 'Member wallet credited ₹12,000 (4 pairs @ ₹3,000) during recovery');
-
-    // =========================================================================
-    // TEST 5: MULTIPLE API REPLICAS COMPETING FOR SAME OUTBOX EVENT
-    // =========================================================================
-    console.log('\n--- TEST 5: MULTIPLE API REPLICAS COMPETING ON SAME EVENT ---');
-    const memberReplica = await prisma.user.create({
-      data: {
-        id: 'usr-member-replica',
-        memberId: 'ASKR-MEM-REPL',
-        fullName: 'Replica Competition User',
-        email: 'replica@test.com',
-        passwordHash: 'dummy',
-        role: 'MEMBER',
-        currentPackage: 'FULL',
-        isFullQualified: true,
-        sponsorId: rootAdmin.id,
-        binaryPlacement: {
-          create: {
-            carryLeftPaise: 2n,
-            carryRightPaise: 2n,
-          },
-        },
-        wallet: {
-          create: {
-            availableEarningsPaise: 0n,
-            totalEarnedPaise: 0n,
-          },
-        },
-      },
-    });
-
-    // Create 3 replica instances of InstantBinaryMatchingService pointing to the same real DB
-    const replica1 = new InstantBinaryMatchingService(prisma, membersService);
-    const replica2 = new InstantBinaryMatchingService(prisma, membersService);
-    const replica3 = new InstantBinaryMatchingService(prisma, membersService);
-
-    await prisma.binaryMatchingOutbox.create({
-      data: {
-        userId: memberReplica.id,
-        triggerReason: 'UPGRADE',
+        userId: memberA.id,
+        triggerReason: 'SWEEP_TEST',
         status: 'PENDING',
       },
     });
 
-    console.log('  Executing concurrent outbox sweeps across 3 API replicas...');
-    const replicaResults = await Promise.all([
-      replica1.processOutboxImmediate([memberReplica.id]),
-      replica2.processOutboxImmediate([memberReplica.id]),
-      replica3.processOutboxImmediate([memberReplica.id]),
+    // Run scheduler again for the same date (2026-11-22) which is already COMPLETED
+    const completedRunRes = await schedulerService.runDailyBinarySimulation({
+      isDryRun: false,
+      triggeredBy: 'CRON_AUTOMATED',
+      targetDate: '2026-11-22',
+    });
+    assert(completedRunRes.skipped === true, 'Scheduler correctly skips duplicate daily run calculation');
+    assert(completedRunRes.recoverySweep !== undefined, 'Scheduler recovery sweep executed unconditionally');
+
+    const checkedSweepTask = await prisma.binaryMatchingOutbox.findUnique({ where: { id: pendingSweepTask.id } });
+    assert(checkedSweepTask.status === 'COMPLETED', 'Pending outbox task was processed during unconditional recovery sweep');
+
+    // =========================================================================
+    // TEST 5: ATOMIC CLAIMING WITH FOR UPDATE SKIP LOCKED ACROSS 3 WORKERS
+    // =========================================================================
+    console.log('\n--- TEST 5: 3 COMPETING WORKERS CLAIMING VIA FOR UPDATE SKIP LOCKED ---');
+    const worker1 = new InstantBinaryMatchingService(prisma, membersService);
+    const worker2 = new InstantBinaryMatchingService(prisma, membersService);
+    const worker3 = new InstantBinaryMatchingService(prisma, membersService);
+
+    // Create 6 pending outbox tasks
+    const taskIds = [];
+    for (let i = 0; i < 6; i++) {
+      const t = await prisma.binaryMatchingOutbox.create({
+        data: {
+          userId: memberA.id,
+          triggerReason: `MULTI_WORKER_CLAIM_${i}`,
+          status: 'PENDING',
+        },
+      });
+      taskIds.push(t.id);
+    }
+
+    // Fire claimTasks(2) simultaneously across all 3 workers
+    const [batch1, batch2, batch3] = await Promise.all([
+      worker1.claimTasks(2),
+      worker2.claimTasks(2),
+      worker3.claimTasks(2),
     ]);
 
-    const walletReplica = await prisma.walletAccount.findUnique({ where: { userId: memberReplica.id } });
-    assert(walletReplica.availableEarningsPaise === 600000n, 'Wallet credited EXACTLY 2 pairs (₹6,000) across competing replicas');
-    assert(walletReplica.totalEarnedPaise === 600000n, 'Total earned is 600,000 paise with zero duplicate credits');
+    const allClaimedIds = [...batch1.map(t => t.id), ...batch2.map(t => t.id), ...batch3.map(t => t.id)];
+    const uniqueClaimedIds = new Set(allClaimedIds);
+
+    assert(batch1.length === 2, `Worker 1 claimed exactly 2 tasks (got ${batch1.length})`);
+    assert(batch2.length === 2, `Worker 2 claimed exactly 2 tasks (got ${batch2.length})`);
+    assert(batch3.length === 2, `Worker 3 claimed exactly 2 tasks (got ${batch3.length})`);
+    assert(uniqueClaimedIds.size === 6, 'All 6 tasks were claimed by distinct workers with ZERO overlaps (FOR UPDATE SKIP LOCKED verified)');
+
+    // Verify lockedBy field in database matches worker identities
+    for (const t of batch1) {
+      const dbTask = await prisma.binaryMatchingOutbox.findUnique({ where: { id: t.id } });
+      assert(dbTask.lockedBy === worker1.workerId, `Task ${t.id} lockedBy matches Worker 1 ID`);
+      assert(dbTask.status === 'PROCESSING', `Task ${t.id} status is PROCESSING`);
+      assert(dbTask.leaseExpiresAt !== null, `Task ${t.id} leaseExpiresAt is set`);
+    }
+
+    // Clean up claimed tasks to completed
+    for (const t of batch1) await worker1.completeTask(t.id);
+    for (const t of batch2) await worker2.completeTask(t.id);
+    for (const t of batch3) await worker3.completeTask(t.id);
 
     // =========================================================================
-    // TEST 6: FULL WALLET-TO-LEDGER FINANCIAL RECONCILIATION
+    // TEST 6: DURABLE LEASE EXPIRY & AUTOMATIC CRASH RECOVERY
     // =========================================================================
-    console.log('\n--- TEST 6: COMPREHENSIVE WALLET-TO-LEDGER RECONCILIATION ---');
+    console.log('\n--- TEST 6: DURABLE LEASE EXPIRY & CRASH RECOVERY ---');
+    // Insert an abandoned PROCESSING task with an expired lease
+    const expiredTask = await prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberA.id,
+        triggerReason: 'CRASHED_WORKER_ABANDONED',
+        status: 'PROCESSING',
+        attempts: 1,
+        lockedBy: 'crashed-worker-pid-9999',
+        lockedAt: new Date(Date.now() - 300000), // 5 min ago
+        leaseExpiresAt: new Date(Date.now() - 60000), // Expired 1 min ago
+      },
+    });
+
+    console.log('  Executing recoverExpiredLeases()...');
+    const recoveredCount = await instantMatchingService.recoverExpiredLeases();
+    assert(recoveredCount >= 1, `Recovered at least 1 expired lease (got ${recoveredCount})`);
+
+    const dbRecovered = await prisma.binaryMatchingOutbox.findUnique({ where: { id: expiredTask.id } });
+    assert(dbRecovered.status === 'PENDING', 'Abandoned task successfully reset to PENDING');
+    assert(dbRecovered.lockedBy === null, 'lockedBy cleared on recovered task');
+    assert(dbRecovered.leaseExpiresAt === null, 'leaseExpiresAt cleared on recovered task');
+
+    // Worker claims and processes the recovered task
+    await instantMatchingService.processOutboxImmediate([memberA.id]);
+    const finalRecovered = await prisma.binaryMatchingOutbox.findUnique({ where: { id: expiredTask.id } });
+    assert(finalRecovered.status === 'COMPLETED', 'Recovered task successfully processed to COMPLETED');
+
+    // =========================================================================
+    // TEST 7: PROTECTED STATUS UPDATE (NO STATUS OVERWRITE BY STALE WORKER)
+    // =========================================================================
+    console.log('\n--- TEST 7: PROTECTED STATUS UPDATE CONCURRENCY GUARD ---');
+    // Create task claimed by Worker 1
+    const testTask = await prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberA.id,
+        triggerReason: 'STALE_WORKER_GUARD',
+        status: 'PROCESSING',
+        attempts: 1,
+        lockedBy: worker1.workerId,
+        lockedAt: new Date(),
+        leaseExpiresAt: new Date(Date.now() + 120000),
+      },
+    });
+
+    // Simulate Worker 2 taking over the task (e.g. lease expired or reassigned)
+    await prisma.binaryMatchingOutbox.update({
+      where: { id: testTask.id },
+      data: { lockedBy: worker2.workerId, status: 'PROCESSING' },
+    });
+
+    // Stale Worker 1 attempts to mark task COMPLETED
+    const staleCompleted = await worker1.completeTask(testTask.id);
+    assert(staleCompleted === false, 'Stale Worker 1 completeTask returned FALSE (0 rows updated)');
+
+    // Verify task in DB was NOT overwritten and still owned by Worker 2
+    const taskAfterStaleAttempt = await prisma.binaryMatchingOutbox.findUnique({ where: { id: testTask.id } });
+    assert(taskAfterStaleAttempt.lockedBy === worker2.workerId, 'Task lockedBy remained Worker 2 (no status overwrite)');
+
+    // Worker 2 completes task cleanly
+    const worker2Completed = await worker2.completeTask(testTask.id);
+    assert(worker2Completed === true, 'Worker 2 completeTask returned TRUE');
+    const finalCompleted = await prisma.binaryMatchingOutbox.findUnique({ where: { id: testTask.id } });
+    assert(finalCompleted.status === 'COMPLETED', 'Task status is now COMPLETED');
+
+    // =========================================================================
+    // TEST 8: BOUNDED RETRIES & DEAD-LETTER QUEUE HANDLING
+    // =========================================================================
+    console.log('\n--- TEST 8: BOUNDED RETRIES & DEAD-LETTER QUEUE ROUTING ---');
+    // 8a. Intermediate Failure: attempts < maxAttempts -> status PENDING with backoff
+    const failingTask1 = await prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberA.id,
+        triggerReason: 'FAIL_INTERMEDIATE',
+        status: 'PROCESSING',
+        attempts: 2,
+        maxAttempts: 5,
+        lockedBy: instantMatchingService.workerId,
+      },
+    });
+    await instantMatchingService.failTask(failingTask1.id, 2, 5, 'Network transient glitch');
+
+    const dbFailed1 = await prisma.binaryMatchingOutbox.findUnique({ where: { id: failingTask1.id } });
+    assert(dbFailed1.status === 'PENDING', 'Task with attempts < maxAttempts returned to PENDING');
+    assert(dbFailed1.nextRetryAt !== null, 'nextRetryAt backoff timestamp is set');
+    assert(dbFailed1.lastError === 'Network transient glitch', 'lastError recorded');
+
+    // 8b. Exhausted Failure: attempts >= maxAttempts -> status DEAD_LETTER
+    const failingTask2 = await prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberA.id,
+        triggerReason: 'FAIL_EXHAUSTED',
+        status: 'PROCESSING',
+        attempts: 5,
+        maxAttempts: 5,
+        lockedBy: instantMatchingService.workerId,
+      },
+    });
+    await instantMatchingService.failTask(failingTask2.id, 5, 5, 'Permanent database integrity failure');
+
+    const dbDeadLetter = await prisma.binaryMatchingOutbox.findUnique({ where: { id: failingTask2.id } });
+    assert(dbDeadLetter.status === 'DEAD_LETTER', 'Task with attempts >= maxAttempts routed to DEAD_LETTER');
+    assert(dbDeadLetter.deadLetteredAt !== null, 'deadLetteredAt timestamp is recorded');
+
+    // =========================================================================
+    // TEST 9: DEAD-LETTER REQUEUE & OUTBOX STATS
+    // =========================================================================
+    console.log('\n--- TEST 9: DEAD-LETTER REQUEUING & OUTBOX MONITORING ---');
+    const statsBefore = await instantMatchingService.getOutboxStats();
+    assert(statsBefore.counts.deadLetter >= 1, `Outbox stats reports at least 1 dead-letter task (got ${statsBefore.counts.deadLetter})`);
+
+    // Requeue the dead-letter task
+    const requeueRes = await instantMatchingService.requeueDeadLetterTasks([failingTask2.id]);
+    assert(requeueRes.requeuedCount === 1, 'requeueDeadLetterTasks returned requeuedCount: 1');
+
+    const dbRequeued = await prisma.binaryMatchingOutbox.findUnique({ where: { id: failingTask2.id } });
+    assert(dbRequeued.status === 'PENDING' || dbRequeued.status === 'COMPLETED', 'Requeued task status is PENDING or COMPLETED');
+    assert(dbRequeued.deadLetteredAt === null, 'deadLetteredAt was cleared');
+    assert(dbRequeued.attempts === 0, 'attempts reset to 0');
+
+    // =========================================================================
+    // TEST 10: FULL WALLET-TO-LEDGER FINANCIAL RECONCILIATION
+    // =========================================================================
+    console.log('\n--- TEST 10: COMPREHENSIVE WALLET-TO-LEDGER RECONCILIATION ---');
     const allWallets = await prisma.walletAccount.findMany();
     const totalWalletEarnings = allWallets.reduce((acc, w) => acc + w.totalEarnedPaise, 0n);
 
@@ -392,7 +479,7 @@ async function runRealPostgresVerification() {
     });
     const totalExpenseDebited = expenseLines.reduce((acc, l) => acc + l.debitPaise - l.creditPaise, 0n);
 
-    console.log(`  Total Wallet Available Earnings:  ₹${Number(totalWalletEarnings) / 100}`);
+    console.log(`  Total Wallet Available Earnings:    ₹${Number(totalWalletEarnings) / 100}`);
     console.log(`  Total 2000_MEMBER_EARNINGS_PAYABLE: ₹${Number(totalPayableCredited) / 100}`);
     console.log(`  Total 5200_BINARY_MATCHING_EXPENSE: ₹${Number(totalExpenseDebited) / 100}`);
 
@@ -402,9 +489,9 @@ async function runRealPostgresVerification() {
     assert(discrepancyPaise === 0n, 'Financial discrepancy across all test members is strictly 0 paise');
 
     // =========================================================================
-    // TEST 7: COMPLIANCE BOUNDARY (SIMULATION_ONLY MANDATORY CHECK)
+    // TEST 11: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS
     // =========================================================================
-    console.log('\n--- TEST 7: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS ---');
+    console.log('\n--- TEST 11: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS ---');
     const matchEvents = await prisma.binaryMatchEvent.findMany();
     assert(matchEvents.length > 0, 'BinaryMatchEvent records exist');
     const allSimulated = matchEvents.every(e => e.isSimulated === true);

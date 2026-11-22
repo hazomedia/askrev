@@ -84,6 +84,14 @@ export class MembersController {
     @CurrentUser() user: any,
     @Body() dto: RunBinaryMatchDto
   ) {
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    if (complianceMode !== 'SIMULATION_ONLY' || enableLivePayouts) {
+      throw new ForbiddenException(
+        'Live binary payouts are strictly disabled. Matching calculations are restricted to SIMULATION_ONLY mode.'
+      );
+    }
+
     // CORRECTIVE AUDIT (Requirement 6): Regular members cannot initiate binary matching settlements,
     // even for their own account. Settlement execution is strictly restricted to authorized administrators.
     if (!dto.userId) {
@@ -179,6 +187,13 @@ export class MembersController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
   async retryFailedOutboxTasks() {
     return this.instantMatchingService.retryFailedTasks();
+  }
+
+  @Post('admin/binary-outbox/requeue-dead-letter')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async requeueDeadLetterTasks(@Body() body?: { taskIds?: string[] }) {
+    return this.instantMatchingService.requeueDeadLetterTasks(body?.taskIds);
   }
 }
 
