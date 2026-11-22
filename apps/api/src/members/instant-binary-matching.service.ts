@@ -1,4 +1,5 @@
-import { Injectable, Logger, Inject, forwardRef, OnApplicationBootstrap, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, OnApplicationBootstrap, OnModuleDestroy, ForbiddenException } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembersService } from './members.service';
 import { Prisma } from '@prisma/client';
@@ -30,11 +31,13 @@ export interface ClaimedOutboxTask {
 }
 
 @Injectable()
-export class InstantBinaryMatchingService implements OnApplicationBootstrap {
+export class InstantBinaryMatchingService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(InstantBinaryMatchingService.name);
   public readonly workerId: string;
   public readonly leaseDurationSeconds = 120; // 2-minute durable lease
   public readonly defaultMaxAttempts = 5;
+  private isPolling = false;
+  private pollTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -53,6 +56,71 @@ export class InstantBinaryMatchingService implements OnApplicationBootstrap {
     } catch (err: any) {
       this.logger.warn(`Startup outbox recovery warning: ${err.message}`);
     }
+  }
+
+  /**
+   * Periodic Distributed-Safe Outbox Recovery Poller.
+   * Runs approximately every 20 seconds (15-30s window).
+   * Enforces:
+   * 1. Claims only eligible tasks via FOR UPDATE SKIP LOCKED.
+   * 2. Respects nextRetryAt backoff, maxAttempts bounds, and lease ownership.
+   * 3. Prevents overlapping executions using an in-process isPolling mutex.
+   * 4. Enforces strict SIMULATION_ONLY with live payouts deactivated.
+   */
+  @Interval(20000)
+  async handlePeriodicRecovery(): Promise<InstantMatchingProcessResult> {
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    if (complianceMode !== 'SIMULATION_ONLY' || enableLivePayouts) {
+      return { processed: 0, settled: 0, errors: 0 };
+    }
+
+    if (this.isPolling) {
+      return { processed: 0, settled: 0, errors: 0 };
+    }
+
+    this.isPolling = true;
+    try {
+      // 1. Recover expired leases from crashed or timed-out workers
+      await this.recoverExpiredLeases();
+
+      // 2. Claim and evaluate eligible tasks (where nextRetryAt IS NULL OR nextRetryAt <= NOW())
+      return await this.processOutboxImmediate();
+    } catch (err: any) {
+      this.logger.error(`Periodic outbox recovery poller error: ${err.message}`, err.stack);
+      return { processed: 0, settled: 0, errors: 1 };
+    } finally {
+      this.isPolling = false;
+    }
+  }
+
+  /**
+   * Start programmatic poller (for integration testing or standalone worker mode)
+   */
+  startRecoveryPoller(intervalMs = 20000): void {
+    if (this.pollTimer) return;
+    this.pollTimer = setInterval(async () => {
+      await this.handlePeriodicRecovery();
+    }, intervalMs);
+    if (this.pollTimer.unref) {
+      this.pollTimer.unref();
+    }
+    this.logger.log(`🕒 Periodic outbox recovery poller started (${intervalMs}ms interval)`);
+  }
+
+  /**
+   * Stop programmatic poller
+   */
+  stopRecoveryPoller(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+      this.logger.log('🛑 Periodic outbox recovery poller stopped');
+    }
+  }
+
+  onModuleDestroy() {
+    this.stopRecoveryPoller();
   }
 
   /**
@@ -403,7 +471,7 @@ export class InstantBinaryMatchingService implements OnApplicationBootstrap {
 
     if (affected > 0) {
       this.logger.log(`♻️ Requeued ${affected} dead-letter task(s). Triggering immediate processing.`);
-      this.processOutboxImmediate().catch(() => {});
+      this.processOutboxImmediate().catch(() => { });
     }
 
     return { requeuedCount: affected };
@@ -465,7 +533,7 @@ export class InstantBinaryMatchingService implements OnApplicationBootstrap {
     });
 
     // Trigger immediate background retry
-    this.processOutboxImmediate().catch(() => {});
+    this.processOutboxImmediate().catch(() => { });
 
     return { retriedCount: updated.count };
   }

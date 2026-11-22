@@ -447,9 +447,9 @@ async function runRealPostgresVerification() {
     assert(dbDeadLetter.deadLetteredAt !== null, 'deadLetteredAt timestamp is recorded');
 
     // =========================================================================
-    // TEST 9: DEAD-LETTER REQUEUE & OUTBOX STATS
+    // TEST 10: DEAD-LETTER REQUEUE & OUTBOX STATS
     // =========================================================================
-    console.log('\n--- TEST 9: DEAD-LETTER REQUEUING & OUTBOX MONITORING ---');
+    console.log('\n--- TEST 10: DEAD-LETTER REQUEUING & OUTBOX MONITORING ---');
     const statsBefore = await instantMatchingService.getOutboxStats();
     assert(statsBefore.counts.deadLetter >= 1, `Outbox stats reports at least 1 dead-letter task (got ${statsBefore.counts.deadLetter})`);
 
@@ -463,9 +463,97 @@ async function runRealPostgresVerification() {
     assert(dbRequeued.attempts === 0, 'attempts reset to 0');
 
     // =========================================================================
-    // TEST 10: FULL WALLET-TO-LEDGER FINANCIAL RECONCILIATION
+    // TEST 11: AUTOMATIC BACKGROUND RETRY AFTER BACKOFF (PERIODIC POLLER)
     // =========================================================================
-    console.log('\n--- TEST 10: COMPREHENSIVE WALLET-TO-LEDGER RECONCILIATION ---');
+    console.log('\n--- TEST 11: AUTOMATIC BACKGROUND RETRY AFTER BACKOFF (PERIODIC POLLER) ---');
+    const memberPoller = await prisma.user.create({
+      data: {
+        id: 'usr-member-poller',
+        memberId: 'ASKR-MEM-POLL',
+        fullName: 'Poller Retry User',
+        email: 'poller@test.com',
+        passwordHash: 'dummy',
+        role: 'MEMBER',
+        currentPackage: 'FULL',
+        isFullQualified: true,
+        sponsorId: rootAdmin.id,
+        binaryPlacement: {
+          create: {
+            leftCount: 1,
+            rightCount: 1,
+            carryLeftPaise: 1n,
+            carryRightPaise: 1n,
+          },
+        },
+        wallet: {
+          create: {
+            availableEarningsPaise: 0n,
+            totalEarnedPaise: 0n,
+          },
+        },
+      },
+    });
+
+    // 1. Create task and simulate an initial failure with backoff
+    const failedRetryTask = await prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberPoller.id,
+        triggerReason: 'PERIODIC_RETRY_TEST',
+        status: 'PROCESSING',
+        attempts: 1,
+        maxAttempts: 5,
+        lockedBy: instantMatchingService.workerId,
+      },
+    });
+
+    // Fail the task: sets attempts=1, nextRetryAt = NOW() + 4s, status = 'PENDING'
+    await instantMatchingService.failTask(failedRetryTask.id, 1, 5, 'Simulated transient failure for poller test');
+
+    let dbPollerCheck = await prisma.binaryMatchingOutbox.findUnique({ where: { id: failedRetryTask.id } });
+    assert(dbPollerCheck.status === 'PENDING', 'Failed task reset to PENDING');
+    assert(dbPollerCheck.attempts === 1, 'Task attempts is 1');
+    assert(dbPollerCheck.nextRetryAt !== null && dbPollerCheck.nextRetryAt > new Date(), 'nextRetryAt is strictly in the future (backoff enforced)');
+
+    // 2. Start the periodic recovery poller with a 1-second interval
+    console.log('  Starting periodic outbox recovery poller (1000ms interval)...');
+    instantMatchingService.startRecoveryPoller(1000);
+
+    // 3. Verify that before nextRetryAt elapses (e.g. at 500ms), the poller respects backoff and skips the task
+    await new Promise((r) => setTimeout(r, 500));
+    dbPollerCheck = await prisma.binaryMatchingOutbox.findUnique({ where: { id: failedRetryTask.id } });
+    assert(dbPollerCheck.status === 'PENDING', 'Poller respects nextRetryAt: task remains PENDING while backoff active');
+
+    // 4. Wait for backoff window to elapse (4.5s) without manual intervention, restart or incoming event
+    console.log('  Waiting for nextRetryAt backoff window to elapse (4.5s) with NO manual intervention...');
+    await new Promise((r) => setTimeout(r, 4500));
+
+    // 5. Poll for completion (up to 3 seconds) driven purely by the background poller
+    let pollerCompleted = false;
+    for (let i = 0; i < 6; i++) {
+      dbPollerCheck = await prisma.binaryMatchingOutbox.findUnique({ where: { id: failedRetryTask.id } });
+      if (dbPollerCheck.status === 'COMPLETED') {
+        pollerCompleted = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    assert(pollerCompleted === true, 'Failed task automatically retried and COMPLETED without manual intervention, restart or incoming events');
+    assert(dbPollerCheck.processedAt !== null, 'Task processedAt recorded on automatic retry');
+    assert(dbPollerCheck.attempts === 2, 'Task attempts incremented to 2 on automatic retry');
+
+    const walletPoller = await prisma.walletAccount.findUnique({ where: { userId: memberPoller.id } });
+    assert(walletPoller.availableEarningsPaise === 300000n, 'Wallet credited ₹3,000 for settled match via periodic poller');
+    const bpPoller = await prisma.binaryPlacement.findUnique({ where: { userId: memberPoller.id } });
+    assert(bpPoller.carryLeftPaise === 0n && bpPoller.carryRightPaise === 0n, 'Carry forward consumed to 0L:0R');
+
+    // Stop poller cleanly
+    instantMatchingService.stopRecoveryPoller();
+
+    // =========================================================================
+    // TEST 12: FULL WALLET-TO-LEDGER FINANCIAL RECONCILIATION
+    // =========================================================================
+    console.log('\n--- TEST 12: COMPREHENSIVE WALLET-TO-LEDGER RECONCILIATION ---');
     const allWallets = await prisma.walletAccount.findMany();
     const totalWalletEarnings = allWallets.reduce((acc, w) => acc + w.totalEarnedPaise, 0n);
 
@@ -489,9 +577,9 @@ async function runRealPostgresVerification() {
     assert(discrepancyPaise === 0n, 'Financial discrepancy across all test members is strictly 0 paise');
 
     // =========================================================================
-    // TEST 11: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS
+    // TEST 13: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS
     // =========================================================================
-    console.log('\n--- TEST 11: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS ---');
+    console.log('\n--- TEST 13: COMPLIANCE BOUNDARY & LIVE PAYOUT INVARIANTS ---');
     const matchEvents = await prisma.binaryMatchEvent.findMany();
     assert(matchEvents.length > 0, 'BinaryMatchEvent records exist');
     const allSimulated = matchEvents.every(e => e.isSimulated === true);

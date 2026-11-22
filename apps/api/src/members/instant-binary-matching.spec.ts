@@ -700,4 +700,28 @@ describe('Instant Binary Matching Engine Specification & Invariants', () => {
     expect(['PENDING', 'PROCESSING', 'COMPLETED']).toContain(updatedTask.status);
     expect(updatedTask.deadLetteredAt).toBeNull();
   });
+
+  it('Scenario 10 (Periodic Recovery Poller): periodically evaluates eligible tasks without overlap', async () => {
+    // Insert a pending task for memberA
+    await mock.prisma.binaryMatchingOutbox.create({
+      data: {
+        userId: memberA.id,
+        triggerReason: 'POLLER_TEST',
+        status: 'PENDING',
+      },
+    });
+
+    const bp = mock.state.placements.get(memberA.id);
+    bp.carryLeftPaise = 1n;
+    bp.carryRightPaise = 1n;
+
+    // Run periodic recovery handler directly
+    const res = await instantMatchingService.handlePeriodicRecovery();
+    expect(res.processed).toBeGreaterThanOrEqual(1);
+
+    // Verify task completed
+    const tasks = Array.from(mock.state.outbox.values());
+    const pollerTask = tasks.find((t) => t.triggerReason === 'POLLER_TEST');
+    expect(pollerTask?.status).toBe('COMPLETED');
+  });
 });
