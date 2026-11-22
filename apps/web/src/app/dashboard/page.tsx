@@ -1833,7 +1833,12 @@ function DashboardContent() {
                             <th className="p-3">Capped</th>
                             <th className="p-3">Used (L : R)</th>
                             <th className="p-3">Carry Forward (L : R)</th>
-                            <th className="p-3 text-right">Simulated Reward</th>
+                            <th className="p-3 text-right">
+                              Simulated Reward
+                              <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold bg-blue-100 text-blue-700 rounded uppercase">
+                                Simulated
+                              </span>
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1847,6 +1852,7 @@ function DashboardContent() {
                               <td className="p-3 font-medium">{ev.newCarryLeft} : {ev.newCarryRight}</td>
                               <td className="p-3 text-right font-bold text-[#15803D]">
                                 ₹{(ev.rewardINR ?? 0).toLocaleString('en-IN')}
+                                <span className="block text-[10px] font-normal text-slate-400">Simulation Only</span>
                               </td>
                             </tr>
                           ))}

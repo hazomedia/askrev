@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembersService } from './members.service';
+import { InstantBinaryMatchingService } from './instant-binary-matching.service';
 import { paiseToRupees } from '@askrev/shared';
 
 export interface RunSimulationOptions {
@@ -17,7 +18,10 @@ export class BinarySchedulerService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly membersService: MembersService
+    private readonly membersService: MembersService,
+    @Inject(forwardRef(() => InstantBinaryMatchingService))
+    @Optional()
+    private readonly instantBinaryMatchingService?: InstantBinaryMatchingService
   ) {}
 
   /**
@@ -211,6 +215,15 @@ export class BinarySchedulerService {
           } catch (settleErr: any) {
             this.logger.error(`Error settling binary matching for ${member.memberId}: ${settleErr.message}`);
           }
+        }
+      }
+
+      // 5b. Recover & process any pending or interrupted instant matching outbox tasks
+      if (!isDryRun && this.instantBinaryMatchingService) {
+        try {
+          await this.instantBinaryMatchingService.processOutboxImmediate();
+        } catch (sweepErr: any) {
+          this.logger.warn(`Scheduler outbox sweep notice: ${sweepErr.message}`);
         }
       }
 

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query, Param, UseGuards, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { BinarySchedulerService } from './binary-scheduler.service';
+import { InstantBinaryMatchingService } from './instant-binary-matching.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,7 +18,8 @@ import {
 export class MembersController {
   constructor(
     private readonly membersService: MembersService,
-    private readonly binaryScheduler: BinarySchedulerService
+    private readonly binaryScheduler: BinarySchedulerService,
+    private readonly instantMatchingService: InstantBinaryMatchingService
   ) {}
 
   @Get('direct-team')
@@ -159,6 +161,24 @@ export class MembersController {
       targetDate: body?.targetDate,
       triggeredBy: 'ADMIN_MANUAL',
     });
+  }
+
+  // =========================================================================
+  // ADMIN INSTANT BINARY MATCHING OUTBOX
+  // =========================================================================
+
+  @Get('admin/binary-outbox')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getBinaryOutboxStats() {
+    return this.instantMatchingService.getOutboxStats();
+  }
+
+  @Post('admin/binary-outbox/retry-failed')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async retryFailedOutboxTasks() {
+    return this.instantMatchingService.retryFailedTasks();
   }
 }
 

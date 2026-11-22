@@ -91,6 +91,7 @@ model User {
   taxSimulationRecords    TaxSimulationRecord[]
   retailOrders            RetailOrderRecord[]
   retailQualifications    RetailQualificationEvent[]
+  binaryMatchingOutbox    BinaryMatchingOutbox[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -369,6 +370,23 @@ model BinaryMatchEvent {
 
   @@index([userId])
   @@index([matchDate])
+}
+
+model BinaryMatchingOutbox {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  triggerReason  String    // FULL_ACTIVATION, UPGRADE, PLACEMENT, SCHEDULER_RECOVERY, MANUAL_TRIGGER
+  triggerUserId  String?
+  status         String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  attempts       Int       @default(0)
+  lastError      String?
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  processedAt    DateTime?
+
+  @@index([status, createdAt])
+  @@index([userId])
 }
 
 enum ProductCategory {
