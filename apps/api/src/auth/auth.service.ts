@@ -21,7 +21,7 @@ export class AuthService {
     private readonly totpService: TotpService,
     private readonly emailService: EmailService,
     private readonly tokenRevocationService?: TokenRevocationService
-  ) {}
+  ) { }
 
   /**
    * Generate an idempotent, unique Member ID (e.g. ASKR-829104)
@@ -190,7 +190,7 @@ export class AuthService {
             metadata: { email: dto.email.toLowerCase().trim(), reason: 'USER_NOT_FOUND' },
           },
         });
-      } catch {}
+      } catch { }
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -205,7 +205,7 @@ export class AuthService {
             metadata: { email: dto.email.toLowerCase().trim(), reason: 'BAD_PASSWORD' },
           },
         });
-      } catch {}
+      } catch { }
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -239,7 +239,7 @@ export class AuthService {
               metadata: { email: user.email, role: user.role, reason: 'ADMIN_MFA_BOOTSTRAP_TRIGGERED' },
             },
           });
-        } catch {}
+        } catch { }
 
         return {
           mfaEnrollmentRequired: true,
@@ -297,7 +297,7 @@ export class AuthService {
               metadata: { email: user.email, hasTotp: Boolean(dto.totpCode), hasRecovery: Boolean(dto.recoveryCode) },
             },
           });
-        } catch {}
+        } catch { }
         throw new UnauthorizedException('MFA_REQUIRED: Valid 6-digit TOTP code or backup recovery code is required for administrator access.');
       }
 
@@ -320,7 +320,7 @@ export class AuthService {
           },
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       message: 'Login successful',
@@ -522,7 +522,7 @@ export class AuthService {
           metadata: { email: user.email },
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       message: 'Two-Factor Authentication (TOTP) successfully enabled',
@@ -690,7 +690,7 @@ export class AuthService {
           metadata: { email: user.email, role: user.role },
         },
       });
-    } catch {}
+    } catch { }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
 
@@ -737,7 +737,7 @@ export class AuthService {
             metadata: { clientId: dto.clientId, scope: requestedScope, clientIp, reason: 'INVALID_SCOPE' },
           },
         });
-      } catch {}
+      } catch { }
       throw new ForbiddenException(
         `Invalid service scope '${requestedScope}'. Allowed scopes: ${Array.from(ALLOWED_SERVICE_SCOPES).join(', ')}`
       );
@@ -766,7 +766,7 @@ export class AuthService {
             metadata: { clientId: dto.clientId, clientIp, reason: 'INVALID_CREDENTIALS' },
           },
         });
-      } catch {}
+      } catch { }
       throw new UnauthorizedException('Invalid service client credentials');
     }
 
@@ -793,7 +793,7 @@ export class AuthService {
           metadata: { clientId: dto.clientId, scope: requestedScope, clientIp },
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       tokenType: 'Bearer',
@@ -843,7 +843,7 @@ export class AuthService {
           metadata: { email: user.email },
         },
       });
-    } catch {}
+    } catch { }
 
     return { message: 'Two-Factor Authentication disabled' };
   }
@@ -896,7 +896,7 @@ export class AuthService {
             metadata: { email: user.email, reason: 'BAD_CURRENT_PASSWORD' },
           },
         });
-      } catch {}
+      } catch { }
       throw new UnauthorizedException('Current password does not match');
     }
 
@@ -950,7 +950,7 @@ export class AuthService {
               metadata: { email: user.email, reason: 'INVALID_MFA_CODE' },
             },
           });
-        } catch {}
+        } catch { }
         throw new UnauthorizedException('Invalid Two-Factor Authentication code or backup recovery code');
       }
     }
@@ -993,7 +993,7 @@ export class AuthService {
           },
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       message: 'Password changed successfully. All active sessions have been revoked. Please sign in with your new password.',
@@ -1029,7 +1029,7 @@ export class AuthService {
           metadata: { email: user.email },
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       message: 'All active sessions have been signed out successfully.',
@@ -1116,7 +1116,7 @@ export class AuthService {
           metadata: { email: user.email },
         },
       });
-    } catch {}
+    } catch { }
 
     return genericResponse;
   }
@@ -1218,7 +1218,7 @@ export class AuthService {
           metadata: { fullName: updatedUser.fullName, phone: updatedUser.phone },
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       message: 'Profile updated successfully',
@@ -1328,11 +1328,11 @@ export class AuthService {
       sponsorName: user.sponsor?.fullName ?? null,
       wallet: user.wallet
         ? {
-            availableEarningsINR: paiseToRupees(user.wallet.availableEarningsPaise),
-            heldCommissionsINR: paiseToRupees(user.wallet.heldCommissionsPaise),
-            pendingRecoveryINR: paiseToRupees(user.wallet.pendingRecoveryPaise),
-            shoppingVoucherINR: paiseToRupees(user.wallet.shoppingVoucherBalancePaise),
-          }
+          availableEarningsINR: paiseToRupees(user.wallet.availableEarningsPaise),
+          heldCommissionsINR: paiseToRupees(user.wallet.heldCommissionsPaise),
+          pendingRecoveryINR: paiseToRupees(user.wallet.pendingRecoveryPaise),
+          shoppingVoucherINR: paiseToRupees(user.wallet.shoppingVoucherBalancePaise),
+        }
         : null,
       createdAt: user.createdAt,
     };
