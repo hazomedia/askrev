@@ -16,6 +16,7 @@ import { HeroSliderModule } from './hero-slider/hero-slider.module';
 import { MediaModule } from './media/media.module';
 import { TaxModule } from './tax/tax.module';
 import { RetailQualificationModule } from './retail-qualification/retail-qualification.module';
+import { PaymentsModule } from './payments/payments.module';
 import { HealthController } from './health.controller';
 import { CsrfGuard } from './auth/guards/csrf.guard';
 
@@ -37,6 +38,7 @@ import { CsrfGuard } from './auth/guards/csrf.guard';
     MediaModule,
     TaxModule,
     RetailQualificationModule,
+    PaymentsModule,
   ],
   controllers: [HealthController],
   providers: [

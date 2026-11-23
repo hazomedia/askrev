@@ -36,6 +36,9 @@ import {
   Lock,
   QrCode,
   Home,
+  CreditCard,
+  Building2,
+  Globe,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
@@ -72,7 +75,7 @@ function DashboardContent() {
   const [selectedRequestType, setSelectedRequestType] = useState<
     'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE' | null
   >(null);
-  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'SIMULATED'>('UPI');
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'GATEWAY' | 'SIMULATED'>('UPI');
   const [paymentUtr, setPaymentUtr] = useState('');
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [paymentConfig, setPaymentConfig] = useState<{
@@ -82,6 +85,28 @@ function DashboardContent() {
     isVerified: boolean;
     pricing?: { BASIC_ACTIVATION: number; FULL_ACTIVATION: number; BASIC_TO_FULL_UPGRADE: number };
   } | null>(null);
+  const [paymentMethods, setPaymentMethods] = useState<{
+    upi: {
+      isEnabled: boolean;
+      isConfigured: boolean;
+      merchantUpiVpa: string | null;
+      merchantName: string;
+      manualReviewRequired: boolean;
+    };
+    gateways: Array<{
+      provider: string;
+      isSandbox: boolean;
+      displayName: string;
+    }>;
+    pricing: {
+      BASIC_ACTIVATION: number;
+      FULL_ACTIVATION: number;
+      BASIC_TO_FULL_UPGRADE: number;
+    };
+  } | null>(null);
+  const [selectedGatewayProvider, setSelectedGatewayProvider] = useState<string>('RAZORPAY');
+  const [isProcessingGateway, setIsProcessingGateway] = useState(false);
+  const [gatewayOrder, setGatewayOrder] = useState<any | null>(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -234,6 +259,7 @@ function DashboardContent() {
         voucherTxData,
         requestsData,
         paymentConfigData,
+        paymentMethodsData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -246,6 +272,7 @@ function DashboardContent() {
         fetchApi<any>('/vouchers/transactions').catch(() => []),
         fetchApi<any>('/packages/my-requests').catch(() => []),
         fetchApi<any>('/packages/payment-config').catch(() => null),
+        fetchApi<any>('/payments/methods').catch(() => null),
       ]);
 
       setUser(profileData);
@@ -263,6 +290,12 @@ function DashboardContent() {
       setVoucherTransactions(voucherTxData);
       setMembershipRequests(Array.isArray(requestsData) ? requestsData : []);
       setPaymentConfig(paymentConfigData);
+      if (paymentMethodsData) {
+        setPaymentMethods(paymentMethodsData);
+        if (paymentMethodsData.gateways && paymentMethodsData.gateways.length > 0) {
+          setSelectedGatewayProvider(paymentMethodsData.gateways[0].provider);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
@@ -343,22 +376,41 @@ function DashboardContent() {
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE'
   ) => {
     setSelectedRequestType(requestType);
-    setPaymentMethod(paymentConfig?.isConfigured ? 'UPI' : 'SIMULATED');
     setPaymentUtr('');
+    setGatewayOrder(null);
+
+    const hasGateways = !!(paymentMethods?.gateways && paymentMethods.gateways.length > 0);
+    const hasUpi = paymentMethods
+      ? paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured
+      : !!paymentConfig?.isConfigured;
+
+    if (hasGateways) {
+      setPaymentMethod('GATEWAY');
+    } else if (hasUpi) {
+      setPaymentMethod('UPI');
+    } else {
+      setPaymentMethod('SIMULATED');
+    }
     setPaymentModalOpen(true);
   };
 
   useEffect(() => {
-    if (paymentConfig?.isConfigured && paymentConfig.merchantUpiVpa && selectedRequestType) {
+    const upiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
+    const upiName = paymentMethods?.upi?.merchantName || paymentConfig?.merchantName || 'ASKR EV Mobility';
+    const isUpiActive = paymentMethods
+      ? paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured
+      : !!paymentConfig?.isConfigured;
+
+    if (isUpiActive && upiVpa && selectedRequestType) {
       const amount =
         selectedRequestType === 'BASIC_ACTIVATION'
           ? 3000
           : selectedRequestType === 'FULL_ACTIVATION'
-          ? 33000
-          : 30000;
+            ? 33000
+            : 30000;
       const note = `ASKREV-${selectedRequestType}-${user?.memberId || 'MEMBER'}`;
-      const upiUri = `upi://pay?pa=${paymentConfig.merchantUpiVpa}&pn=${encodeURIComponent(
-        paymentConfig.merchantName || 'ASKR EV Mobility'
+      const upiUri = `upi://pay?pa=${upiVpa}&pn=${encodeURIComponent(
+        upiName
       )}&am=${amount}.00&cu=INR&tn=${encodeURIComponent(note)}`;
 
       QRCode.toDataURL(upiUri, { width: 220, margin: 1 })
@@ -370,36 +422,105 @@ function DashboardContent() {
     } else {
       setQrCodeDataUrl(null);
     }
-  }, [paymentConfig, selectedRequestType, user?.memberId]);
+  }, [paymentConfig, paymentMethods, selectedRequestType, user?.memberId]);
 
   const handleCopyUpi = () => {
-    if (paymentConfig?.merchantUpiVpa) {
-      navigator.clipboard.writeText(paymentConfig.merchantUpiVpa);
+    const upiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
+    if (upiVpa) {
+      navigator.clipboard.writeText(upiVpa);
       setCopiedUpi(true);
       setTimeout(() => setCopiedUpi(false), 2000);
     }
   };
 
+  const handleInitiateGatewayPayment = async () => {
+    if (!selectedRequestType) return;
+    setIsProcessingGateway(true);
+    setError(null);
+    try {
+      const amountPaise =
+        selectedRequestType === 'BASIC_ACTIVATION'
+          ? 300000
+          : selectedRequestType === 'FULL_ACTIVATION'
+          ? 3300000
+          : 3000000;
+
+      const orderRes = await fetchApi<any>('/payments/create-order', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: selectedGatewayProvider,
+          amountPaise,
+          requestType: selectedRequestType,
+        }),
+      });
+
+      const orderData = orderRes?.order;
+      setGatewayOrder(orderData);
+
+      // Check if Razorpay Checkout script is loaded on window
+      if (typeof window !== 'undefined' && (window as any).Razorpay && orderData?.keyId) {
+        const options = {
+          key: orderData.keyId,
+          amount: orderData.amountPaise,
+          currency: orderData.currency || 'INR',
+          name: 'ASKR EV Mobility',
+          description: `Booking - ${selectedRequestType}`,
+          order_id: orderData.orderId,
+          handler: async function (response: any) {
+            await handleMembershipRequest(
+              selectedRequestType,
+              'GATEWAY',
+              response.razorpay_payment_id || response.razorpay_order_id || orderData.orderId
+            );
+          },
+          prefill: {
+            name: user?.fullName,
+            email: user?.email,
+            contact: user?.phone,
+          },
+          theme: { color: '#165DAD' },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to create payment gateway order');
+    } finally {
+      setIsProcessingGateway(false);
+    }
+  };
+
   const handleMembershipRequest = async (
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE',
-    mode: 'UPI' | 'SIMULATED' = 'SIMULATED',
+    mode: 'UPI' | 'GATEWAY' | 'SIMULATED' = 'SIMULATED',
     refNumber?: string
   ) => {
     setUpgrading(true);
     setUpgradeSuccess(null);
     setError(null);
     try {
+      const activeUpiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
       const res: any = await fetchApi('/packages/request', {
         method: 'POST',
         body: JSON.stringify({
           requestType,
-          paymentMode: mode === 'UPI' ? 'UPI' : 'SIMULATED_PORTAL',
-          paymentReference: mode === 'UPI' ? (refNumber?.trim().toUpperCase() || 'UPI-REF') : 'SIMULATED-CLEARANCE',
+          paymentMode: mode === 'UPI' ? 'UPI' : mode === 'GATEWAY' ? 'PAYMENT_GATEWAY' : 'SIMULATED_PORTAL',
+          paymentReference:
+            mode === 'UPI'
+              ? refNumber?.trim().toUpperCase() || 'UPI-REF'
+              : mode === 'GATEWAY'
+              ? refNumber?.trim() || gatewayOrder?.orderId || 'GW-REF'
+              : 'SIMULATED-CLEARANCE',
           metadata: {
             compliance: 'SIMULATION_ONLY',
             source: 'member_dashboard_booking',
-            ...(mode === 'UPI' && paymentConfig?.merchantUpiVpa
-              ? { merchantUpiVpa: paymentConfig.merchantUpiVpa }
+            ...(mode === 'UPI' && activeUpiVpa ? { merchantUpiVpa: activeUpiVpa } : {}),
+            ...(mode === 'GATEWAY'
+              ? {
+                  provider: selectedGatewayProvider,
+                  orderId: gatewayOrder?.orderId || refNumber,
+                  amountPaise: gatewayOrder?.amountPaise,
+                }
               : {}),
           },
         }),
@@ -428,6 +549,12 @@ function DashboardContent() {
         return;
       }
       await handleMembershipRequest(selectedRequestType, 'UPI', trimmedUtr);
+    } else if (paymentMethod === 'GATEWAY') {
+      if (gatewayOrder?.orderId) {
+        await handleMembershipRequest(selectedRequestType, 'GATEWAY', gatewayOrder.orderId);
+      } else {
+        await handleInitiateGatewayPayment();
+      }
     } else {
       await handleMembershipRequest(selectedRequestType, 'SIMULATED');
     }
@@ -657,11 +784,10 @@ function DashboardContent() {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 text-[#165DAD] font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
-                  }`}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
+                    ? 'bg-blue-50 text-[#165DAD] font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
+                    }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <Icon className={`w-4 h-4 ${isActive ? 'text-[#165DAD]' : 'text-slate-400'}`} />
@@ -669,11 +795,10 @@ function DashboardContent() {
                   </div>
                   {item.count !== undefined && item.count > 0 && (
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                        isActive
-                          ? 'bg-[#165DAD] text-white'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive
+                        ? 'bg-[#165DAD] text-white'
+                        : 'bg-slate-100 text-slate-500'
+                        }`}
                     >
                       {item.count}
                     </span>
@@ -739,11 +864,10 @@ function DashboardContent() {
                           setActiveTab(item.id);
                           setMobileMenuOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${
-                          isActive
-                            ? 'bg-blue-50 text-[#165DAD] font-semibold'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
-                        }`}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
+                          ? 'bg-blue-50 text-[#165DAD] font-semibold'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
+                          }`}
                       >
                         <div className="flex items-center gap-2.5">
                           <Icon className={`w-4 h-4 ${isActive ? 'text-[#165DAD]' : 'text-slate-400'}`} />
@@ -751,11 +875,10 @@ function DashboardContent() {
                         </div>
                         {item.count !== undefined && item.count > 0 && (
                           <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                              isActive
-                                ? 'bg-[#165DAD] text-white'
-                                : 'bg-slate-100 text-slate-500'
-                            }`}
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive
+                              ? 'bg-[#165DAD] text-white'
+                              : 'bg-slate-100 text-slate-500'
+                              }`}
                           >
                             {item.count}
                           </span>
@@ -999,8 +1122,8 @@ function DashboardContent() {
                         {membershipRequests.some((r) => r.status === 'PENDING')
                           ? 'Upgrade Pending Admin Review'
                           : upgrading
-                          ? 'Submitting...'
-                          : 'Upgrade to EV ULTRA (₹30,000)'}
+                            ? 'Submitting...'
+                            : 'Upgrade to EV ULTRA (₹30,000)'}
                       </span>
                     </button>
                   </div>
@@ -1014,19 +1137,18 @@ function DashboardContent() {
                         <GitBranch className="w-4 h-4 text-[#165DAD]" />
                         <h3 className="text-sm font-bold text-[#253247]">Binary Tree & Matching Summary</h3>
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            binaryTree?.node?.isPlaced
-                              ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                              : user?.role === 'SUPER_ADMIN'
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${binaryTree?.node?.isPlaced
+                            ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                            : user?.role === 'SUPER_ADMIN'
                               ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                               : 'bg-amber-50 text-amber-800 border-amber-200'
-                          }`}
+                            }`}
                         >
                           {binaryTree?.node?.isPlaced
                             ? `Placed (${binaryTree.node.parent?.leg} under ${binaryTree.node.parent?.memberId})`
                             : user?.role === 'SUPER_ADMIN'
-                            ? 'Company Root'
-                            : 'Not Yet Placed'}
+                              ? 'Company Root'
+                              : 'Not Yet Placed'}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
@@ -1202,8 +1324,8 @@ function DashboardContent() {
                               {req.requestType === 'BASIC_ACTIVATION'
                                 ? 'EV PRO Booking (₹3,000)'
                                 : req.requestType === 'FULL_ACTIVATION'
-                                ? 'EV ULTRA Booking (₹33,000)'
-                                : 'EV ULTRA Upgrade (₹30,000)'}
+                                  ? 'EV ULTRA Booking (₹33,000)'
+                                  : 'EV ULTRA Upgrade (₹30,000)'}
                             </span>
                             {req.paymentMode && (
                               <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 ml-2">
@@ -1223,13 +1345,12 @@ function DashboardContent() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span
-                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                                req.status === 'APPROVED'
-                                  ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                                  : req.status === 'REJECTED'
+                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${req.status === 'APPROVED'
+                                ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                : req.status === 'REJECTED'
                                   ? 'bg-red-50 text-red-700 border-red-200'
                                   : 'bg-amber-50 text-amber-800 border-amber-200'
-                              }`}
+                                }`}
                             >
                               {req.status}
                             </span>
@@ -1283,8 +1404,8 @@ function DashboardContent() {
                             {membershipRequests.some((r) => r.status === 'PENDING')
                               ? 'Request Pending Admin Review'
                               : upgrading
-                              ? 'Submitting Request...'
-                              : 'Book EV PRO (₹3,000)'}
+                                ? 'Submitting Request...'
+                                : 'Book EV PRO (₹3,000)'}
                           </span>
                         </button>
                       </div>
@@ -1317,8 +1438,8 @@ function DashboardContent() {
                             {membershipRequests.some((r) => r.status === 'PENDING')
                               ? 'Request Pending Admin Review'
                               : upgrading
-                              ? 'Submitting Request...'
-                              : 'Book EV ULTRA (₹33,000)'}
+                                ? 'Submitting Request...'
+                                : 'Book EV ULTRA (₹33,000)'}
                           </span>
                         </button>
                       </div>
@@ -1366,10 +1487,10 @@ function DashboardContent() {
                             {user.isFullQualified
                               ? 'Already EV ULTRA Qualified'
                               : membershipRequests.some((r) => r.status === 'PENDING')
-                              ? 'Upgrade Pending Admin Review'
-                              : upgrading
-                              ? 'Submitting Request...'
-                              : 'Upgrade to EV ULTRA (₹30,000)'}
+                                ? 'Upgrade Pending Admin Review'
+                                : upgrading
+                                  ? 'Submitting Request...'
+                                  : 'Upgrade to EV ULTRA (₹30,000)'}
                           </span>
                         </button>
                       </div>
@@ -1583,19 +1704,18 @@ function DashboardContent() {
                       </p>
                     </div>
                     <span
-                      className={`self-start text-xs font-semibold px-3 py-1 rounded-full border ${
-                        binaryTree?.node?.isPlaced
-                          ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                          : user?.role === 'SUPER_ADMIN'
+                      className={`self-start text-xs font-semibold px-3 py-1 rounded-full border ${binaryTree?.node?.isPlaced
+                        ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                        : user?.role === 'SUPER_ADMIN'
                           ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                           : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}
+                        }`}
                     >
                       {binaryTree?.node?.isPlaced
                         ? `Placed (${binaryTree.node.parent?.leg} Leg)`
                         : user?.role === 'SUPER_ADMIN'
-                        ? 'Company Binary Root'
-                        : 'Pending Admin Placement'}
+                          ? 'Company Binary Root'
+                          : 'Pending Admin Placement'}
                     </span>
                   </div>
 
@@ -1607,8 +1727,8 @@ function DashboardContent() {
                         {binaryTree?.node?.isPlaced
                           ? 'Placed in Binary Tree'
                           : user?.role === 'SUPER_ADMIN'
-                          ? 'Root Node (Top of Tree)'
-                          : 'Not Yet Placed in Binary Tree'}
+                            ? 'Root Node (Top of Tree)'
+                            : 'Not Yet Placed in Binary Tree'}
                       </div>
                       <div className="text-[11px] text-slate-500 mt-0.5">
                         Leg: <span className="font-semibold text-[#165DAD]">{binaryTree?.node?.parent?.leg || (user?.role === 'SUPER_ADMIN' ? 'Root' : 'Unassigned')}</span>
@@ -1621,15 +1741,15 @@ function DashboardContent() {
                         {binaryTree?.node?.parent
                           ? binaryTree.node.parent.fullName
                           : user?.role === 'SUPER_ADMIN'
-                          ? 'None (Company Root)'
-                          : 'Awaiting Placement'}
+                            ? 'None (Company Root)'
+                            : 'Awaiting Placement'}
                       </div>
                       <div className="text-[11px] font-mono text-[#165DAD] mt-0.5">
                         {binaryTree?.node?.parent
                           ? binaryTree.node.parent.memberId
                           : user?.role === 'SUPER_ADMIN'
-                          ? 'Top-level origin node'
-                          : 'No parent assigned yet'}
+                            ? 'Top-level origin node'
+                            : 'No parent assigned yet'}
                       </div>
                     </div>
 
@@ -1722,9 +1842,8 @@ function DashboardContent() {
                             <button
                               type="button"
                               onClick={() => handleInspectBinarySubtree(crumb.memberId, crumb.fullName, idx === 0)}
-                              className={`font-medium hover:underline ${
-                                idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
-                              }`}
+                              className={`font-medium hover:underline ${idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
+                                }`}
                             >
                               {crumb.fullName} ({crumb.memberId})
                             </button>
@@ -2174,13 +2293,12 @@ function DashboardContent() {
                               <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">{v.issuedReason}</td>
                               <td className="py-3 px-4">
                                 <span
-                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                                    v.status === 'ACTIVE'
-                                      ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                                      : v.status === 'PARTIALLY_REDEEMED'
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${v.status === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                    : v.status === 'PARTIALLY_REDEEMED'
                                       ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                                       : 'bg-slate-100 text-slate-500 border-slate-200'
-                                  }`}
+                                    }`}
                                 >
                                   {v.status}
                                 </span>
@@ -2235,13 +2353,12 @@ function DashboardContent() {
                               </td>
                               <td className="py-3 px-4 font-semibold">
                                 <span
-                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                                    vt.transactionType === 'REDEMPTION'
-                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                      : vt.transactionType === 'REVERSAL'
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${vt.transactionType === 'REDEMPTION'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : vt.transactionType === 'REVERSAL'
                                       ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
                                       : 'bg-blue-50 text-[#165DAD] border-blue-200'
-                                  }`}
+                                    }`}
                                 >
                                   {vt.transactionType}
                                 </span>
@@ -2332,11 +2449,10 @@ function DashboardContent() {
                                 </td>
                                 <td className="py-3 px-4">
                                   <span
-                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                                      isCancelled
-                                        ? 'bg-red-50 text-[#DC2626] border-red-200'
-                                        : 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                                    }`}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${isCancelled
+                                      ? 'bg-red-50 text-[#DC2626] border-red-200'
+                                      : 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                      }`}
                                   >
                                     {b.bookingStatus}
                                   </span>
@@ -2514,8 +2630,8 @@ function DashboardContent() {
                             {user.isFullQualified
                               ? 'EV ULTRA Qualified (Simulated)'
                               : user.currentPackage === 'BASIC'
-                              ? 'EV PRO Activated (Simulated)'
-                              : 'EV GO Starter Account'}
+                                ? 'EV PRO Activated (Simulated)'
+                                : 'EV GO Starter Account'}
                           </span>
                         </div>
                       </div>
@@ -2919,9 +3035,8 @@ function DashboardContent() {
       >
         <button
           onClick={() => setActiveTab('overview')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${
-            activeTab === 'overview' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
-          }`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'overview' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
           <Home className={`w-5 h-5 mb-0.5 ${activeTab === 'overview' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
           <span>Home</span>
@@ -2929,9 +3044,8 @@ function DashboardContent() {
 
         <button
           onClick={() => setActiveTab('binary')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${
-            activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
-          }`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
           <GitBranch className={`w-5 h-5 mb-0.5 ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
           <span>Earnings</span>
@@ -2939,9 +3053,8 @@ function DashboardContent() {
 
         <button
           onClick={() => setActiveTab('wallets')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${
-            activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
-          }`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
           <Wallet className={`w-5 h-5 mb-0.5 ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
           <span>Wallet</span>
@@ -2949,9 +3062,8 @@ function DashboardContent() {
 
         <button
           onClick={() => setActiveTab('bookings')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${
-            activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
-          }`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
           <Bike className={`w-5 h-5 mb-0.5 ${activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
           <span>Booking / Products</span>
@@ -3019,7 +3131,7 @@ function DashboardContent() {
                   className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
                   </svg>
                   <span>WhatsApp</span>
                 </a>
@@ -3057,7 +3169,7 @@ function DashboardContent() {
                   className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
                   </svg>
                   <span>WhatsApp</span>
                 </a>
@@ -3094,8 +3206,8 @@ function DashboardContent() {
                   {selectedRequestType === 'BASIC_ACTIVATION'
                     ? 'Book EV PRO Tier (₹3,000)'
                     : selectedRequestType === 'FULL_ACTIVATION'
-                    ? 'Book EV ULTRA Tier (₹33,000)'
-                    : 'Upgrade to EV ULTRA Tier (₹30,000)'}
+                      ? 'Book EV ULTRA Tier (₹33,000)'
+                      : 'Upgrade to EV ULTRA Tier (₹30,000)'}
                 </h3>
               </div>
               <button
@@ -3115,8 +3227,8 @@ function DashboardContent() {
                   {selectedRequestType === 'BASIC_ACTIVATION'
                     ? '₹3,000'
                     : selectedRequestType === 'FULL_ACTIVATION'
-                    ? '₹33,000'
-                    : '₹30,000'}
+                      ? '₹33,000'
+                      : '₹30,000'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -3129,43 +3241,142 @@ function DashboardContent() {
             {/* Payment Method Selector */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-[#253247]">Select Payment Mode</label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('UPI')}
-                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                    paymentMethod === 'UPI'
-                      ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <QrCode className="w-4 h-4 text-[#165DAD]" />
-                    <span>UPI Transfer (QR / VPA)</span>
-                  </div>
-                  {paymentMethod === 'UPI' && <Check className="w-4 h-4" />}
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                {(paymentMethods?.gateways && paymentMethods.gateways.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('GATEWAY')}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      paymentMethod === 'GATEWAY'
+                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-[#165DAD]" />
+                      <div>
+                        <div className="font-semibold">Online Gateway</div>
+                        <div className="text-[10px] text-slate-400">Razorpay / Cards / UPI</div>
+                      </div>
+                    </div>
+                    {paymentMethod === 'GATEWAY' && <Check className="w-4 h-4 text-[#165DAD]" />}
+                  </button>
+                )}
+
+                {(paymentMethods ? paymentMethods.upi.isEnabled : paymentConfig?.isConfigured) && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('UPI')}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      paymentMethod === 'UPI'
+                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-4 h-4 text-[#165DAD]" />
+                      <div>
+                        <div className="font-semibold">UPI Transfer</div>
+                        <div className="text-[10px] text-slate-400">QR / Manual UTR</div>
+                      </div>
+                    </div>
+                    {paymentMethod === 'UPI' && <Check className="w-4 h-4 text-[#165DAD]" />}
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('SIMULATED')}
-                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                    paymentMethod === 'SIMULATED'
-                      ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
+                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${paymentMethod === 'SIMULATED'
+                    ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
                 >
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-[#165DAD]" />
-                    <span>Portal Simulation Clearance</span>
+                    <div>
+                      <div className="font-semibold">Simulation</div>
+                      <div className="text-[10px] text-slate-400">Portal Test Mode</div>
+                    </div>
                   </div>
-                  {paymentMethod === 'SIMULATED' && <Check className="w-4 h-4" />}
+                  {paymentMethod === 'SIMULATED' && <Check className="w-4 h-4 text-[#165DAD]" />}
                 </button>
               </div>
+
+              {/* Notice if neither UPI nor Gateway is available */}
+              {!(paymentMethods?.gateways && paymentMethods.gateways.length > 0) &&
+                !(paymentMethods ? (paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured) : paymentConfig?.isConfigured) && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Online booking payments are currently undergoing maintenance. Please contact support or use portal simulation clearance.</span>
+                  </div>
+                )}
             </div>
 
-            {/* UPI Payment Instructions & Reference Entry */}
-            {paymentMethod === 'UPI' ? (
+            {/* Payment Method Details */}
+            {paymentMethod === 'GATEWAY' ? (
+              <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-[#165DAD]" />
+                    <span className="font-bold text-[#253247]">Razorpay Secure Checkout</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-[#165DAD] border border-blue-200">
+                    {paymentMethods?.gateways?.[0]?.isSandbox ? 'Sandbox Mode' : 'Production'}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-white rounded-lg border border-blue-100 space-y-1.5">
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span>Payable Amount:</span>
+                    <strong className="text-base font-bold text-[#165DAD]">
+                      {selectedRequestType === 'BASIC_ACTIVATION'
+                        ? '₹3,000'
+                        : selectedRequestType === 'FULL_ACTIVATION'
+                        ? '₹33,000'
+                        : '₹30,000'}
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Seamless online payment via Cards, UPI, NetBanking, and Wallets through Razorpay.
+                  </p>
+                </div>
+
+                {gatewayOrder ? (
+                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-emerald-800 text-xs">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      <span>Order Created Successfully</span>
+                    </div>
+                    <div className="text-[11px] text-emerald-700 font-mono">
+                      Order ID: <strong>{gatewayOrder.orderId}</strong>
+                    </div>
+                    <p className="text-[10px] text-emerald-600">
+                      Click below to complete authorization and submit your booking request for audit reconciliation.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleInitiateGatewayPayment}
+                    disabled={isProcessingGateway}
+                    className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>
+                      {isProcessingGateway ? 'Initializing Secure Order...' : 'Pay Online via Razorpay'}
+                    </span>
+                  </button>
+                )}
+
+                <div className="p-2.5 rounded-lg bg-slate-100/80 border border-slate-200 text-[10px] text-slate-500 space-y-0.5">
+                  <span className="font-bold text-slate-600">Compliance & Security Notice:</span>
+                  <p>
+                    All gateway payments are processed with server-side HMAC-SHA256 signature validation and isolated from MLM binary matching calculations per SIMULATION_ONLY rules.
+                  </p>
+                </div>
+              </div>
+            ) : paymentMethod === 'UPI' ? (
               paymentConfig?.isConfigured && paymentConfig.merchantUpiVpa ? (
                 <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4">
                   <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -3211,8 +3422,8 @@ function DashboardContent() {
                           {selectedRequestType === 'BASIC_ACTIVATION'
                             ? '₹3,000'
                             : selectedRequestType === 'FULL_ACTIVATION'
-                            ? '₹33,000'
-                            : '₹30,000'}
+                              ? '₹33,000'
+                              : '₹30,000'}
                         </strong>
                       </p>
                       <p className="text-[10px] text-slate-400">
@@ -3273,7 +3484,7 @@ function DashboardContent() {
               <button
                 type="button"
                 onClick={() => setPaymentModalOpen(false)}
-                disabled={upgrading}
+                disabled={upgrading || isProcessingGateway}
                 className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-medium"
               >
                 Cancel
@@ -3283,12 +3494,22 @@ function DashboardContent() {
                 onClick={handleConfirmPaymentRequest}
                 disabled={
                   upgrading ||
+                  isProcessingGateway ||
                   (paymentMethod === 'UPI' && (!paymentConfig?.isConfigured || !paymentUtr.trim()))
                 }
                 className="px-5 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{upgrading ? 'Submitting Clearance Request...' : 'Submit Booking Request'}</span>
+                {paymentMethod === 'GATEWAY' && !gatewayOrder ? (
+                  <>
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>{isProcessingGateway ? 'Initializing Gateway...' : 'Initiate Online Payment'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{upgrading ? 'Submitting Request...' : 'Submit Booking Request'}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

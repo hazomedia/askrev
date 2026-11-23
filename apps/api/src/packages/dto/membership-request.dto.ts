@@ -12,8 +12,8 @@ export class CreateMembershipRequestDto {
 
   @IsString()
   @IsOptional()
-  @Matches(/^([0-9]{12}|[A-Za-z0-9]{12,22})$/, {
-    message: 'Payment reference / UTR must be a 12-digit numeric or 12-22 alphanumeric transaction reference.',
+  @Matches(/^([0-9]{12}|[A-Za-z0-9_-]{8,36})$/, {
+    message: 'Payment reference / UTR must be a 12-digit numeric or 8-36 character transaction reference.',
   })
   paymentReference?: string;
 

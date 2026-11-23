@@ -291,9 +291,9 @@ export class PackagesService {
           where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
         });
 
-        if (!paymentConfig || !paymentConfig.isVerified || !paymentConfig.merchantUpiVpa) {
+        if (!paymentConfig || !paymentConfig.isVerified || !paymentConfig.merchantUpiVpa || paymentConfig.upiEnabled === false) {
           throw new BadRequestException(
-            'Merchant UPI payment is currently unavailable. Official company UPI VPA is pending administrator verification. Please use Portal Simulation Clearance or contact support.'
+            'Merchant UPI payment is currently disabled or pending administrator verification. Please select another payment method or contact support.'
           );
         }
         verifiedMerchantVpa = paymentConfig.merchantUpiVpa;

@@ -708,17 +708,62 @@ model RevokedToken {
 }
 
 model PaymentConfig {
-  id             String    @id @default(uuid())
-  configKey      String    @unique @default("DEFAULT_PAYMENT_CONFIG")
-  merchantUpiVpa String?
-  merchantName   String?   @default("ASKR EV Mobility")
-  isVerified     Boolean   @default(false)
-  verifiedAt     DateTime?
-  verifiedBy     String?
-  notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  configKey            String    @unique @default("DEFAULT_PAYMENT_CONFIG")
+  upiEnabled           Boolean   @default(true)
+  merchantUpiVpa       String?
+  merchantName         String?   @default("ASKR EV Mobility")
+  isVerified           Boolean   @default(false)
+  verifiedAt           DateTime?
+  verifiedBy           String?
+  manualReviewRequired Boolean   @default(true)
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
+
+model PaymentGatewayConfig {
+  id                  String    @id @default(uuid())
+  provider            String    @unique // 'RAZORPAY', 'CASHFREE', 'PHONEPE'
+  isEnabled           Boolean   @default(false)
+  isSandbox           Boolean   @default(true)
+  merchantId          String?   // Key ID / Merchant ID
+  encryptedSecretKey  String?   // AES-256-GCM encrypted
+  encryptedWebhookKey String?   // AES-256-GCM encrypted
+  webhookUrl          String?
+  webhookVerifiedAt   DateTime?
+  status              String    @default("CONFIGURATION_ONLY") // 'ACTIVE', 'CONFIGURATION_ONLY', 'DISABLED'
+  lastTestedAt        DateTime?
+  lastTestStatus      String?   // 'SUCCESS', 'FAILED'
+  lastTestMessage     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([provider])
+  @@index([isEnabled])
+}
+
+model PaymentGatewayLog {
+  id           String   @id @default(uuid())
+  provider     String   // 'RAZORPAY', 'CASHFREE', 'PHONEPE', 'MANUAL_UPI'
+  event        String   // 'ORDER_CREATED', 'PAYMENT_SUCCESS', 'PAYMENT_FAILED', 'WEBHOOK_RECEIVED', 'SIGNATURE_VERIFIED', 'TEST_CONNECTION'
+  orderId      String?
+  paymentId    String?
+  referenceId  String?
+  amountPaise  BigInt?
+  status       String   // 'SUCCESS', 'FAILED', 'PENDING'
+  errorMessage String?
+  rawPayload   Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  @@index([provider])
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
 
 
 

@@ -38,11 +38,13 @@ import {
   Sliders,
   QrCode,
   AlertCircle,
+  CreditCard,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession, fetchCurrentUserProfile } from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
 import { AdminSecuritySettings } from '../../components/admin/AdminSecuritySettings';
+import { AdminPaymentSettings } from '../../components/admin/AdminPaymentSettings';
 
 type AdminTab =
   | 'overview'
@@ -56,6 +58,7 @@ type AdminTab =
   | 'bookings'
   | 'reconciliation'
   | 'audit'
+  | 'payment-settings'
   | 'security';
 
 export default function AdminPage() {
@@ -166,8 +169,8 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (tabParam === 'security') {
-        setActiveTab('security');
+      if (tabParam === 'security' || tabParam === 'payment-settings') {
+        setActiveTab(tabParam as AdminTab);
       }
     }
     loadAllData();
@@ -645,6 +648,7 @@ export default function AdminPage() {
       badgeColor: 'bg-red-500 text-white',
     },
     { id: 'audit', label: 'Audit Trail', icon: FileText, count: auditTotal },
+    { id: 'payment-settings', label: 'Payment Settings', icon: CreditCard },
     { id: 'security', label: 'Settings → Security', icon: ShieldCheck },
   ];
 
@@ -2892,6 +2896,12 @@ export default function AdminPage() {
                     if (profile) setCurrentUser(profile);
                   }}
                 />
+              </div>
+            )}
+
+            {activeTab === 'payment-settings' && (
+              <div className="space-y-6">
+                <AdminPaymentSettings currentUser={currentUser} />
               </div>
             )}
           </main>
