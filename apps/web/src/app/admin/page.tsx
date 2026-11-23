@@ -39,16 +39,19 @@ import {
   QrCode,
   AlertCircle,
   CreditCard,
+  Sparkles,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession, fetchCurrentUserProfile } from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
+import { AdminBannerManagement } from '../../components/admin/AdminBannerManagement';
 import { AdminSecuritySettings } from '../../components/admin/AdminSecuritySettings';
 import { AdminPaymentSettings } from '../../components/admin/AdminPaymentSettings';
 import AskrLogo from '../../components/AskrLogo';
 
 type AdminTab =
   | 'overview'
+  | 'banners'
   | 'hero-slider'
   | 'products'
   | 'members'
@@ -170,7 +173,7 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (tabParam === 'security' || tabParam === 'payment-settings') {
+      if (tabParam && ['overview', 'banners', 'hero-slider', 'products', 'members', 'approvals', 'binary', 'finance', 'vouchers', 'bookings', 'reconciliation', 'audit', 'payment-settings', 'security'].includes(tabParam)) {
         setActiveTab(tabParam as AdminTab);
       }
     }
@@ -627,6 +630,7 @@ export default function AdminPage() {
 
   const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'banners', label: 'Banner Management', icon: Sparkles },
     { id: 'hero-slider', label: 'Hero Slider', icon: Sliders },
     { id: 'products', label: 'Product Catalog', icon: Package },
     { id: 'members', label: 'Members', icon: Users, count: membersTotal },
@@ -1153,6 +1157,13 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* TAB: BANNER MANAGEMENT */}
+            {activeTab === 'banners' && (
+              <div className="space-y-6">
+                <AdminBannerManagement />
               </div>
             )}
 

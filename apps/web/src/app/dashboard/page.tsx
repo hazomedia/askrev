@@ -51,8 +51,10 @@ import {
   Smartphone,
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
+import { fetchApi, getStoredUser, logoutSession, fetchActiveBanners, dismissPopupCampaign } from '../../lib/api';
 import AskrLogo from '../../components/AskrLogo';
+import DashboardTopBanner from '../../components/DashboardTopBanner';
+import WelcomePopupModal from '../../components/WelcomePopupModal';
 
 type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
 
@@ -77,6 +79,11 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // Top Banner & Welcome Popup States
+  const [topBanner, setTopBanner] = useState<any>(null);
+  const [popupCampaign, setPopupCampaign] = useState<any>(null);
+  const [welcomePopupOpen, setWelcomePopupOpen] = useState(false);
 
   // Withdrawal & Email Verification States
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
@@ -393,6 +400,7 @@ function DashboardContent() {
         requestsData,
         paymentConfigData,
         paymentMethodsData,
+        bannersData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -406,6 +414,7 @@ function DashboardContent() {
         fetchApi<any>('/packages/my-requests').catch(() => []),
         fetchApi<any>('/packages/payment-config').catch(() => null),
         fetchApi<any>('/payments/methods').catch(() => null),
+        fetchActiveBanners().catch(() => ({ topBanner: null, popupCampaign: null })),
       ]);
 
       setUser(profileData);
@@ -429,10 +438,58 @@ function DashboardContent() {
           setSelectedGatewayProvider(paymentMethodsData.gateways[0].provider);
         }
       }
+
+      // Handle Dashboard Banners and Welcome Popup
+      if (bannersData?.topBanner) {
+        setTopBanner(bannersData.topBanner);
+      }
+      if (bannersData?.popupCampaign) {
+        const campaign = bannersData.popupCampaign;
+        setPopupCampaign(campaign);
+
+        // Check client-side dismissal cache for frequency controls
+        const dismissedKey = 'askrev_popup_dismissed_' + campaign.id;
+        const localDismissed = typeof window !== 'undefined' ? localStorage.getItem(dismissedKey) : null;
+        const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+        let shouldDisplay = true;
+        if (localDismissed) {
+          if (campaign.frequency === 'ONCE_PER_CAMPAIGN') {
+            shouldDisplay = false;
+          } else if (campaign.frequency === 'ONCE_DAILY' && localDismissed === todayIST) {
+            shouldDisplay = false;
+          }
+        }
+
+        if (shouldDisplay) {
+          setWelcomePopupOpen(true);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDismissWelcomePopup = async () => {
+    if (!popupCampaign) return;
+    setWelcomePopupOpen(false);
+    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('askrev_popup_dismissed_' + popupCampaign.id, todayIST);
+    }
+    try {
+      await dismissPopupCampaign(popupCampaign.id);
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  const handleExploreWelcomePopup = async (destination?: string) => {
+    await handleDismissWelcomePopup();
+    if (destination && destination !== '/dashboard') {
+      router.push(destination);
     }
   };
 
@@ -979,26 +1036,57 @@ function DashboardContent() {
       {/* =========================================================================
           TOP HEADER
           Features official ASKR EV branding, navigation, and user controls
+          Mobile: Large centered full logo at maximum practical width
+          Desktop: Clean left-aligned branding with crumb & status badges
           ========================================================================= */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 pt-[env(safe-area-inset-top)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Left: Mobile trigger & ASKR EV Logo */}
-            <div className="flex items-center gap-3 sm:gap-4">
+          {/* Mobile Header: 3-column balanced layout with large centered logo */}
+          <div className="md:hidden flex items-center justify-between h-16 relative">
+            {/* Left: Mobile menu button (44px min touch target) */}
+            <div className="w-11 flex items-center justify-start shrink-0">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                className="p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors"
                 aria-label="Toggle navigation"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
+            </div>
 
+            {/* Center: Perfectly centered full horizontal logo at maximum practical width */}
+            <div className="flex-1 flex items-center justify-center px-1 overflow-hidden">
+              <AskrLogo
+                href="/dashboard"
+                size="md"
+                priority={true}
+                imgClassName="h-8 xs:h-9 sm:h-10 w-auto max-w-[200px] xs:max-w-[230px] sm:max-w-[260px] object-contain transition-all"
+              />
+            </div>
+
+            {/* Right: Logout button (44px min touch target matching left width for exact symmetry) */}
+            <div className="w-11 flex items-center justify-end shrink-0">
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-lg text-slate-500 hover:text-[#DC2626] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors"
+                title="Sign out of portal"
+                aria-label="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop Header: Clean left-aligned layout */}
+          <div className="hidden md:flex items-center justify-between h-16">
+            {/* Left: ASKR EV Logo + Member Dashboard crumb */}
+            <div className="flex items-center gap-3 sm:gap-4">
               <AskrLogo href="/dashboard" size="sm" />
 
-              <span className="text-slate-300 hidden sm:inline">/</span>
+              <span className="text-slate-300">/</span>
 
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-xs sm:text-sm text-[#253247] hidden sm:inline">Member Dashboard</span>
+                <span className="font-semibold text-xs sm:text-sm text-[#253247]">Member Dashboard</span>
               </div>
             </div>
 
@@ -1011,7 +1099,7 @@ function DashboardContent() {
                       ? 'https://admin.askrevdrive.com/admin'
                       : '/admin'
                   }
-                  className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-full hover:bg-indigo-100 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-full hover:bg-indigo-100 transition-colors"
                   title="Switch to Admin Console"
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
@@ -1020,7 +1108,7 @@ function DashboardContent() {
               )}
 
               <span
-                className={`text-xs font-semibold px-2.5 py-1 rounded-full border hidden sm:inline-flex ${getPackageBadge(
+                className={`text-xs font-semibold px-2.5 py-1 rounded-full border inline-flex ${getPackageBadge(
                   user.currentPackage
                 )}`}
               >
@@ -1028,7 +1116,7 @@ function DashboardContent() {
               </span>
 
               {user.isFullQualified && (
-                <span className="hidden sm:inline-flex items-center gap-1 text-xs font-medium text-[#15803D] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#15803D] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                   <Check className="w-3.5 h-3.5" />
                   <span>Qualified</span>
                 </span>
@@ -1042,7 +1130,7 @@ function DashboardContent() {
                 title="Sign out of portal"
               >
                 <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Logout</span>
+                <span>Logout</span>
               </button>
             </div>
           </div>
@@ -1264,6 +1352,9 @@ function DashboardContent() {
             {/* TAB 1: OVERVIEW */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {/* Responsive Dashboard Top Promotional Banner */}
+                <DashboardTopBanner banner={topBanner} />
+
                 {/* Dashboard-Only PWA Installation Banner (Mobile Only, Hidden if already installed) */}
                 {!isStandalone && showInstallBanner && (
                   <div className="md:hidden bg-gradient-to-r from-[#0A1128] via-[#0C2348] to-[#165DAD] text-white p-3.5 rounded-2xl shadow-lg border border-blue-400/20 relative overflow-hidden">
@@ -4941,6 +5032,14 @@ function DashboardContent() {
           </div>
         </div>
       )}
+
+      {/* ADMIN-CONTROLLED WELCOME POPUP MODAL */}
+      <WelcomePopupModal
+        campaign={popupCampaign}
+        isOpen={welcomePopupOpen}
+        onClose={handleDismissWelcomePopup}
+        onExplore={handleExploreWelcomePopup}
+      />
     </div>
   );
 }
