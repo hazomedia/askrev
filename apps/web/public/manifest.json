@@ -1,11 +1,12 @@
 {
-  "name": "ASKR EV — Electric Mobility Platform",
+  "name": "ASKR EV Member Portal",
   "short_name": "ASKR EV",
-  "description": "Official corporate portal of ASKR EV. Next-generation electric mobility featuring Electric Bikes, Electric Cycles, and Electric Jeeps.",
-  "start_url": "/",
+  "description": "Official ASKR EV Member Portal & Electric Mobility Platform",
+  "start_url": "/dashboard",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0C2348",
+  "background_color": "#0A1128",
+  "theme_color": "#0A1128",
   "orientation": "portrait-primary",
   "icons": [
     {

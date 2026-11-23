@@ -1,10 +1,21 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EncryptionService } from '../common/encryption.service';
 import { paiseToRupees, JournalAccount, UserRole } from '@askrev/shared';
+import { RequestWithdrawalDto, PayoutDestinationType } from './dto/withdrawal.dto';
 
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly encryptionService?: EncryptionService
+  ) { }
 
   /**
    * Get earnings wallet overview with all 4 authoritative balances
@@ -374,9 +385,9 @@ export class WalletService {
   }
 
   /**
-   * Request withdrawal - Enforces server-side email verification and live payouts status
+   * Request withdrawal - Enforces server-side email verification, payout destination validation, and live payouts status
    */
-  async requestWithdrawal(userId: string) {
+  async requestWithdrawal(userId: string, dto?: RequestWithdrawalDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { wallet: true },
@@ -393,11 +404,116 @@ export class WalletService {
       );
     }
 
+    let destinationMasked = '';
+    let encryptedPayoutDetails: any = null;
+
+    if (dto) {
+      if (dto.destinationType === PayoutDestinationType.BANK_ACCOUNT) {
+        if (!dto.accountHolderName?.trim() || !dto.bankName?.trim() || !dto.accountNumber?.trim() || !dto.ifscCode?.trim()) {
+          throw new BadRequestException('All Bank Account fields (Account Holder Name, Bank Name, Account Number, IFSC) are mandatory.');
+        }
+        if (dto.confirmAccountNumber && dto.confirmAccountNumber.trim() !== dto.accountNumber.trim()) {
+          throw new BadRequestException('Account number and confirmation account number do not match.');
+        }
+        const cleanAcc = dto.accountNumber.trim();
+        if (!/^\d{9,18}$/.test(cleanAcc)) {
+          throw new BadRequestException('Invalid account number. Must contain between 9 and 18 numeric digits.');
+        }
+        const cleanIfsc = dto.ifscCode.trim().toUpperCase();
+        if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
+          throw new BadRequestException('Invalid IFSC code format (e.g. HDFC0001234).');
+        }
+        // Fail closed: No plaintext fallback allowed
+        if (!this.encryptionService) {
+          throw new ServiceUnavailableException(
+            'Secure encryption service is unavailable. Payout credential processing failed closed.'
+          );
+        }
+
+        let encryptedAccountNumber: string;
+        try {
+          encryptedAccountNumber = this.encryptionService.encrypt(cleanAcc);
+          if (!encryptedAccountNumber || encryptedAccountNumber === cleanAcc) {
+            throw new Error('Encryption returned invalid or unencrypted result');
+          }
+        } catch {
+          throw new ServiceUnavailableException(
+            'Secure encryption service failed. Payout credential processing failed closed.'
+          );
+        }
+
+        destinationMasked = `Bank: ${dto.bankName.trim()} (A/C: ••••${cleanAcc.slice(-4)}, IFSC: ${cleanIfsc})`;
+        encryptedPayoutDetails = {
+          type: 'BANK_ACCOUNT',
+          accountHolderName: dto.accountHolderName.trim(),
+          bankName: dto.bankName.trim(),
+          encryptedAccountNumber,
+          maskedAccountNumber: `••••${cleanAcc.slice(-4)}`,
+          ifscCode: cleanIfsc,
+        };
+      } else if (dto.destinationType === PayoutDestinationType.UPI) {
+        if (!dto.upiId?.trim() || !dto.accountHolderName?.trim()) {
+          throw new BadRequestException('Beneficiary UPI ID and Account Holder Name are required for UPI withdrawal.');
+        }
+        const cleanUpi = dto.upiId.trim();
+        if (!/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(cleanUpi)) {
+          throw new BadRequestException('Invalid UPI ID format (e.g. member@okhdfcbank).');
+        }
+
+        // Fail closed: No plaintext fallback allowed
+        if (!this.encryptionService) {
+          throw new ServiceUnavailableException(
+            'Secure encryption service is unavailable. Payout credential processing failed closed.'
+          );
+        }
+
+        let encryptedUpiId: string;
+        try {
+          encryptedUpiId = this.encryptionService.encrypt(cleanUpi);
+          if (!encryptedUpiId || encryptedUpiId === cleanUpi) {
+            throw new Error('Encryption returned invalid or unencrypted result');
+          }
+        } catch {
+          throw new ServiceUnavailableException(
+            'Secure encryption service failed. Payout credential processing failed closed.'
+          );
+        }
+
+        const parts = cleanUpi.split('@');
+        const maskedUpiHandle = parts[0].length > 3 ? `${parts[0].slice(0, 2)}•••${parts[0].slice(-1)}@${parts[1]}` : `•••@${parts[1]}`;
+        destinationMasked = `UPI: ${maskedUpiHandle} (${dto.accountHolderName.trim()})`;
+        encryptedPayoutDetails = {
+          type: 'UPI',
+          accountHolderName: dto.accountHolderName.trim(),
+          encryptedUpiId,
+          maskedUpiId: maskedUpiHandle,
+        };
+      }
+    }
+
     const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
     const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
 
     // Strictly enforce disabled live payouts
     if (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY') {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            actorId: userId,
+            action: 'WITHDRAWAL_VALIDATION_SIMULATION_BLOCKED',
+            entityType: 'User',
+            entityId: userId,
+            metadata: {
+              destinationType: dto?.destinationType || 'UNSPECIFIED',
+              destinationMasked: destinationMasked || undefined,
+              complianceMode,
+              livePayoutsEnabled: false,
+              stored: false,
+            },
+          },
+        });
+      } catch { }
+
       return {
         success: false,
         restricted: true,
@@ -405,8 +521,9 @@ export class WalletService {
         complianceMode,
         minWithdrawalINR: 1000,
         availableBalanceINR: paiseToRupees(user.wallet?.availableEarningsPaise || 0n),
+        destinationMasked: destinationMasked || undefined,
         message:
-          'Withdrawals are restricted in compliance simulation mode. Live payouts and banking transfers are non-operational until supervisory admin clearance.',
+          'Withdrawals are restricted in compliance simulation mode. Payout destination details were validated, but no live payout request or credentials were submitted or stored.',
       };
     }
 
@@ -417,9 +534,27 @@ export class WalletService {
       throw new BadRequestException('Minimum withdrawal threshold is ₹1,000.');
     }
 
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'WITHDRAWAL_REQUEST_SUBMITTED',
+          entityType: 'User',
+          entityId: userId,
+          metadata: {
+            destinationType: dto?.destinationType || 'UNSPECIFIED',
+            destinationMasked: destinationMasked || undefined,
+            complianceMode,
+            livePayoutsEnabled: true,
+          },
+        },
+      });
+    } catch { }
+
     return {
       success: true,
       restricted: false,
+      destinationMasked,
       message: 'Withdrawal request logged successfully.',
     };
   }

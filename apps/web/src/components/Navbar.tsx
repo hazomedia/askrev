@@ -183,7 +183,7 @@ export default function Navbar() {
                 </Link>
 
                 <Link
-                  href="/book"
+                  href={currentUser ? '/dashboard?tab=booking' : '/auth/login?redirect=/book'}
                   className="px-5 py-2.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(38,125,255,0.4)] hover:shadow-[0_0_25px_rgba(38,125,255,0.6)] flex items-center gap-1.5"
                 >
                   <span>Book Now</span>
@@ -303,7 +303,7 @@ export default function Navbar() {
                   Sign In / Member Portal
                 </Link>
                 <Link
-                  href="/book"
+                  href={currentUser ? '/dashboard?tab=booking' : '/auth/login?redirect=/book'}
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full py-2.5 rounded-full bg-[#267DFF] text-center text-xs font-bold text-white shadow-md flex items-center justify-center gap-1.5"
                 >

@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WalletService } from './wallet.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 
 describe('WalletService', () => {
   let service: WalletService;
   let mockPrisma: any;
+  let mockEncryptionService: any;
 
   beforeEach(() => {
     mockPrisma = {
@@ -24,8 +25,17 @@ describe('WalletService', () => {
       qualificationEvent: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({}),
+      },
     };
-    service = new WalletService(mockPrisma);
+    mockEncryptionService = {
+      encrypt: vi.fn((val: string) => `iv:tag:enc_${val}`),
+      decrypt: vi.fn(),
+      mask: vi.fn(),
+      isMasked: vi.fn(),
+    };
+    service = new WalletService(mockPrisma, mockEncryptionService);
   });
 
   describe('getWalletOverview - Authoritative Breakdown & Direct Summation', () => {
@@ -260,6 +270,142 @@ describe('WalletService', () => {
       await expect(service.requestWithdrawal('non-existent')).rejects.toThrow(
         NotFoundException
       );
+    });
+
+    it('validates bank account matching confirmation and IFSC format', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-verified',
+        email: 'verified@askrev.com',
+        isEmailVerified: true,
+        wallet: { availableEarningsPaise: 500000n },
+      });
+
+      // Mismatched confirmation
+      await expect(
+        service.requestWithdrawal('user-verified', {
+          destinationType: 'BANK_ACCOUNT' as any,
+          accountHolderName: 'Test Holder',
+          bankName: 'HDFC Bank',
+          accountNumber: '123456789012',
+          confirmAccountNumber: '123456789099',
+          ifscCode: 'HDFC0001234',
+        })
+      ).rejects.toThrow('Account number and confirmation account number do not match.');
+
+      // Invalid IFSC
+      await expect(
+        service.requestWithdrawal('user-verified', {
+          destinationType: 'BANK_ACCOUNT' as any,
+          accountHolderName: 'Test Holder',
+          bankName: 'HDFC Bank',
+          accountNumber: '123456789012',
+          confirmAccountNumber: '123456789012',
+          ifscCode: 'INVALID_IFSC',
+        })
+      ).rejects.toThrow('Invalid IFSC code format');
+    });
+
+    it('validates UPI ID format and returns masked destination safely in simulation mode', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-verified',
+        email: 'verified@askrev.com',
+        isEmailVerified: true,
+        wallet: { availableEarningsPaise: 500000n },
+      });
+      mockPrisma.auditLog.create.mockResolvedValue({});
+
+      // Invalid UPI
+      await expect(
+        service.requestWithdrawal('user-verified', {
+          destinationType: 'UPI' as any,
+          accountHolderName: 'Test Holder',
+          upiId: 'not_an_upi_id',
+        })
+      ).rejects.toThrow('Invalid UPI ID format');
+
+      // Valid UPI
+      const result = await service.requestWithdrawal('user-verified', {
+        destinationType: 'UPI' as any,
+        accountHolderName: 'Test Holder',
+        upiId: 'testmember@okhdfcbank',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.restricted).toBe(true);
+      expect(result.destinationMasked).toContain('UPI:');
+      expect(result.destinationMasked).toContain('@okhdfcbank');
+      expect(result.message).toContain('compliance simulation mode');
+      expect(result.message).toContain('no live payout request or credentials were submitted or stored');
+
+      // Truthful audit log action and stored: false
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'WITHDRAWAL_VALIDATION_SIMULATION_BLOCKED',
+          metadata: expect.objectContaining({
+            stored: false,
+            livePayoutsEnabled: false,
+          }),
+        }),
+      });
+    });
+
+    it('FAILS CLOSED when encryption service is missing or encryption fails', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-verified',
+        email: 'verified@askrev.com',
+        isEmailVerified: true,
+        wallet: { availableEarningsPaise: 500000n },
+      });
+
+      // Service instance with NO encryption service provided
+      const unencryptedService = new WalletService(mockPrisma);
+
+      await expect(
+        unencryptedService.requestWithdrawal('user-verified', {
+          destinationType: 'BANK_ACCOUNT' as any,
+          accountHolderName: 'Test Holder',
+          bankName: 'HDFC Bank',
+          accountNumber: '123456789012',
+          confirmAccountNumber: '123456789012',
+          ifscCode: 'HDFC0001234',
+        })
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      await expect(
+        unencryptedService.requestWithdrawal('user-verified', {
+          destinationType: 'UPI' as any,
+          accountHolderName: 'Test Holder',
+          upiId: 'testmember@okhdfcbank',
+        })
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('NEVER logs sensitive plaintext bank account or UPI details in audit log', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-verified',
+        email: 'verified@askrev.com',
+        isEmailVerified: true,
+        wallet: { availableEarningsPaise: 500000n },
+      });
+      mockPrisma.auditLog.create.mockResolvedValue({});
+
+      await service.requestWithdrawal('user-verified', {
+        destinationType: 'BANK_ACCOUNT' as any,
+        accountHolderName: 'Secret Holder',
+        bankName: 'HDFC Bank',
+        accountNumber: '987654321098',
+        confirmAccountNumber: '987654321098',
+        ifscCode: 'HDFC0001234',
+      });
+
+      const auditCall = mockPrisma.auditLog.create.mock.calls[0][0];
+      const metadata = auditCall.data.metadata;
+
+      // Ensure no raw account number or secret holder leaked in metadata
+      expect(JSON.stringify(metadata)).not.toContain('987654321098');
+      expect(metadata.destinationMasked).toContain('••••1098');
+      expect(auditCall.data.action).toBe('WITHDRAWAL_VALIDATION_SIMULATION_BLOCKED');
+      expect(auditCall.data.action).not.toBe('WITHDRAWAL_REQUEST_SUBMITTED');
     });
   });
 });

@@ -45,6 +45,10 @@ import {
   Layers,
   Filter,
   ArrowDownToLine,
+  MessageCircle,
+  ArrowLeft,
+  Download,
+  Smartphone,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
@@ -82,6 +86,22 @@ function DashboardContent() {
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [sendingWithdrawVerify, setSendingWithdrawVerify] = useState(false);
   const [withdrawVerifyNotice, setWithdrawVerifyNotice] = useState<string | null>(null);
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(1000);
+  const [withdrawPayoutType, setWithdrawPayoutType] = useState<'BANK_ACCOUNT' | 'UPI'>('BANK_ACCOUNT');
+  const [withdrawAccountHolder, setWithdrawAccountHolder] = useState('');
+  const [withdrawBankName, setWithdrawBankName] = useState('');
+  const [withdrawAccountNumber, setWithdrawAccountNumber] = useState('');
+  const [withdrawConfirmAccountNumber, setWithdrawConfirmAccountNumber] = useState('');
+  const [withdrawIfscCode, setWithdrawIfscCode] = useState('');
+  const [withdrawUpiId, setWithdrawUpiId] = useState('');
+  const [withdrawValidationError, setWithdrawValidationError] = useState<string | null>(null);
+
+  // Dashboard-Only Mobile PWA Installation States
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   // Team Filter State
   const [teamFilter, setTeamFilter] = useState<'ALL' | 'LEFT' | 'RIGHT'>('ALL');
@@ -262,11 +282,100 @@ function DashboardContent() {
   useEffect(() => {
     const stored = getStoredUser();
     if (!stored) {
-      router.push('/auth/login');
+      router.push('/auth/login?redirect=/dashboard');
       return;
     }
     loadData();
+
+    // 1. Detect if running standalone mode (already installed PWA)
+    const checkStandalone = () => {
+      if (typeof window === 'undefined') return false;
+      return (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as any).standalone === true ||
+        document.referrer.includes('android-app://')
+      );
+    };
+
+    const standaloneActive = checkStandalone();
+    setIsStandalone(standaloneActive);
+
+    // 2. Detect iOS platform
+    const isAppleDevice =
+      typeof navigator !== 'undefined' &&
+      /iPad|iPhone|iPod/.test(navigator.userAgent) &&
+      !(window as any).MSStream;
+    setIsIOS(isAppleDevice);
+
+    // 3. Register Minimal Service Worker (scoped strictly to '/', never caches sensitive API/auth)
+    if (
+      typeof window !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      (window.location.protocol === 'https:' || window.location.hostname === 'localhost')
+    ) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    }
+
+    // If already running in standalone mode, do not register install prompts
+    if (standaloneActive) {
+      return;
+    }
+
+    // 4. Android / Chrome beforeinstallprompt event handling
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault(); // Stop automatic mini-infobar prompt
+      setDeferredPrompt(e);
+      const isDismissed = sessionStorage.getItem('askrev_pwa_dismissed') === 'true';
+      if (!isDismissed) {
+        setShowInstallBanner(true);
+      }
+    };
+
+    // 5. App installed event handler
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setShowInstallBanner(false);
+      setIsStandalone(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // On iOS Safari where beforeinstallprompt does not fire:
+    if (isAppleDevice && !standaloneActive) {
+      const isDismissed = sessionStorage.getItem('askrev_pwa_dismissed') === 'true';
+      if (!isDismissed) {
+        setShowInstallBanner(true);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      try {
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setShowInstallBanner(false);
+        }
+      } catch {}
+      setDeferredPrompt(null);
+    } else {
+      setShowInstallGuideModal(true);
+    }
+  };
+
+  const handleDismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    try {
+      sessionStorage.setItem('askrev_pwa_dismissed', 'true');
+    } catch {}
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -349,11 +458,29 @@ function DashboardContent() {
     }
   };
 
+  const formatISTDateTime = (dateStr: string | Date | null | undefined) => {
+    if (!dateStr) return '—';
+    try {
+      const d = new Date(dateStr);
+      return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }).format(d);
+    } catch {
+      return String(dateStr);
+    }
+  };
+
   const getReferralLink = (leg?: 'LEFT' | 'RIGHT') => {
     if (!user || !user.memberId) return '';
     if (typeof window === 'undefined') return '';
     const base = `${window.location.origin}/auth/register?ref=${user.memberId}`;
-    return leg ? `${base}&side=${leg}` : base;
+    return leg ? `${base}&position=${leg}&side=${leg}` : base;
   };
 
   const handleCopyLink = (leg?: 'LEFT' | 'RIGHT') => {
@@ -463,8 +590,8 @@ function DashboardContent() {
         selectedRequestType === 'BASIC_ACTIVATION'
           ? 300000
           : selectedRequestType === 'FULL_ACTIVATION'
-          ? 3300000
-          : 3000000;
+            ? 3300000
+            : 3000000;
 
       const orderRes = await fetchApi<any>('/payments/create-order', {
         method: 'POST',
@@ -535,18 +662,18 @@ function DashboardContent() {
             mode === 'UPI'
               ? refNumber?.trim().toUpperCase() || 'UPI-REF'
               : mode === 'GATEWAY'
-              ? refNumber?.trim() || gatewayOrder?.orderId || 'GW-REF'
-              : 'SIMULATED-CLEARANCE',
+                ? refNumber?.trim() || gatewayOrder?.orderId || 'GW-REF'
+                : 'SIMULATED-CLEARANCE',
           metadata: {
             compliance: 'SIMULATION_ONLY',
             source: 'member_dashboard_booking',
             ...(mode === 'UPI' && activeUpiVpa ? { merchantUpiVpa: activeUpiVpa } : {}),
             ...(mode === 'GATEWAY'
               ? {
-                  provider: selectedGatewayProvider,
-                  orderId: gatewayOrder?.orderId || refNumber,
-                  amountPaise: gatewayOrder?.amountPaise,
-                }
+                provider: selectedGatewayProvider,
+                orderId: gatewayOrder?.orderId || refNumber,
+                amountPaise: gatewayOrder?.amountPaise,
+              }
               : {}),
           },
         }),
@@ -635,6 +762,10 @@ function DashboardContent() {
   const handleInitiateWithdrawal = () => {
     setWithdrawError(null);
     setWithdrawResult(null);
+    setWithdrawValidationError(null);
+    if (user?.fullName && !withdrawAccountHolder) {
+      setWithdrawAccountHolder(user.fullName);
+    }
     const isVerified = Boolean(walletOverview?.isEmailVerified ?? user?.isEmailVerified);
     if (!isVerified) {
       setEmailVerifyModalOpen(true);
@@ -658,14 +789,85 @@ function DashboardContent() {
     }
   };
 
-  const handleExecuteWithdrawal = async (amountPaise?: number) => {
-    setWithdrawing(true);
+  const handleExecuteWithdrawalWithDetails = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setWithdrawValidationError(null);
     setWithdrawError(null);
     setWithdrawResult(null);
+
+    const availablePaise = Math.round(Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) * 100);
+    const amountNum = Number(withdrawAmount);
+
+    if (isNaN(amountNum) || amountNum < 1000) {
+      setWithdrawValidationError('Minimum withdrawal amount is ₹1,000.');
+      return;
+    }
+
+    const requestedPaise = Math.round(amountNum * 100);
+    if (requestedPaise > availablePaise) {
+      setWithdrawValidationError(`Withdrawal amount (₹${amountNum.toLocaleString('en-IN')}) cannot exceed your available earnings balance (₹${(availablePaise / 100).toLocaleString('en-IN')}).`);
+      return;
+    }
+
+    if (withdrawPayoutType === 'BANK_ACCOUNT') {
+      if (!withdrawAccountHolder.trim()) {
+        setWithdrawValidationError('Account holder name is required.');
+        return;
+      }
+      if (!withdrawBankName.trim()) {
+        setWithdrawValidationError('Bank name is required.');
+        return;
+      }
+      const acc = withdrawAccountNumber.trim();
+      const confirmAcc = withdrawConfirmAccountNumber.trim();
+      if (!acc) {
+        setWithdrawValidationError('Bank account number is required.');
+        return;
+      }
+      if (acc !== confirmAcc) {
+        setWithdrawValidationError('Account numbers do not match. Please verify carefully.');
+        return;
+      }
+      if (!/^\d{9,18}$/.test(acc)) {
+        setWithdrawValidationError('Account number must be between 9 and 18 numeric digits.');
+        return;
+      }
+      const ifsc = withdrawIfscCode.trim().toUpperCase();
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
+        setWithdrawValidationError('Invalid IFSC format. Must be 4 letters, 0, followed by 6 alphanumeric characters (e.g. HDFC0001234).');
+        return;
+      }
+    } else {
+      if (!withdrawAccountHolder.trim()) {
+        setWithdrawValidationError('Account / VPA holder name is required.');
+        return;
+      }
+      const upi = withdrawUpiId.trim();
+      if (!upi || !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(upi)) {
+        setWithdrawValidationError('Invalid UPI ID format (e.g. name@okhdfcbank or 9876543210@paytm).');
+        return;
+      }
+    }
+
+    setWithdrawing(true);
     try {
+      const payload: any = {
+        amountPaise: requestedPaise,
+        payoutType: withdrawPayoutType,
+        accountHolderName: withdrawAccountHolder.trim(),
+      };
+      if (withdrawPayoutType === 'BANK_ACCOUNT') {
+        payload.bankName = withdrawBankName.trim();
+        payload.accountNumber = withdrawAccountNumber.trim();
+        payload.confirmAccountNumber = withdrawConfirmAccountNumber.trim();
+        payload.ifscCode = withdrawIfscCode.trim().toUpperCase();
+      } else {
+        payload.upiId = withdrawUpiId.trim();
+      }
+
       const res = await fetchApi<any>('/wallet/request-withdrawal', {
         method: 'POST',
-        body: JSON.stringify({ amountPaise: amountPaise || 100000 }),
+        body: JSON.stringify(payload),
       });
       setWithdrawResult(res);
       await loadData();
@@ -674,6 +876,10 @@ function DashboardContent() {
     } finally {
       setWithdrawing(false);
     }
+  };
+
+  const handleExecuteWithdrawal = async (amountPaise?: number) => {
+    return handleExecuteWithdrawalWithDetails();
   };
 
   const toggleTxExpanded = (refId: string) => {
@@ -700,6 +906,12 @@ function DashboardContent() {
     } finally {
       setLoadingBinarySubtree(false);
     }
+  };
+
+  const handleBinaryNavigateBack = () => {
+    if (binaryBreadcrumb.length <= 1) return;
+    const parentCrumb = binaryBreadcrumb[binaryBreadcrumb.length - 2];
+    handleInspectBinarySubtree(parentCrumb.memberId, parentCrumb.fullName);
   };
 
   const handleLogout = async () => {
@@ -743,16 +955,24 @@ function DashboardContent() {
     }
   };
 
-  const navItems: { id: TabType; label: string; icon: any; count?: number }[] = [
-    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'membership', label: 'EV Booking Tiers', icon: Sparkles },
-    { id: 'team', label: 'My Direct Team', icon: Users, count: directTeam?.directs?.length },
-    { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
-    { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
-    { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
-    { id: 'bookings', label: 'My Bookings', icon: Bike, count: userBookings.length },
-    { id: 'profile', label: 'Profile', icon: User },
-  ];
+  const navItems: {
+    id: TabType | 'withdraw_action';
+    label: string;
+    icon: any;
+    count?: number;
+    isAction?: boolean;
+    onClick?: () => void;
+  }[] = [
+      { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'membership', label: 'EV Booking Tiers', icon: Sparkles },
+      { id: 'withdraw_action', label: 'Withdraw', icon: ArrowDownToLine, isAction: true, onClick: handleInitiateWithdrawal },
+      { id: 'team', label: 'My Direct Team', icon: Users, count: directTeam?.directs?.length },
+      { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
+      { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
+      { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
+      { id: 'bookings', label: 'My Bookings', icon: Bike, count: membershipRequests.length + userBookings.length },
+      { id: 'profile', label: 'Profile', icon: User },
+    ];
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#253247]">
@@ -843,7 +1063,13 @@ function DashboardContent() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    if (item.onClick) {
+                      item.onClick();
+                    } else if (item.id !== 'withdraw_action') {
+                      setActiveTab(item.id as TabType);
+                    }
+                  }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
                     ? 'bg-blue-50 text-[#165DAD] font-semibold'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
@@ -921,8 +1147,12 @@ function DashboardContent() {
                       <button
                         key={item.id}
                         onClick={() => {
-                          setActiveTab(item.id);
                           setMobileMenuOpen(false);
+                          if (item.onClick) {
+                            item.onClick();
+                          } else if (item.id !== 'withdraw_action') {
+                            setActiveTab(item.id as TabType);
+                          }
                         }}
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
                           ? 'bg-blue-50 text-[#165DAD] font-semibold'
@@ -949,6 +1179,18 @@ function DashboardContent() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 px-2 space-y-2">
+                  {!isStandalone && (
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleInstallApp();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-gradient-to-r from-[#0C2348] to-[#165DAD] text-white text-xs font-semibold shadow hover:opacity-95 transition-opacity"
+                    >
+                      <Download className="w-3.5 h-3.5 text-blue-200" />
+                      <span>Install ASKR EV App</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setMobileMenuOpen(false);
@@ -1022,6 +1264,46 @@ function DashboardContent() {
             {/* TAB 1: OVERVIEW */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {/* Dashboard-Only PWA Installation Banner (Mobile Only, Hidden if already installed) */}
+                {!isStandalone && showInstallBanner && (
+                  <div className="md:hidden bg-gradient-to-r from-[#0A1128] via-[#0C2348] to-[#165DAD] text-white p-3.5 rounded-2xl shadow-lg border border-blue-400/20 relative overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 relative z-10">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src="/brand/askrev-icon.webp"
+                          alt="ASKR EV App"
+                          width={40}
+                          height={40}
+                          className="w-10 h-10 rounded-xl object-contain shadow-xs border border-white/20 bg-white/5 shrink-0"
+                        />
+                        <div>
+                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                            <span>Install ASKR EV App</span>
+                            <span className="bg-blue-400/30 text-blue-200 text-[10px] px-1.5 py-0.5 rounded font-medium">PWA</span>
+                          </div>
+                          <p className="text-[11px] text-blue-100/90 leading-tight">Instant home screen access & standalone mode</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={handleInstallApp}
+                          className="px-3 py-1.5 bg-white text-[#0A1128] font-bold text-xs rounded-xl shadow-xs hover:bg-blue-50 active:scale-95 transition-all flex items-center gap-1"
+                        >
+                          <Download className="w-3.5 h-3.5 text-[#165DAD]" />
+                          <span>Install</span>
+                        </button>
+                        <button
+                          onClick={handleDismissInstallBanner}
+                          className="p-1.5 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+                          aria-label="Dismiss banner"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* =========================================================================
                     SECTION 4 — COMPACT PREMIUM WELCOME BACK CARD
                     ========================================================================= */}
@@ -1052,20 +1334,161 @@ function DashboardContent() {
 
                     {/* Prominent Book EV Button */}
                     <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => {
-                          setSelectedRequestType(
-                            user.currentPackage === 'BASIC'
-                              ? 'BASIC_TO_FULL_UPGRADE'
-                              : 'BASIC_ACTIVATION'
-                          );
-                          setPaymentModalOpen(true);
-                        }}
-                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-                      >
-                        <Bike className="w-4 h-4" />
-                        <span>Book EV</span>
-                      </button>
+                      {user.isFullQualified || user.currentPackage === 'FULL' ? (
+                        <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[#15803D] text-xs font-bold flex items-center gap-1.5 shadow-2xs">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Qualified EV ULTRA Member</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSelectedRequestType(
+                              user.currentPackage === 'BASIC'
+                                ? 'BASIC_TO_FULL_UPGRADE'
+                                : 'BASIC_ACTIVATION'
+                            );
+                            setPaymentModalOpen(true);
+                          }}
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                        >
+                          <Bike className="w-4 h-4" />
+                          <span>{user.currentPackage === 'BASIC' ? 'Upgrade to ULTRA' : 'Book EV'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* =========================================================================
+                    DESKTOP & MOBILE SPONSOR REFERRAL LINKS (REQUIREMENT 1)
+                    Left & Right referral links with Copy, WhatsApp and Native Share
+                    ========================================================================= */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Share2 className="w-4 h-4 text-[#165DAD]" />
+                        <h3 className="text-sm font-bold text-[#253247]">Your Sponsor Referral Links</h3>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Share your direct referral link with new members to place them automatically in your Left or Right binary team.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <span className="text-xs text-slate-500 font-medium">Sponsor ID:</span>
+                      <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-blue-50 text-[#165DAD] border border-blue-200">
+                        {user.memberId}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Left Team Card */}
+                    <div className="p-4 rounded-xl bg-slate-50 border border-blue-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#165DAD]" />
+                          <span className="text-xs font-bold text-[#0C2348] uppercase tracking-wide">LEFT Team Referral Link</span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                          Left Subtree
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 select-all truncate">
+                        {getReferralLink('LEFT')}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink('LEFT')}
+                          className="flex-1 py-2 px-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          {copiedLeft ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copy Link</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={getWhatsAppShareUrl('LEFT')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                          title="Share via WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleShareLink('LEFT')}
+                          className="py-2 px-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#165DAD] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-blue-200 shadow-2xs"
+                          title="Share"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right Team Card */}
+                    <div className="p-4 rounded-xl bg-slate-50 border border-emerald-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#15803D]" />
+                          <span className="text-xs font-bold text-[#0C2348] uppercase tracking-wide">RIGHT Team Referral Link</span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                          Right Subtree
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 select-all truncate">
+                        {getReferralLink('RIGHT')}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink('RIGHT')}
+                          className="flex-1 py-2 px-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          {copiedRight ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copy Link</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={getWhatsAppShareUrl('RIGHT')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                          title="Share via WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleShareLink('RIGHT')}
+                          className="py-2 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#15803D] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-emerald-200 shadow-2xs"
+                          title="Share"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1223,7 +1646,7 @@ function DashboardContent() {
                           <div>
                             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-indigo-900">
                               <span>EV Legacy Eligibility</span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shrink-0">
                                 {Math.min(activeDirectsCount, 3)} / 3 Active
                               </span>
                             </div>
@@ -1268,21 +1691,21 @@ function DashboardContent() {
                           </div>
                         </div>
 
-                        {/* 3. Direct Package Counts */}
+                        {/* 3. Direct Package Counts (Requirement 5) */}
                         <div className="bg-white rounded-2xl border-2 border-cyan-100 p-5 shadow-xs flex flex-col justify-between">
                           <div>
                             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-cyan-900">
                               <span>Direct Packages</span>
                               <Sparkles className="w-4 h-4 text-cyan-600" />
                             </div>
-                            <div className="grid grid-cols-2 gap-3 mt-2">
-                              <div>
-                                <span className="text-[11px] text-slate-500 font-medium">EV PRO (₹3k)</span>
-                                <div className="text-xl font-black text-[#165DAD]">{proDirectsCount}</div>
+                            <div className="space-y-2 mt-2">
+                              <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                                <span className="text-xs text-slate-600 font-medium">EV PRO (₹3k)</span>
+                                <span className="text-base font-black text-[#165DAD]">{proDirectsCount}</span>
                               </div>
-                              <div>
-                                <span className="text-[11px] text-slate-500 font-medium">EV ULTRA (₹33k)</span>
-                                <div className="text-xl font-black text-purple-700">{ultraDirectsCount}</div>
+                              <div className="flex items-center justify-between py-1">
+                                <span className="text-xs text-slate-600 font-medium">EV ULTRA (₹33k)</span>
+                                <span className="text-base font-black text-purple-700">{ultraDirectsCount}</span>
                               </div>
                             </div>
                           </div>
@@ -1291,26 +1714,27 @@ function DashboardContent() {
                           </div>
                         </div>
 
-                        {/* 4. Binary Carry Summary */}
+                        {/* 4. Binary Team Summary (Requirement 6) */}
                         <div className="bg-white rounded-2xl border-2 border-teal-100 p-5 shadow-xs flex flex-col justify-between">
                           <div>
                             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-teal-900">
-                              <span>Binary Carry</span>
+                              <span>Binary Team</span>
                               <GitBranch className="w-4 h-4 text-teal-600" />
                             </div>
                             <div className="grid grid-cols-2 gap-3 mt-2">
                               <div>
-                                <span className="text-[11px] text-slate-500 font-medium">Left Carry</span>
-                                <div className="text-xl font-black text-[#165DAD]">{binaryTree?.node?.carryLeftUnits ?? 0}u</div>
+                                <span className="text-[11px] text-slate-500 font-medium">Left Team</span>
+                                <div className="text-xl font-black text-[#165DAD]">{binaryTree?.node?.leftCount ?? 0}</div>
                               </div>
                               <div>
-                                <span className="text-[11px] text-slate-500 font-medium">Right Carry</span>
-                                <div className="text-xl font-black text-emerald-600">{binaryTree?.node?.carryRightUnits ?? 0}u</div>
+                                <span className="text-[11px] text-slate-500 font-medium">Right Team</span>
+                                <div className="text-xl font-black text-emerald-600">{binaryTree?.node?.rightCount ?? 0}</div>
                               </div>
                             </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100">
-                            {binaryTree?.node?.totalMatchesConsumed ?? 0} total pair(s) matched
+                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <span>Matched: <strong>{binaryTree?.node?.totalMatchesConsumed ?? 0}</strong> pairs</span>
+                            <span className="font-semibold text-amber-700">Cap: {binaryTree?.node?.todayMatchesSettled ?? 0} / 15</span>
                           </div>
                         </div>
                       </div>
@@ -1350,86 +1774,20 @@ function DashboardContent() {
                   </div>
                 )}
 
-                {/* MY BINARY TREE SUMMARY CARD */}
-                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <GitBranch className="w-4 h-4 text-[#165DAD]" />
-                        <h3 className="text-sm font-bold text-[#253247]">Binary Tree & Matching Summary</h3>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${binaryTree?.node?.isPlaced
-                            ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                            : user?.role === 'SUPER_ADMIN'
-                              ? 'bg-blue-50 text-[#165DAD] border-blue-200'
-                              : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}
-                        >
-                          {binaryTree?.node?.isPlaced
-                            ? `Placed (${binaryTree.node.parent?.leg} under ${binaryTree.node.parent?.memberId})`
-                            : user?.role === 'SUPER_ADMIN'
-                              ? 'Company Root'
-                              : 'Not Yet Placed'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        1:1 ratio (1 Left : 1 Right qualified unit) • ₹3,000 per match • Cap: 15/day (₹45,000)
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('binary')}
-                      className="self-start sm:self-center text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1 min-h-[36px]"
-                    >
-                      <span>Open My Binary Tree</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] text-slate-500">Left Leg (Cnt / Vol / Carry)</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.leftCount ?? 0} / {binaryTree?.node?.leftVolumeUnits ?? 0}u /{' '}
-                        <span className="text-[#165DAD]">{binaryTree?.node?.carryLeftUnits ?? 0}u</span>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] text-slate-500">Right Leg (Cnt / Vol / Carry)</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.rightCount ?? 0} / {binaryTree?.node?.rightVolumeUnits ?? 0}u /{' '}
-                        <span className="text-[#15803D]">{binaryTree?.node?.carryRightUnits ?? 0}u</span>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] text-slate-500">Total Matches / Reward</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.totalMatchesConsumed ?? 0} pairs • ₹{(binaryTree?.node?.totalRewardEarnedINR ?? 0).toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] text-slate-500">Daily Cap Status (Today)</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.todayMatchesSettled ?? 0} / 15 settled
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* =========================================================================
-                    TASK 7 — RECENT DIRECT REFERRALS TABLE
-                    Includes Member ID, Name, Membership Status, Joining Date & View All
+                    TASK 7 & REQUIREMENT 8 — RECENT DIRECT REFERRALS TABLE
+                    Includes Member ID, Name, Membership Status, Joining Date in IST & My Team CTA
                     ========================================================================= */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-bold text-[#253247]">Recent Direct Referrals</h3>
-                      <p className="text-xs text-slate-500">Latest members enrolled with your sponsor code</p>
                     </div>
                     <button
                       onClick={() => setActiveTab('team')}
                       className="text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1 min-h-[36px]"
                     >
-                      <span>View All (My Team)</span>
+                      <span>My Team</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -1466,8 +1824,8 @@ function DashboardContent() {
                                   </span>
                                 )}
                               </td>
-                              <td className="py-3 px-4 text-slate-500">
-                                {new Date(d.createdAt).toLocaleDateString('en-IN')}
+                              <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                                {formatISTDateTime(d.createdAt)}
                               </td>
                             </tr>
                           ))
@@ -1755,6 +2113,137 @@ function DashboardContent() {
             {/* TAB 3: MY TEAM */}
             {activeTab === 'team' && (
               <div className="space-y-6">
+                {/* Sponsor Referral Links on My Team (Requirement 1) */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Share2 className="w-4 h-4 text-[#165DAD]" />
+                        <h3 className="text-sm font-bold text-[#253247]">Your Sponsor Referral Links</h3>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Share your direct referral link with new members to place them automatically in your Left or Right binary team.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <span className="text-xs text-slate-500 font-medium">Sponsor ID:</span>
+                      <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-blue-50 text-[#165DAD] border border-blue-200">
+                        {user.memberId}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Left Team Card */}
+                    <div className="p-4 rounded-xl bg-slate-50 border border-blue-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#165DAD]" />
+                          <span className="text-xs font-bold text-[#0C2348] uppercase tracking-wide">LEFT Team Referral Link</span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                          Left Subtree
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 select-all truncate">
+                        {getReferralLink('LEFT')}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink('LEFT')}
+                          className="flex-1 py-2 px-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          {copiedLeft ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copy Link</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={getWhatsAppShareUrl('LEFT')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                          title="Share via WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleShareLink('LEFT')}
+                          className="py-2 px-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#165DAD] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-blue-200 shadow-2xs"
+                          title="Share"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right Team Card */}
+                    <div className="p-4 rounded-xl bg-slate-50 border border-emerald-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#15803D]" />
+                          <span className="text-xs font-bold text-[#0C2348] uppercase tracking-wide">RIGHT Team Referral Link</span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                          Right Subtree
+                        </span>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 select-all truncate">
+                        {getReferralLink('RIGHT')}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLink('RIGHT')}
+                          className="flex-1 py-2 px-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          {copiedRight ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Copy Link</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={getWhatsAppShareUrl('RIGHT')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                          title="Share via WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleShareLink('RIGHT')}
+                          className="py-2 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#15803D] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-emerald-200 shadow-2xs"
+                          title="Share"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Metric Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
@@ -1796,33 +2285,30 @@ function DashboardContent() {
                       <button
                         type="button"
                         onClick={() => setTeamFilter('ALL')}
-                        className={`px-3 py-1.5 rounded-md transition-colors ${
-                          teamFilter === 'ALL'
-                            ? 'bg-white text-[#165DAD] shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`px-3 py-1.5 rounded-md transition-colors ${teamFilter === 'ALL'
+                          ? 'bg-white text-[#165DAD] shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         ALL ({directTeam?.directs?.length ?? 0})
                       </button>
                       <button
                         type="button"
                         onClick={() => setTeamFilter('LEFT')}
-                        className={`px-3 py-1.5 rounded-md transition-colors ${
-                          teamFilter === 'LEFT'
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`px-3 py-1.5 rounded-md transition-colors ${teamFilter === 'LEFT'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         LEFT LEG ({(directTeam?.directs || []).filter((d: any) => d.placementLeg === 'LEFT').length})
                       </button>
                       <button
                         type="button"
                         onClick={() => setTeamFilter('RIGHT')}
-                        className={`px-3 py-1.5 rounded-md transition-colors ${
-                          teamFilter === 'RIGHT'
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`px-3 py-1.5 rounded-md transition-colors ${teamFilter === 'RIGHT'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         RIGHT LEG ({(directTeam?.directs || []).filter((d: any) => d.placementLeg === 'RIGHT').length})
                       </button>
@@ -1915,8 +2401,8 @@ function DashboardContent() {
                                   </span>
                                 )}
                               </td>
-                              <td className="py-3 px-4 text-slate-500">
-                                {new Date(d.createdAt).toLocaleDateString('en-IN')}
+                              <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                                {formatISTDateTime(d.createdAt)}
                               </td>
                             </tr>
                           ));
@@ -2007,13 +2493,12 @@ function DashboardContent() {
                     </p>
                   </div>
                   <span
-                    className={`self-start sm:self-auto text-xs font-semibold px-3 py-1 rounded-full border ${
-                      binaryTree?.node?.isPlaced
-                        ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                        : user?.role === 'SUPER_ADMIN'
-                          ? 'bg-blue-50 text-[#165DAD] border-blue-200'
-                          : 'bg-amber-50 text-amber-800 border-amber-200'
-                    }`}
+                    className={`self-start sm:self-auto text-xs font-semibold px-3 py-1 rounded-full border ${binaryTree?.node?.isPlaced
+                      ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                      : user?.role === 'SUPER_ADMIN'
+                        ? 'bg-blue-50 text-[#165DAD] border-blue-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}
                   >
                     {binaryTree?.node?.isPlaced
                       ? `Placed (${binaryTree.node.parent?.leg || 'Assigned'} Leg)`
@@ -2078,9 +2563,8 @@ function DashboardContent() {
                             <button
                               type="button"
                               onClick={() => handleInspectBinarySubtree(crumb.memberId, crumb.fullName, idx === 0)}
-                              className={`font-medium hover:underline ${
-                                idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
-                              }`}
+                              className={`font-medium hover:underline ${idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
+                                }`}
                             >
                               {crumb.fullName} ({crumb.memberId})
                             </button>
@@ -2089,15 +2573,27 @@ function DashboardContent() {
                       </div>
                     </div>
 
-                    {binaryBreadcrumb.length > 1 && user?.memberId && (
-                      <button
-                        type="button"
-                        onClick={() => handleInspectBinarySubtree(user.memberId, user.fullName || 'Me', true)}
-                        className="self-start sm:self-center px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700"
-                      >
-                        Reset to My Root
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 self-start sm:self-center">
+                      {binaryBreadcrumb.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleBinaryNavigateBack}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1 shadow-2xs"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Back</span>
+                        </button>
+                      )}
+                      {binaryBreadcrumb.length > 1 && user?.memberId && (
+                        <button
+                          type="button"
+                          onClick={() => handleInspectBinarySubtree(user.memberId, user.fullName || 'Me', true)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700"
+                        >
+                          Reset to Root
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {binaryTreeError && (
@@ -2120,11 +2616,10 @@ function DashboardContent() {
                             <span className="px-2 py-0.5 rounded text-[9px] font-semibold bg-white text-[#253247] border border-slate-200">
                               {getTierDisplayName(inspectedBinaryTree.node.user.currentPackage)}
                             </span>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-semibold ${
-                              inspectedBinaryTree.node.user.isFullQualified
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-semibold ${inspectedBinaryTree.node.user.isFullQualified
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
                               {inspectedBinaryTree.node.user.isFullQualified ? 'Active' : 'Pending'}
                             </span>
                           </div>
@@ -2160,43 +2655,53 @@ function DashboardContent() {
                               LEFT BRANCH
                             </span>
                             {inspectedBinaryTree.leftChild ? (
-                              <div className="w-full bg-white border border-blue-200 rounded-xl p-3 shadow-xs space-y-2">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className="font-bold text-xs text-[#253247] truncate">
-                                    {inspectedBinaryTree.leftChild.fullName}
-                                  </span>
-                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-                                    {getTierDisplayName(inspectedBinaryTree.leftChild.currentPackage)}
-                                  </span>
-                                </div>
-                                <div className="text-xs font-mono font-bold text-blue-700">
-                                  {inspectedBinaryTree.leftChild.memberId}
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
-                                  <span>L: {inspectedBinaryTree.leftChild.leftCount} • R: {inspectedBinaryTree.leftChild.rightCount}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.memberId, inspectedBinaryTree.leftChild.fullName)}
-                                    className="text-blue-700 font-bold hover:underline"
-                                  >
-                                    Inspect →
-                                  </button>
-                                </div>
+                              <div className="w-full bg-white border border-blue-200 hover:border-blue-400 rounded-xl shadow-xs transition-all overflow-hidden space-y-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.memberId, inspectedBinaryTree.leftChild.fullName)}
+                                  className="w-full text-left p-3.5 space-y-2 focus:outline-none focus:ring-2 focus:ring-blue-400 group cursor-pointer transition-colors hover:bg-blue-50/30"
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold text-xs text-[#253247] truncate group-hover:text-[#165DAD] transition-colors">
+                                      {inspectedBinaryTree.leftChild.fullName}
+                                    </span>
+                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                      {getTierDisplayName(inspectedBinaryTree.leftChild.currentPackage)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-mono font-bold text-blue-700">
+                                      {inspectedBinaryTree.leftChild.memberId}
+                                    </span>
+                                    {inspectedBinaryTree.leftChild.isFullQualified && (
+                                      <span className="text-[9px] text-[#15803D] font-semibold flex items-center gap-0.5">
+                                        <Check className="w-2.5 h-2.5" /> Qualified
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
+                                    <span>Team: {inspectedBinaryTree.leftChild.leftCount ?? 0}L : {inspectedBinaryTree.leftChild.rightCount ?? 0}R</span>
+                                    <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                      <span>Tap to open</span>
+                                      <ChevronRight className="w-3 h-3" />
+                                    </span>
+                                  </div>
+                                </button>
 
                                 {/* Level 2 Slots Under Left Child */}
-                                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+                                <div className="p-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 bg-slate-50/50">
                                   {inspectedBinaryTree.leftChild.leftChild ? (
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.leftChild.memberId, inspectedBinaryTree.leftChild.leftChild.fullName)}
-                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors"
+                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors cursor-pointer group"
                                     >
                                       <div className="text-[8px] font-bold text-blue-600 uppercase">LEFT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.leftChild.leftChild.fullName}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-blue-700">{inspectedBinaryTree.leftChild.leftChild.fullName}</div>
                                       <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.leftChild.memberId}</div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
                                       Vacant Left
                                     </div>
                                   )}
@@ -2205,22 +2710,31 @@ function DashboardContent() {
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.rightChild.memberId, inspectedBinaryTree.leftChild.rightChild.fullName)}
-                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors"
+                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors cursor-pointer group"
                                     >
                                       <div className="text-[8px] font-bold text-blue-600 uppercase">RIGHT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.leftChild.rightChild.fullName}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-blue-700">{inspectedBinaryTree.leftChild.rightChild.fullName}</div>
                                       <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.rightChild.memberId}</div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
                                       Vacant Right
                                     </div>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                                Vacant Left Branch
+                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vacant Left Branch</div>
+                                <p className="text-[11px] text-slate-500">No member placed on Left leg yet.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyLink('LEFT')}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-[#165DAD] hover:border-blue-300 transition-colors shadow-2xs"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy Left Link</span>
+                                </button>
                               </div>
                             )}
                           </div>
@@ -2231,43 +2745,53 @@ function DashboardContent() {
                               RIGHT BRANCH
                             </span>
                             {inspectedBinaryTree.rightChild ? (
-                              <div className="w-full bg-white border border-emerald-200 rounded-xl p-3 shadow-xs space-y-2">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className="font-bold text-xs text-[#253247] truncate">
-                                    {inspectedBinaryTree.rightChild.fullName}
-                                  </span>
-                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                                    {getTierDisplayName(inspectedBinaryTree.rightChild.currentPackage)}
-                                  </span>
-                                </div>
-                                <div className="text-xs font-mono font-bold text-emerald-700">
-                                  {inspectedBinaryTree.rightChild.memberId}
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
-                                  <span>L: {inspectedBinaryTree.rightChild.leftCount} • R: {inspectedBinaryTree.rightChild.rightCount}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.memberId, inspectedBinaryTree.rightChild.fullName)}
-                                    className="text-emerald-700 font-bold hover:underline"
-                                  >
-                                    Inspect →
-                                  </button>
-                                </div>
+                              <div className="w-full bg-white border border-emerald-200 hover:border-emerald-400 rounded-xl shadow-xs transition-all overflow-hidden space-y-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.memberId, inspectedBinaryTree.rightChild.fullName)}
+                                  className="w-full text-left p-3.5 space-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 group cursor-pointer transition-colors hover:bg-emerald-50/30"
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold text-xs text-[#253247] truncate group-hover:text-emerald-700 transition-colors">
+                                      {inspectedBinaryTree.rightChild.fullName}
+                                    </span>
+                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                      {getTierDisplayName(inspectedBinaryTree.rightChild.currentPackage)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-mono font-bold text-emerald-700">
+                                      {inspectedBinaryTree.rightChild.memberId}
+                                    </span>
+                                    {inspectedBinaryTree.rightChild.isFullQualified && (
+                                      <span className="text-[9px] text-[#15803D] font-semibold flex items-center gap-0.5">
+                                        <Check className="w-2.5 h-2.5" /> Qualified
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
+                                    <span>Team: {inspectedBinaryTree.rightChild.leftCount ?? 0}L : {inspectedBinaryTree.rightChild.rightCount ?? 0}R</span>
+                                    <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                      <span>Tap to open</span>
+                                      <ChevronRight className="w-3 h-3" />
+                                    </span>
+                                  </div>
+                                </button>
 
                                 {/* Level 2 Slots Under Right Child */}
-                                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+                                <div className="p-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 bg-slate-50/50">
                                   {inspectedBinaryTree.rightChild.leftChild ? (
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.leftChild.memberId, inspectedBinaryTree.rightChild.leftChild.fullName)}
-                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors"
+                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors cursor-pointer group"
                                     >
                                       <div className="text-[8px] font-bold text-emerald-600 uppercase">LEFT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.rightChild.leftChild.fullName}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.fullName}</div>
                                       <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.memberId}</div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
                                       Vacant Left
                                     </div>
                                   )}
@@ -2276,22 +2800,31 @@ function DashboardContent() {
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.rightChild.memberId, inspectedBinaryTree.rightChild.rightChild.fullName)}
-                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors"
+                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors cursor-pointer group"
                                     >
                                       <div className="text-[8px] font-bold text-emerald-600 uppercase">RIGHT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.rightChild.rightChild.fullName}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.fullName}</div>
                                       <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.memberId}</div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
                                       Vacant Right
                                     </div>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                                Vacant Right Branch
+                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vacant Right Branch</div>
+                                <p className="text-[11px] text-slate-500">No member placed on Right leg yet.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyLink('RIGHT')}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-[#15803D] hover:border-emerald-300 transition-colors shadow-2xs"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy Right Link</span>
+                                </button>
                               </div>
                             )}
                           </div>
@@ -2776,21 +3309,148 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* TAB 6: MY EV BOOKINGS */}
+            {/* TAB 6: MY EV BOOKINGS & PAYMENT HISTORY (REQUIREMENT 11) */}
             {activeTab === 'bookings' && (
               <div className="space-y-6">
+                {/* 1. PRIMARY SECTION: MEMBERSHIP BOOKING & UPGRADE PAYMENT HISTORY */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-[#253247]">My EV Bike Reservations</h3>
-                      <p className="text-xs text-slate-500">Simulated booking deposits, vehicle orders and cancellation management (SIMULATION_ONLY)</p>
-                    </div>
-                    <Link
-                      href="/bikes"
-                      className="px-4 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors min-h-[40px] flex items-center"
-                    >
-                      Browse Fleet
-                    </Link>
+                  <div className="p-4 sm:p-5 border-b border-slate-200">
+                    <h3 className="text-sm font-bold text-[#253247]">EV Booking & Membership Payment History</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Record of your EV PRO / EV ULTRA bookings, upgrade payments, UTR submissions, and administrative verification status.
+                    </p>
+                  </div>
+
+                  {/* Desktop Table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
+                        <tr>
+                          <th className="py-3 px-4">Date & Time</th>
+                          <th className="py-3 px-4">Booking Type</th>
+                          <th className="py-3 px-4">Package / Tier</th>
+                          <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Payment Method</th>
+                          <th className="py-3 px-4">UTR / Reference</th>
+                          <th className="py-3 px-4">Verification</th>
+                          <th className="py-3 px-4">Approval Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-[#253247]">
+                        {membershipRequests.length > 0 ? (
+                          membershipRequests.map((req: any) => {
+                            const amountFormatted =
+                              req.requestType === 'BASIC_ACTIVATION'
+                                ? '₹3,000'
+                                : req.requestType === 'FULL_ACTIVATION'
+                                  ? '₹33,000'
+                                  : '₹30,000';
+                            const bookingTypeLabel =
+                              req.requestType === 'BASIC_ACTIVATION'
+                                ? 'EV PRO Booking'
+                                : req.requestType === 'FULL_ACTIVATION'
+                                  ? 'EV ULTRA Booking'
+                                  : 'EV ULTRA Upgrade';
+                            const tierBadge =
+                              req.packageCode === 'BASIC' || req.requestType === 'BASIC_ACTIVATION'
+                                ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                : 'bg-purple-50 text-purple-700 border-purple-200';
+                            return (
+                              <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                                  {formatISTDateTime(req.createdAt)}
+                                </td>
+                                <td className="py-3 px-4 font-bold text-[#0C2348]">
+                                  {bookingTypeLabel}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${tierBadge}`}>
+                                    {req.packageCode === 'BASIC' || req.requestType === 'BASIC_ACTIVATION' ? 'EV PRO' : 'EV ULTRA'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 font-black text-[#165DAD]">
+                                  {amountFormatted}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="font-semibold text-slate-700">
+                                    {req.paymentMode || 'UPI Manual'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 font-mono text-[11px] text-slate-600">
+                                  {req.paymentReference || '—'}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${req.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                    {req.isVerified ? 'VERIFIED' : 'PENDING'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${req.status === 'APPROVED' ? 'bg-emerald-50 text-[#15803D] border-emerald-200' : req.status === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                                    {req.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-slate-400">
+                              No EV booking requests found. You can book an EV package anytime.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Cards */}
+                  <div className="md:hidden divide-y divide-slate-100">
+                    {membershipRequests.length > 0 ? (
+                      membershipRequests.map((req: any) => {
+                        const amountFormatted =
+                          req.requestType === 'BASIC_ACTIVATION'
+                            ? '₹3,000'
+                            : req.requestType === 'FULL_ACTIVATION'
+                              ? '₹33,000'
+                              : '₹30,000';
+                        const bookingTypeLabel =
+                          req.requestType === 'BASIC_ACTIVATION'
+                            ? 'EV PRO Booking'
+                            : req.requestType === 'FULL_ACTIVATION'
+                              ? 'EV ULTRA Booking'
+                              : 'EV ULTRA Upgrade';
+                        return (
+                          <div key={req.id} className="p-4 space-y-2.5 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[#0C2348] text-sm">{bookingTypeLabel}</span>
+                              <span className="font-black text-[#165DAD] text-sm">{amountFormatted}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-500">
+                              <span>{formatISTDateTime(req.createdAt)}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${req.status === 'APPROVED' ? 'bg-emerald-50 text-[#15803D] border-emerald-200' : req.status === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                                {req.status}
+                              </span>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
+                              <span>Mode: <strong>{req.paymentMode || 'UPI'}</strong></span>
+                              <span className="font-mono">UTR: <strong>{req.paymentReference || '—'}</strong></span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-6 text-center text-slate-400 text-xs">
+                        No EV booking requests found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. SECONDARY SECTION: VEHICLE FLEET RESERVATIONS (WITHOUT BROWSE FLEET) */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 sm:p-5 border-b border-slate-200">
+                    <h3 className="text-sm font-bold text-[#253247]">EV Vehicle Fleet Reservations</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Simulated booking deposits, vehicle orders and cancellation management (SIMULATION_ONLY)</p>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -2839,8 +3499,8 @@ function DashboardContent() {
                                     </div>
                                   )}
                                 </td>
-                                <td className="py-3 px-4 text-slate-500">
-                                  {new Date(b.createdAt).toLocaleDateString('en-IN')}
+                                <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                                  {formatISTDateTime(b.createdAt)}
                                 </td>
                                 <td className="py-3 px-4 text-right">
                                   {!isCancelled ? (
@@ -3164,13 +3824,13 @@ function DashboardContent() {
               </div>
             )}
 
-            </main>
+          </main>
         </div>
       </div>
 
       {/* =========================================================================
-          MOBILE BOTTOM NAVIGATION BAR
-          Fixed 5-item bar: Home, Earnings, Wallet, Booking / Products, Share
+          MOBILE BOTTOM NAVIGATION BAR (REQUIREMENT 12)
+          Fixed 5-item bar: HOME | EARNINGS | WALLET | BINARY | MENU
           ========================================================================= */}
       <nav
         aria-label="Mobile Navigation"
@@ -3186,11 +3846,11 @@ function DashboardContent() {
         </button>
 
         <button
-          onClick={() => setActiveTab('binary')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+          onClick={() => setActiveTab('wallets')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
             }`}
         >
-          <GitBranch className={`w-5 h-5 mb-0.5 ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <Crown className={`w-5 h-5 mb-0.5 ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
           <span>Earnings</span>
         </button>
 
@@ -3204,20 +3864,20 @@ function DashboardContent() {
         </button>
 
         <button
-          onClick={() => setActiveTab('bookings')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+          onClick={() => setActiveTab('binary')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
             }`}
         >
-          <Bike className={`w-5 h-5 mb-0.5 ${activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
-          <span>Booking / Products</span>
+          <GitBranch className={`w-5 h-5 mb-0.5 ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Binary</span>
         </button>
 
         <button
-          onClick={() => setShowShareModal(true)}
+          onClick={() => setMobileMenuOpen(true)}
           className="flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold text-slate-500 hover:text-[#165DAD] transition-colors"
         >
-          <Share2 className="w-5 h-5 mb-0.5 text-slate-400" />
-          <span>Share</span>
+          <Menu className="w-5 h-5 mb-0.5 text-slate-400" />
+          <span>Menu</span>
         </button>
       </nav>
 
@@ -3362,24 +4022,85 @@ function DashboardContent() {
               </button>
             </div>
 
-            {/* Booking Details Summary */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
-              <div className="flex items-center justify-between font-semibold">
-                <span className="text-slate-600">Booking Amount Payable:</span>
-                <span className="text-base font-bold text-[#165DAD]">
-                  {selectedRequestType === 'BASIC_ACTIVATION'
-                    ? '₹3,000'
-                    : selectedRequestType === 'FULL_ACTIVATION'
-                      ? '₹33,000'
-                      : '₹30,000'}
-                </span>
+            {/* QUALIFIED NOTICE IF ALREADY FULL QUALIFIED */}
+            {(user.isFullQualified || user.currentPackage === 'FULL') ? (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                <div className="font-bold text-[#15803D] text-sm">Qualified EV ULTRA Member</div>
+                <p className="text-xs text-slate-600">
+                  Your account is fully activated with max tier privileges and ₹30,000 vehicle shopping voucher credit. No additional membership booking is required.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                {selectedRequestType === 'BASIC_ACTIVATION'
-                  ? 'Starter EV booking tier. Qualifies for direct referral rewards (₹1,000) and keeps remaining ₹30,000 upgrade path open.'
-                  : 'Includes ₹30,000 vehicle shopping voucher credit towards bike reservations and fully qualifies for 1:1 binary matching (₹3,000/pair).'}
-              </p>
-            </div>
+            ) : (
+              <>
+                {/* PENDING BOOKING WARNING IF ANY */}
+                {membershipRequests.some((r) => r.status === 'PENDING') && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>
+                      You already have a booking request pending admin verification. New submissions are disabled until your current request is resolved.
+                    </span>
+                  </div>
+                )}
+
+                {/* TIER SELECTION TOGGLE FOR FREE USERS (REQUIREMENT 3) */}
+                {user.currentPackage === 'FREE' && (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[#253247]">Select Booking Package</label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRequestType('BASIC_ACTIVATION')}
+                        className={`p-3 rounded-xl border text-left transition-all ${selectedRequestType === 'BASIC_ACTIVATION'
+                          ? 'border-[#165DAD] bg-blue-50/70 text-[#165DAD] ring-1 ring-[#165DAD]'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                          }`}
+                      >
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-[#165DAD]">Starter Tier</div>
+                        <div className="text-sm font-bold text-[#0C2348] mt-0.5">EV PRO</div>
+                        <div className="text-base font-black text-[#165DAD] mt-1">₹3,000</div>
+                        <div className="text-[10px] text-slate-500 mt-1">Direct referral rewards eligible</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRequestType('FULL_ACTIVATION')}
+                        className={`p-3 rounded-xl border text-left transition-all ${selectedRequestType === 'FULL_ACTIVATION'
+                          ? 'border-purple-600 bg-purple-50/70 text-purple-700 ring-1 ring-purple-600'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                          }`}
+                      >
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-purple-700">Full Qualified Tier</div>
+                        <div className="text-sm font-bold text-[#0C2348] mt-0.5">EV ULTRA</div>
+                        <div className="text-base font-black text-purple-700 mt-1">₹33,000</div>
+                        <div className="text-[10px] text-slate-500 mt-1">₹30k voucher + 1:1 binary rewards</div>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Booking Details Summary */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between font-semibold">
+                    <span className="text-slate-600">Booking Amount Payable:</span>
+                    <span className="text-base font-bold text-[#165DAD]">
+                      {selectedRequestType === 'BASIC_ACTIVATION'
+                        ? '₹3,000'
+                        : selectedRequestType === 'FULL_ACTIVATION'
+                          ? '₹33,000'
+                          : '₹30,000'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    {selectedRequestType === 'BASIC_ACTIVATION'
+                      ? 'Starter EV booking tier. Qualifies for direct referral rewards (₹1,000) and keeps remaining ₹30,000 upgrade path open.'
+                      : selectedRequestType === 'FULL_ACTIVATION'
+                        ? 'Includes ₹30,000 vehicle shopping voucher credit towards bike reservations and fully qualifies for 1:1 binary matching (₹3,000/pair).'
+                        : 'Upgrade from EV PRO to EV ULTRA. Includes ₹30,000 vehicle shopping voucher credit and full binary matching qualification.'}
+                  </p>
+                </div>
+              </>
+            )}
 
             {/* Payment Method Selector */}
             <div className="space-y-2">
@@ -3389,11 +4110,10 @@ function DashboardContent() {
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('GATEWAY')}
-                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                      paymentMethod === 'GATEWAY'
-                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${paymentMethod === 'GATEWAY'
+                      ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
                   >
                     <div className="flex items-center gap-2">
                       <CreditCard className="w-4 h-4 text-[#165DAD]" />
@@ -3409,11 +4129,10 @@ function DashboardContent() {
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('UPI')}
-                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                    paymentMethod === 'UPI'
-                      ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
+                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${paymentMethod === 'UPI'
+                    ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
                 >
                   <div className="flex items-center gap-2">
                     <QrCode className="w-4 h-4 text-[#165DAD]" />
@@ -3461,11 +4180,10 @@ function DashboardContent() {
                               setSelectedGatewayProvider(gw.provider);
                               setGatewayOrder(null);
                             }}
-                            className={`p-2.5 rounded-lg border text-left transition-all ${
-                              isSelected
-                                ? 'border-[#165DAD] bg-white ring-1 ring-[#165DAD] shadow-xs'
-                                : 'border-slate-200 bg-white/70 hover:bg-white'
-                            }`}
+                            className={`p-2.5 rounded-lg border text-left transition-all ${isSelected
+                              ? 'border-[#165DAD] bg-white ring-1 ring-[#165DAD] shadow-xs'
+                              : 'border-slate-200 bg-white/70 hover:bg-white'
+                              }`}
                           >
                             <div className="flex items-center justify-between">
                               <span className="font-bold text-[#253247]">{gw.displayName || gw.name || gw.provider}</span>
@@ -3492,8 +4210,8 @@ function DashboardContent() {
                       {selectedGatewayProvider === 'PINELABS'
                         ? 'Pine Labs (Plural) Payment Gateway'
                         : selectedGatewayProvider === 'RAZORPAY'
-                        ? 'Razorpay Secure Checkout'
-                        : 'Online Payment Gateway'}
+                          ? 'Razorpay Secure Checkout'
+                          : 'Online Payment Gateway'}
                     </span>
                   </div>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-[#165DAD] border border-blue-200">
@@ -3510,8 +4228,8 @@ function DashboardContent() {
                       {selectedRequestType === 'BASIC_ACTIVATION'
                         ? '₹3,000'
                         : selectedRequestType === 'FULL_ACTIVATION'
-                        ? '₹33,000'
-                        : '₹30,000'}
+                          ? '₹33,000'
+                          : '₹30,000'}
                     </strong>
                   </div>
                   <p className="text-[11px] text-slate-500">
@@ -3559,8 +4277,8 @@ function DashboardContent() {
                       {isProcessingGateway
                         ? 'Connecting to Gateway...'
                         : selectedGatewayProvider === 'PINELABS'
-                        ? 'Pay Online via Pine Labs (Primary)'
-                        : 'Pay Online via Gateway'}
+                          ? 'Pay Online via Pine Labs (Primary)'
+                          : 'Pay Online via Gateway'}
                     </span>
                   </button>
                 )}
@@ -3688,6 +4406,7 @@ function DashboardContent() {
                 disabled={
                   upgrading ||
                   isProcessingGateway ||
+                  membershipRequests.some((r) => r.status === 'PENDING') ||
                   (paymentMethod === 'UPI' &&
                     (!Boolean(
                       (paymentMethods?.upi?.enabled && paymentMethods?.upi?.merchantUpiVpa) ||
@@ -3773,15 +4492,15 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* WITHDRAWAL REQUEST & COMPLIANCE MODAL */}
+      {/* WITHDRAWAL REQUEST & COMPLIANCE MODAL (REQUIREMENT 10) */}
       {withdrawModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
             onClick={() => !withdrawing && setWithdrawModalOpen(false)}
           />
-          <div className="relative bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="relative bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-[#253247] font-bold text-sm">
                 <ArrowDownToLine className="w-5 h-5 text-[#15803D]" />
                 <span>Earnings Withdrawal Request</span>
@@ -3795,56 +4514,325 @@ function DashboardContent() {
               </button>
             </div>
 
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs">
-              <span className="text-slate-500 block text-[10px] font-semibold uppercase">Available Balance</span>
-              <span className="text-xl font-bold text-[#15803D]">
-                ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+            {/* Available Balance Card */}
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between">
+              <div>
+                <span className="text-slate-500 block text-[10px] font-semibold uppercase tracking-wider">Available Earnings</span>
+                <span className="text-2xl font-black text-[#15803D]">
+                  ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Email Verified
               </span>
             </div>
 
             {/* Compliance Restricted Notice */}
-            <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+            <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
               <div className="font-bold flex items-center gap-1.5">
                 <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
                 <span>Compliance Simulation Safeguard</span>
               </div>
               <p className="text-[11px] leading-relaxed">
-                Withdrawals are restricted in compliance simulation mode. Live payouts and banking transfers are non-operational until supervisory admin clearance. Minimum withdrawal: ₹1,000.
+                Platform operates under compliance simulation mode (COMPLIANCE_MODE=SIMULATION_ONLY). Live bank payouts are disabled until supervisory admin clearance. Minimum withdrawal: ₹1,000.
               </p>
             </div>
 
-            {withdrawError && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
-                {withdrawError}
+            {withdrawResult ? (
+              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-3 text-xs">
+                <div className="flex items-center gap-2 text-[#165DAD] font-bold">
+                  <CheckCircle2 className="w-5 h-5 text-[#165DAD]" />
+                  <span>Withdrawal Request Registered (Simulation)</span>
+                </div>
+                <div className="space-y-1 text-slate-700 text-[11px]">
+                  <div><strong>Status:</strong> {withdrawResult.status || 'PROCESSED'}</div>
+                  <div><strong>Transaction Reference:</strong> <span className="font-mono">{withdrawResult.reference || withdrawResult.id || 'WTH-SIMULATED'}</span></div>
+                  <div><strong>Amount:</strong> ₹{(withdrawResult.amountINR || (withdrawResult.amountPaise ? withdrawResult.amountPaise / 100 : withdrawAmount)).toLocaleString('en-IN')}</div>
+                  {withdrawResult.payoutDestination && (
+                    <div><strong>Destination:</strong> {withdrawResult.payoutDestination.type === 'BANK_ACCOUNT' ? `Bank (${withdrawResult.payoutDestination.maskedAccount})` : `UPI (${withdrawResult.payoutDestination.maskedUpi})`}</div>
+                  )}
+                  <p className="pt-1 text-slate-500 italic">{withdrawResult.message}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWithdrawModalOpen(false);
+                    setWithdrawResult(null);
+                  }}
+                  className="w-full py-2 rounded-lg bg-[#165DAD] text-white font-semibold text-xs transition-colors"
+                >
+                  Done
+                </button>
               </div>
-            )}
+            ) : (
+              <form onSubmit={handleExecuteWithdrawalWithDetails} className="space-y-4">
+                {/* Withdrawal Amount Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-[#253247] mb-1">
+                    Withdrawal Amount (₹) <span className="text-slate-400 font-normal">(Min: ₹1,000)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1000"
+                    step="500"
+                    max={walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 100000}
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(Math.max(0, Number(e.target.value)))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-[#253247] focus:border-[#165DAD] focus:outline-hidden font-bold text-base"
+                    placeholder="1000"
+                    required
+                  />
+                </div>
 
-            {withdrawResult && (
-              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 space-y-1">
-                <div className="font-bold">Withdrawal Status: {withdrawResult.status || 'PROCESSED'}</div>
-                <p className="text-[11px]">{withdrawResult.message}</p>
+                {/* Payout Destination Selector */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-[#253247]">Payout Method</label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawPayoutType('BANK_ACCOUNT')}
+                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${withdrawPayoutType === 'BANK_ACCOUNT'
+                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-[#165DAD]" />
+                        <span>Bank Transfer</span>
+                      </div>
+                      {withdrawPayoutType === 'BANK_ACCOUNT' && <Check className="w-3.5 h-3.5 text-[#165DAD]" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawPayoutType('UPI')}
+                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${withdrawPayoutType === 'UPI'
+                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <QrCode className="w-4 h-4 text-[#165DAD]" />
+                        <span>Instant UPI</span>
+                      </div>
+                      {withdrawPayoutType === 'UPI' && <Check className="w-3.5 h-3.5 text-[#165DAD]" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Form Fields: Bank Account */}
+                {withdrawPayoutType === 'BANK_ACCOUNT' ? (
+                  <div className="space-y-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Account Holder Name (as in bank passbook) *
+                      </label>
+                      <input
+                        type="text"
+                        value={withdrawAccountHolder}
+                        onChange={(e) => setWithdrawAccountHolder(e.target.value)}
+                        placeholder="e.g. Ramesh Kumar"
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Bank Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={withdrawBankName}
+                        onChange={(e) => setWithdrawBankName(e.target.value)}
+                        placeholder="e.g. HDFC Bank, SBI, ICICI"
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Account Number *
+                        </label>
+                        <input
+                          type="password"
+                          value={withdrawAccountNumber}
+                          onChange={(e) => setWithdrawAccountNumber(e.target.value)}
+                          placeholder="9-18 digits"
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Confirm Account Number *
+                        </label>
+                        <input
+                          type="text"
+                          value={withdrawConfirmAccountNumber}
+                          onChange={(e) => setWithdrawConfirmAccountNumber(e.target.value)}
+                          placeholder="Re-enter account number"
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Bank IFSC Code *
+                      </label>
+                      <input
+                        type="text"
+                        value={withdrawIfscCode}
+                        onChange={(e) => setWithdrawIfscCode(e.target.value.toUpperCase())}
+                        placeholder="e.g. HDFC0001234"
+                        maxLength={11}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono uppercase text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                        required
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Form Fields: UPI */
+                  <div className="space-y-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        VPA / Account Holder Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={withdrawAccountHolder}
+                        onChange={(e) => setWithdrawAccountHolder(e.target.value)}
+                        placeholder="e.g. Ramesh Kumar"
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        UPI ID (VPA) *
+                      </label>
+                      <input
+                        type="text"
+                        value={withdrawUpiId}
+                        onChange={(e) => setWithdrawUpiId(e.target.value.trim())}
+                        placeholder="e.g. username@okhdfcbank or 9876543210@paytm"
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-[#253247] focus:border-[#165DAD] focus:outline-hidden"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {withdrawValidationError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{withdrawValidationError}</span>
+                  </div>
+                )}
+
+                {withdrawError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{withdrawError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawModalOpen(false)}
+                    disabled={withdrawing}
+                    className="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={withdrawing}
+                    className="px-5 py-2.5 rounded-lg text-xs font-semibold text-white bg-[#15803D] hover:bg-[#126F61] flex items-center gap-2 transition-colors min-h-[40px] shadow-2xs disabled:opacity-50"
+                  >
+                    <ArrowDownToLine className="w-4 h-4" />
+                    <span>{withdrawing ? 'Submitting Request...' : `Submit Withdrawal (₹${withdrawAmount.toLocaleString('en-IN')})`}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* DASHBOARD-ONLY PWA INSTALL INSTRUCTIONS MODAL (FOR IOS / UNSUPPORTED BROWSERS) */}
+      {showInstallGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+            onClick={() => setShowInstallGuideModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 z-10 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <img
+                  src="/brand/askrev-icon.webp"
+                  alt="ASKR EV"
+                  className="w-9 h-9 rounded-xl object-contain border border-slate-100 shadow-2xs"
+                />
+                <div>
+                  <h3 className="font-bold text-sm text-[#0A1128]">Install ASKR EV App</h3>
+                  <p className="text-[11px] text-slate-500">Fast access from your home screen</p>
+                </div>
               </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
-                type="button"
-                onClick={() => setWithdrawModalOpen(false)}
-                disabled={withdrawing}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
+                onClick={() => setShowInstallGuideModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                aria-label="Close"
               >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExecuteWithdrawal(100000)}
-                disabled={withdrawing}
-                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#15803D] hover:bg-[#126F61] flex items-center gap-2 transition-colors min-h-[40px]"
-              >
-                <ArrowDownToLine className="w-4 h-4" />
-                <span>{withdrawing ? 'Submitting...' : 'Submit Withdrawal (₹1,000)'}</span>
+                <X className="w-5 h-5" />
               </button>
             </div>
+
+            <div className="space-y-2.5 text-xs text-slate-600 mb-5">
+              {isIOS ? (
+                <>
+                  <p className="font-semibold text-slate-700">Follow these steps in Safari on iOS:</p>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="w-5 h-5 rounded-full bg-[#165DAD] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                    <span>Tap the <strong className="text-slate-800">Share</strong> button in Safari's bottom toolbar.</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="w-5 h-5 rounded-full bg-[#165DAD] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                    <span>Scroll down and tap <strong className="text-slate-800">Add to Home Screen</strong>.</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="w-5 h-5 rounded-full bg-[#165DAD] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                    <span>Tap <strong className="text-slate-800">Add</strong> in the top-right corner to install.</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-slate-700">Follow these steps in your mobile browser:</p>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="w-5 h-5 rounded-full bg-[#165DAD] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                    <span>Tap the browser menu button (<strong className="text-slate-800">⋮</strong> or Share icon).</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="w-5 h-5 rounded-full bg-[#165DAD] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                    <span>Select <strong className="text-slate-800">Install app</strong> or <strong className="text-slate-800">Add to Home screen</strong>.</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="w-5 h-5 rounded-full bg-[#165DAD] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                    <span>Confirm <strong className="text-slate-800">Install</strong> to complete setup.</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowInstallGuideModal(false)}
+              className="w-full py-2.5 rounded-xl bg-[#165DAD] hover:bg-[#124B8D] text-white font-semibold text-xs transition-colors"
+            >
+              Got it
+            </button>
           </div>
         </div>
       )}
