@@ -139,15 +139,6 @@ export default function Navbar() {
                       <span>Member Dashboard</span>
                     </Link>
 
-                    <Link
-                      href="/simulator"
-                      onClick={() => setUserDropdownOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2.5 hover:bg-white/10 text-[#F7FAFF] transition-colors"
-                    >
-                      <Cpu className="w-4 h-4 text-emerald-400" />
-                      <span>Earnings Simulator</span>
-                    </Link>
-
                     {isAdmin && (
                       <a
                         href={
@@ -279,13 +270,6 @@ export default function Navbar() {
                   className="w-full py-2.5 rounded-full bg-white/10 text-center text-xs font-semibold text-[#F7FAFF]"
                 >
                   Member Dashboard
-                </Link>
-                <Link
-                  href="/simulator"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-center text-xs font-semibold text-emerald-400"
-                >
-                  Earnings Simulator
                 </Link>
                 {isAdmin && (
                   <a

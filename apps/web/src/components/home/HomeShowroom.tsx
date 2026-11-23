@@ -83,7 +83,7 @@ const FALLBACK_HERO_SLIDES = [
     primaryCtaEnabled: true,
     secondaryCtaEnabled: true,
     secondaryCtaLabel: 'Book Test Ride',
-    secondaryCtaUrl: '/simulator',
+    secondaryCtaUrl: '/auth/register',
     secondaryCtaStyle: 'SECONDARY',
     showPrice: true,
     showRange: true,

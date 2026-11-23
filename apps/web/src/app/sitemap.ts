@@ -47,12 +47,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly',
       priority: 0.6,
     },
-    {
-      url: `${baseUrl}/simulator`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.5,
-    },
   ];
 
   const vehicleRoutes: MetadataRoute.Sitemap = ALL_CATALOG_VEHICLES.map((vehicle) => ({

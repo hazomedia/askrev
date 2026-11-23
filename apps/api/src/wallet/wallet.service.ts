@@ -10,15 +10,35 @@ export class WalletService {
    * Get earnings wallet overview with all 4 authoritative balances
    */
   async getWalletOverview(userId: string) {
-    let wallet = await this.prisma.walletAccount.findUnique({
-      where: { userId },
-    });
+    const [user, existingWallet] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          isEmailVerified: true,
+          binaryPlacement: {
+            select: {
+              totalRewardEarnedPaise: true,
+            },
+          },
+        },
+      }),
+      this.prisma.walletAccount.findUnique({
+        where: { userId },
+      }),
+    ]);
 
+    let wallet = existingWallet;
     if (!wallet) {
       wallet = await this.prisma.walletAccount.create({
         data: { userId },
       });
     }
+
+    const totalEarnedPaise = wallet.totalEarnedPaise || 0n;
+    const royalMatchPaise = user?.binaryPlacement?.totalRewardEarnedPaise || 0n;
+    const crownBonusPaise = totalEarnedPaise > royalMatchPaise ? totalEarnedPaise - royalMatchPaise : 0n;
 
     return {
       availableEarningsINR: paiseToRupees(wallet.availableEarningsPaise),
@@ -26,10 +46,18 @@ export class WalletService {
       pendingRecoveryINR: paiseToRupees(wallet.pendingRecoveryPaise),
       totalEarnedINR: paiseToRupees(wallet.totalEarnedPaise),
       shoppingVoucherINR: paiseToRupees(wallet.shoppingVoucherBalancePaise),
+      isEmailVerified: !!user?.isEmailVerified,
+      breakdown: {
+        totalEarningsINR: paiseToRupees(totalEarnedPaise),
+        crownBonusINR: paiseToRupees(crownBonusPaise),
+        royalMatchINR: paiseToRupees(royalMatchPaise),
+        legacyIncomeINR: 0,
+        clubFundINR: 0,
+      },
       currency: 'INR',
       complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
       withdrawalsEnabled: false,
-      withdrawalNotice: 'Withdrawals are disabled in compliance simulation mode. Live payouts are strictly non-operational.',
+      withdrawalNotice: 'Withdrawals are restricted in compliance simulation mode. Live payouts are strictly non-operational.',
     };
   }
 
@@ -250,12 +278,54 @@ export class WalletService {
   }
 
   /**
-   * Request withdrawal - Strictly disabled in SIMULATION_ONLY mode
+   * Request withdrawal - Enforces server-side email verification and live payouts status
    */
-  async requestWithdrawal() {
-    throw new BadRequestException(
-      'Withdrawals are strictly disabled in COMPLIANCE_MODE=SIMULATION_ONLY. Live banking payouts and fund dispatches are disabled.'
-    );
+  async requestWithdrawal(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Member not found');
+    }
+
+    // Server-side mandatory email verification check
+    if (!user.isEmailVerified) {
+      throw new BadRequestException(
+        'Email verification is mandatory prior to requesting withdrawals. Please verify your registered email address.'
+      );
+    }
+
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+
+    // Strictly enforce disabled live payouts
+    if (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY') {
+      return {
+        success: false,
+        restricted: true,
+        livePayoutsEnabled: false,
+        complianceMode,
+        minWithdrawalINR: 1000,
+        availableBalanceINR: paiseToRupees(user.wallet?.availableEarningsPaise || 0n),
+        message:
+          'Withdrawals are restricted in compliance simulation mode. Live payouts and banking transfers are non-operational until supervisory admin clearance.',
+      };
+    }
+
+    // If live payouts were enabled:
+    const availablePaise = user.wallet?.availableEarningsPaise || 0n;
+    const minPaise = 100000n; // ₹1,000
+    if (availablePaise < minPaise) {
+      throw new BadRequestException('Minimum withdrawal threshold is ₹1,000.');
+    }
+
+    return {
+      success: true,
+      restricted: false,
+      message: 'Withdrawal request logged successfully.',
+    };
   }
 }
 

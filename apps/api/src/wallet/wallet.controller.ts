@@ -27,8 +27,8 @@ export class WalletController {
   }
 
   @Post('request-withdrawal')
-  async requestWithdrawal() {
-    return this.walletService.requestWithdrawal();
+  async requestWithdrawal(@CurrentUser() user: any) {
+    return this.walletService.requestWithdrawal(user.id);
   }
 
   @Get('admin/reconciliation')

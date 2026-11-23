@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" fill="none">
+  <!-- ASKR EV Official Vector Wordmark -->
+  <defs>
+    <linearGradient id="askr_blue_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1D4ED8" />
+      <stop offset="100%" stop-color="#0891D2" />
+    </linearGradient>
+    <linearGradient id="badge_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0C2348" />
+      <stop offset="100%" stop-color="#165DAD" />
+    </linearGradient>
+    <linearGradient id="bolt_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#50D9FF" />
+      <stop offset="100%" stop-color="#267DFF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Emblem / Monogram Icon Badge -->
+  <rect x="2" y="6" width="52" height="52" rx="14" fill="url(#badge_grad)" stroke="#267DFF" stroke-width="1.5" stroke-opacity="0.3" />
+  
+  <!-- Stylized Monogram A with Lightning Bolt Accent -->
+  <path d="M28 14L16 46H23L25.8 38.5H35.2L38 46H45L33 14H28ZM30.5 24.5L33.6 33.2H27.4L30.5 24.5Z" fill="#FFFFFF" />
+  <path d="M37 12L31 27H36L30 42L41 24H35L37 12Z" fill="url(#bolt_grad)" opacity="0.9" />
+
+  <!-- Typography: ASKR EV -->
+  <text x="68" y="38" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" font-weight="900" letter-spacing="-0.5" fill="#0C2348">ASKR</text>
+  <text x="146" y="38" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" font-weight="900" letter-spacing="-0.5" fill="url(#askr_blue_grad)">EV</text>
+  
+  <!-- Subtitle Tagline: ELECTRIC MOBILITY -->
+  <text x="70" y="52" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="2.5" fill="#64748B">ELECTRIC MOBILITY</text>
+</svg>
