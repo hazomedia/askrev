@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { User, Mail, Phone, Lock, Share2, AlertCircle, CheckCircle2, Loader2, UserCheck } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
+import AskrLogo from '../../../components/AskrLogo';
 import { fetchApi, setAuthSession } from '../../../lib/api';
 
 function RegisterForm() {
@@ -23,6 +24,8 @@ function RegisterForm() {
   const [sponsorError, setSponsorError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [registrationSuccess, setRegistrationSuccess] = useState<any | null>(null);
 
   const lookupSponsor = async (code: string) => {
     const clean = code.trim().toUpperCase();
@@ -99,7 +102,15 @@ function RegisterForm() {
       });
 
       setAuthSession(data.user, data.csrfToken);
-      router.push('/dashboard');
+      setRegistrationSuccess({
+        user: data.user,
+        memberId: data.user.memberId,
+        fullName,
+        email,
+        side: data.user.intendedBinarySide || side || 'AUTO',
+        sponsorName: sponsorInfo?.fullName,
+        sponsorId: sponsorMemberId.trim().toUpperCase(),
+      });
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please check your inputs.');
     } finally {
@@ -112,9 +123,83 @@ function RegisterForm() {
       <Navbar />
 
       <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-lg w-full bg-white rounded-xl border border-slate-200 p-8 shadow-sm space-y-6">
-          <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-[#253247]">Register Member Account</h1>
+        {registrationSuccess ? (
+          <div className="max-w-lg w-full bg-white rounded-2xl border border-slate-200 p-8 shadow-sm text-center space-y-6">
+            <div className="flex justify-center">
+              <AskrLogo variant="full" size="md" href="/" />
+            </div>
+
+            <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center border border-emerald-200 shadow-xs">
+              <CheckCircle2 className="w-9 h-9" />
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold uppercase tracking-widest text-[#165DAD]">
+                Registration Confirmed
+              </span>
+              <h1 className="text-2xl font-black text-[#253247]">
+                Welcome to ASKR EV!
+              </h1>
+              <p className="text-xs text-slate-500">
+                Your official membership credentials have been registered in the system.
+              </p>
+            </div>
+
+            {/* Credential Card */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left space-y-2 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <span className="text-slate-500">Assigned Member ID:</span>
+                <span className="font-mono text-sm font-black text-[#165DAD] bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">
+                  {registrationSuccess.memberId}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Member Name:</span>
+                <span className="font-bold text-[#253247]">{registrationSuccess.fullName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Registered Email:</span>
+                <span className="font-medium text-[#253247]">{registrationSuccess.email}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Sponsor:</span>
+                <span className="font-medium text-[#253247]">{registrationSuccess.sponsorName || registrationSuccess.sponsorId}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <span className="text-slate-500">Placement Side:</span>
+                <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px]">
+                  {registrationSuccess.side} LEG
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-3 pt-2">
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard?book=true')}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#134e94] hover:to-[#1742b6] text-white text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <span>Book EV / Activate Package</span>
+                <span className="text-blue-200">→</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard')}
+                className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+              >
+                Continue to Member Dashboard
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-lg w-full bg-white rounded-xl border border-slate-200 p-8 shadow-sm space-y-6">
+            <div className="flex justify-center">
+              <AskrLogo variant="full" size="md" href="/" />
+            </div>
+            <div className="text-center space-y-1">
+              <h1 className="text-2xl font-bold text-[#253247]">Register Member Account</h1>
             <p className="text-xs text-slate-500">
               Create your account to access customer services and EV reservations
             </p>
@@ -279,6 +364,7 @@ function RegisterForm() {
             </Link>
           </div>
         </div>
+      )}
       </main>
 
       <Footer />

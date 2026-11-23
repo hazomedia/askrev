@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { TotpService } from './totp.service';
@@ -628,6 +628,223 @@ describe('AuthService & TotpService Security Enhancements', () => {
           }),
         })
       );
+    });
+  });
+
+  describe('Admin Password-Only Login & TOTP Toggle Security Controls', () => {
+    const originalEnv = process.env.ADMIN_TOTP_REQUIRED;
+
+    afterEach(() => {
+      if (originalEnv !== undefined) {
+        process.env.ADMIN_TOTP_REQUIRED = originalEnv;
+      } else {
+        delete process.env.ADMIN_TOTP_REQUIRED;
+      }
+    });
+
+    describe('isAdminTotpRequired() Server-Side Flag Safety', () => {
+      it('defaults to true when environment variable is undefined, empty, or invalid', () => {
+        delete process.env.ADMIN_TOTP_REQUIRED;
+        expect(authService.isAdminTotpRequired()).toBe(true);
+
+        process.env.ADMIN_TOTP_REQUIRED = '';
+        expect(authService.isAdminTotpRequired()).toBe(true);
+
+        process.env.ADMIN_TOTP_REQUIRED = 'invalid_value';
+        expect(authService.isAdminTotpRequired()).toBe(true);
+
+        process.env.ADMIN_TOTP_REQUIRED = 'true';
+        expect(authService.isAdminTotpRequired()).toBe(true);
+      });
+
+      it('returns false only when explicitly configured to false, 0, off, or disabled', () => {
+        process.env.ADMIN_TOTP_REQUIRED = 'false';
+        expect(authService.isAdminTotpRequired()).toBe(false);
+
+        process.env.ADMIN_TOTP_REQUIRED = 'FALSE';
+        expect(authService.isAdminTotpRequired()).toBe(false);
+
+        process.env.ADMIN_TOTP_REQUIRED = '0';
+        expect(authService.isAdminTotpRequired()).toBe(false);
+
+        process.env.ADMIN_TOTP_REQUIRED = 'off';
+        expect(authService.isAdminTotpRequired()).toBe(false);
+
+        process.env.ADMIN_TOTP_REQUIRED = 'disabled';
+        expect(authService.isAdminTotpRequired()).toBe(false);
+      });
+    });
+
+    describe('Password-Only Admin Login Workflow (ADMIN_TOTP_REQUIRED=false)', () => {
+      beforeEach(() => {
+        process.env.ADMIN_TOTP_REQUIRED = 'false';
+        totpService.resetRateLimit(`auth-login:${mockUser.email.toLowerCase().trim()}`);
+      });
+
+      it('allows Admin without MFA to login with password only without requiring MFA bootstrap', async () => {
+        mockUser.twoFactorEnabled = false;
+        mockUser.twoFactorSecret = null;
+
+        const result = await authService.login({
+          email: mockUser.email,
+          password: 'OldSecurePassword@2026',
+        });
+
+        expect(result.tokens).toHaveProperty('accessToken');
+        expect(result.tokens).toHaveProperty('refreshToken');
+        expect(result.user).toBeDefined();
+        expect((result as any).mfaEnrollmentRequired).toBeUndefined();
+      });
+
+      it('allows Admin with existing MFA configured to login with password only (bypassing TOTP challenge)', async () => {
+        mockUser.twoFactorEnabled = true;
+        mockUser.twoFactorSecret = 'ENC_TEST_SECRET';
+
+        const result = await authService.login({
+          email: mockUser.email,
+          password: 'OldSecurePassword@2026',
+        });
+
+        // Even though twoFactorEnabled is true on the user record, ADMIN_TOTP_REQUIRED=false permits password-only entry
+        expect(result.tokens).toHaveProperty('accessToken');
+        expect(result.tokens).toHaveProperty('refreshToken');
+        expect(result.user).toBeDefined();
+      });
+
+      it('enforces MFA for Members even when ADMIN_TOTP_REQUIRED=false', async () => {
+        const memberUser = {
+          ...mockUser,
+          id: 'user-member-01',
+          email: 'member@askrevdrive.com',
+          role: UserRole.MEMBER,
+          twoFactorEnabled: true,
+          twoFactorSecret: 'ENC_MEMBER_SECRET',
+        };
+
+        mockPrisma.user.findUnique.mockImplementation(({ where }: any) => {
+          if (where.email === memberUser.email) {
+            return Promise.resolve({ ...memberUser });
+          }
+          return Promise.resolve(null);
+        });
+
+        totpService.resetRateLimit(`auth-login:${memberUser.email}`);
+
+        // Members with 2FA enabled must still provide TOTP
+        await expect(
+          authService.login({
+            email: memberUser.email,
+            password: 'OldSecurePassword@2026',
+          })
+        ).rejects.toThrow('MFA_REQUIRED');
+      });
+    });
+
+    describe('Enforced Admin MFA Workflow (ADMIN_TOTP_REQUIRED=true)', () => {
+      beforeEach(() => {
+        process.env.ADMIN_TOTP_REQUIRED = 'true';
+        totpService.resetRateLimit(`auth-login:${mockUser.email.toLowerCase().trim()}`);
+      });
+
+      it('requires MFA bootstrap enrollment for Admin when 2FA is not enabled', async () => {
+        mockUser.twoFactorEnabled = false;
+        mockUser.twoFactorSecret = null;
+
+        const result = await authService.login({
+          email: mockUser.email,
+          password: 'OldSecurePassword@2026',
+        });
+
+        expect((result as any).mfaEnrollmentRequired).toBe(true);
+        expect((result as any).enrollmentToken).toBeDefined();
+        expect((result as any).tokens).toBeUndefined();
+      });
+
+      it('requires TOTP verification challenge for Admin when 2FA is enabled', async () => {
+        mockUser.twoFactorEnabled = true;
+        mockUser.twoFactorSecret = 'ENC_TEST_SECRET';
+
+        await expect(
+          authService.login({
+            email: mockUser.email,
+            password: 'OldSecurePassword@2026',
+          })
+        ).rejects.toThrow('MFA_REQUIRED');
+      });
+    });
+
+    describe('Password-Only Security Controls: Rate Limiting & Account Lockout', () => {
+      beforeEach(() => {
+        process.env.ADMIN_TOTP_REQUIRED = 'false';
+        totpService.resetRateLimit(`auth-login:${mockUser.email.toLowerCase().trim()}`);
+      });
+
+      it('rejects wrong password with uniform 401 error and logs AUTH_LOGIN_FAILED', async () => {
+        await expect(
+          authService.login({
+            email: mockUser.email,
+            password: 'CompletelyWrongPassword!999',
+          })
+        ).rejects.toThrow('Invalid email or password');
+
+        expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              action: 'AUTH_LOGIN_FAILED',
+              metadata: expect.objectContaining({
+                email: mockUser.email,
+                reason: 'BAD_PASSWORD',
+              }),
+            }),
+          })
+        );
+      });
+
+      it('locks account after 5 consecutive failed login attempts and resets on success', async () => {
+        const email = mockUser.email;
+
+        // 5 consecutive failed attempts
+        for (let i = 0; i < 5; i++) {
+          await expect(
+            authService.login({
+              email,
+              password: 'WrongPassword@123',
+            })
+          ).rejects.toThrow('Invalid email or password');
+        }
+
+        // 6th attempt is blocked by rate limiter lockout
+        await expect(
+          authService.login({
+            email,
+            password: 'OldSecurePassword@2026', // Even with correct password, account is locked
+          })
+        ).rejects.toThrow('Too many failed login attempts. Account temporarily locked');
+
+        expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              action: 'AUTH_LOGIN_LOCKED',
+              metadata: expect.objectContaining({
+                email,
+                reason: 'RATE_LIMIT_EXCEEDED',
+              }),
+            }),
+          })
+        );
+
+        // Reset rate limit (simulating 15m expiration or admin reset)
+        totpService.resetRateLimit(`auth-login:${email}`);
+
+        // Login with correct password succeeds immediately
+        const successResult = await authService.login({
+          email,
+          password: 'OldSecurePassword@2026',
+        });
+
+        expect(successResult.tokens).toHaveProperty('accessToken');
+        expect(successResult.tokens).toHaveProperty('refreshToken');
+      });
     });
   });
 });

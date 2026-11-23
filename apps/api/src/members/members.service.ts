@@ -47,14 +47,37 @@ export class MembersService {
         qualificationMethod: true,
         qualificationDate: true,
         createdAt: true,
+        sponsorId: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+        binaryPlacement: {
+          select: {
+            parentId: true,
+            leg: true,
+          },
+        },
       },
     });
+
+    const parentIds = directs
+      .map((d) => d.binaryPlacement?.parentId)
+      .filter((pid): pid is string => Boolean(pid));
+
+    const parentUsers =
+      parentIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: parentIds } },
+            select: { id: true, memberId: true, fullName: true },
+          })
+        : [];
+    const parentMap = new Map(parentUsers.map((p) => [p.id, p]));
 
     const totalActivatedDirects = directs.filter(
       (d) => d.currentPackage === MembershipPackage.BASIC || d.currentPackage === MembershipPackage.FULL
     ).length;
 
     const totalFullQualifiedDirects = directs.filter((d) => d.isFullQualified).length;
+    const totalProDirects = directs.filter((d) => d.currentPackage === MembershipPackage.BASIC).length;
+    const totalUltraDirects = directs.filter((d) => d.currentPackage === MembershipPackage.FULL).length;
 
     return {
       sponsor: user,
@@ -62,8 +85,32 @@ export class MembersService {
         totalDirects: directs.length,
         totalActivatedDirects,
         totalFullQualifiedDirects,
+        totalProDirects,
+        totalUltraDirects,
       },
-      directs,
+      directs: directs.map((d) => {
+        const parent = d.binaryPlacement?.parentId ? parentMap.get(d.binaryPlacement.parentId) : null;
+        return {
+          id: d.id,
+          memberId: d.memberId,
+          fullName: d.fullName,
+          email: d.email,
+          phone: d.phone,
+          currentPackage: d.currentPackage,
+          isFullQualified: d.isFullQualified,
+          qualificationMethod: d.qualificationMethod,
+          qualificationDate: d.qualificationDate,
+          createdAt: d.createdAt,
+          sponsorId: d.sponsor?.memberId || user.memberId,
+          placementParentId: parent?.memberId || null,
+          placementParentName: parent?.fullName || null,
+          placementLeg: d.binaryPlacement?.leg || null,
+          status:
+            d.currentPackage === MembershipPackage.BASIC || d.currentPackage === MembershipPackage.FULL
+              ? 'ACTIVE'
+              : 'INACTIVE',
+        };
+      }),
     };
   }
 

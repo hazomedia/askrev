@@ -39,11 +39,18 @@ import {
   CreditCard,
   Building2,
   Globe,
+  Crown,
+  Zap,
+  TrendingUp,
+  Layers,
+  Filter,
+  ArrowDownToLine,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
+import AskrLogo from '../../components/AskrLogo';
 
-type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'calculator' | 'bookings' | 'profile';
+type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
 
 function DashboardContent() {
   const router = useRouter();
@@ -66,6 +73,21 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // Withdrawal & Email Verification States
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [emailVerifyModalOpen, setEmailVerifyModalOpen] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawResult, setWithdrawResult] = useState<any | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [sendingWithdrawVerify, setSendingWithdrawVerify] = useState(false);
+  const [withdrawVerifyNotice, setWithdrawVerifyNotice] = useState<string | null>(null);
+
+  // Team Filter State
+  const [teamFilter, setTeamFilter] = useState<'ALL' | 'LEFT' | 'RIGHT'>('ALL');
+
+  // Expanded Transaction IDs for Detailed Audit Ledger view
+  const [expandedTxIds, setExpandedTxIds] = useState<Record<string, boolean>>({});
 
   const [copiedLeft, setCopiedLeft] = useState(false);
   const [copiedRight, setCopiedRight] = useState(false);
@@ -191,21 +213,19 @@ function DashboardContent() {
         'binary',
         'wallets',
         'vouchers',
-        'calculator',
         'bookings',
         'profile',
       ].includes(tabParam)
     ) {
       setActiveTab(tabParam);
     }
-  }, [searchParams]);
 
-  useEffect(() => {
-    if (activeTab === 'calculator' && !simulationResult) {
-      runCanonicalSimulation();
-      calculateBinaryMatching();
+    const bookParam = searchParams.get('book');
+    if (bookParam === 'true') {
+      setSelectedRequestType('BASIC_ACTIVATION');
+      setPaymentModalOpen(true);
     }
-  }, [activeTab]);
+  }, [searchParams]);
 
   const runCanonicalSimulation = async () => {
     setSimLoading(true);
@@ -612,6 +632,54 @@ function DashboardContent() {
     }
   };
 
+  const handleInitiateWithdrawal = () => {
+    setWithdrawError(null);
+    setWithdrawResult(null);
+    const isVerified = Boolean(walletOverview?.isEmailVerified ?? user?.isEmailVerified);
+    if (!isVerified) {
+      setEmailVerifyModalOpen(true);
+      return;
+    }
+    setWithdrawModalOpen(true);
+  };
+
+  const handleSendWithdrawVerification = async () => {
+    setSendingWithdrawVerify(true);
+    setWithdrawVerifyNotice(null);
+    try {
+      const res: any = await fetchApi<any>('/auth/send-verification', {
+        method: 'POST',
+      });
+      setWithdrawVerifyNotice(res.message || 'Verification link sent to your registered email.');
+    } catch (err: any) {
+      setWithdrawVerifyNotice(err.message || 'Failed to send verification link.');
+    } finally {
+      setSendingWithdrawVerify(false);
+    }
+  };
+
+  const handleExecuteWithdrawal = async (amountPaise?: number) => {
+    setWithdrawing(true);
+    setWithdrawError(null);
+    setWithdrawResult(null);
+    try {
+      const res = await fetchApi<any>('/wallet/request-withdrawal', {
+        method: 'POST',
+        body: JSON.stringify({ amountPaise: amountPaise || 100000 }),
+      });
+      setWithdrawResult(res);
+      await loadData();
+    } catch (err: any) {
+      setWithdrawError(err.message || 'Withdrawal request failed.');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  const toggleTxExpanded = (refId: string) => {
+    setExpandedTxIds((prev) => ({ ...prev, [refId]: !prev[refId] }));
+  };
+
   const handleInspectBinarySubtree = async (targetMemberId: string, targetFullName: string, resetRoot = false) => {
     setLoadingBinarySubtree(true);
     setBinaryTreeError(null);
@@ -678,11 +746,10 @@ function DashboardContent() {
   const navItems: { id: TabType; label: string; icon: any; count?: number }[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'membership', label: 'EV Booking Tiers', icon: Sparkles },
-    { id: 'team', label: 'My Team', icon: Users, count: directTeam?.directs?.length },
+    { id: 'team', label: 'My Direct Team', icon: Users, count: directTeam?.directs?.length },
     { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
     { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
     { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
-    { id: 'calculator', label: 'Earnings Simulator', icon: Cpu },
     { id: 'bookings', label: 'My Bookings', icon: Bike, count: userBookings.length },
     { id: 'profile', label: 'Profile', icon: User },
   ];
@@ -690,13 +757,13 @@ function DashboardContent() {
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#253247]">
       {/* =========================================================================
-          TASK 1 — TOP HEADER
-          Features ASKR EV logo, Member ID, membership badge, and Logout
+          TOP HEADER
+          Features official ASKR EV branding, navigation, and user controls
           ========================================================================= */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Left: Mobile trigger & ASKR EV Logo + Title */}
+            {/* Left: Mobile trigger & ASKR EV Logo */}
             <div className="flex items-center gap-3 sm:gap-4">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -706,23 +773,12 @@ function DashboardContent() {
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
 
-              <Link href="/" className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#165DAD] flex items-center justify-center text-white font-black text-sm shadow-xs">
-                  A
-                </div>
-                <span className="text-base font-bold tracking-tight text-[#253247] hidden sm:inline">
-                  ASKR <span className="text-[#165DAD]">EV</span>
-                </span>
-              </Link>
+              <AskrLogo href="/dashboard" size="sm" />
 
               <span className="text-slate-300 hidden sm:inline">/</span>
 
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-xs sm:text-sm text-[#253247] hidden sm:inline">Member Portal</span>
-                <span className="text-slate-300 hidden sm:inline">/</span>
-                <span className="font-mono text-xs font-bold text-[#165DAD] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 whitespace-nowrap">
-                  {user.memberId}
-                </span>
+                <span className="font-semibold text-xs sm:text-sm text-[#253247] hidden sm:inline">Member Dashboard</span>
               </div>
             </div>
 
@@ -917,31 +973,6 @@ function DashboardContent() {
 
           {/* Main Content Area */}
           <main className="flex-1 min-w-0 space-y-6">
-            {/* System Notifications / Alerts */}
-            {user && !user.isEmailVerified && (
-              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0">
-                    <Mail className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-amber-950">Email Verification Required</p>
-                    <p className="text-[11px] text-amber-800">
-                      Your registered email <span className="font-semibold">{user.email}</span> is unverified. Please verify your address to ensure secure access.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={handleSendVerification}
-                    disabled={sendingVerification}
-                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
-                  >
-                    {sendingVerification ? 'Sending...' : 'Resend Verification Email'}
-                  </button>
-                </div>
-              </div>
-            )}
 
             {verificationNotice && (
               <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-[#165DAD] text-xs font-medium flex items-center justify-between">
@@ -992,19 +1023,18 @@ function DashboardContent() {
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 {/* =========================================================================
-                    TASK 1 & 2 — COMPACT WELCOME CARD & REFERRAL LINK SHARING
-                    Includes Member Name, Member ID, Sponsor, Copy Link & WhatsApp Share
+                    SECTION 4 — COMPACT PREMIUM WELCOME BACK CARD
                     ========================================================================= */}
-                <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    {/* Welcome Details */}
+                    {/* Welcome Context */}
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         <span>Welcome back,</span>
-                        <span className="font-semibold text-[#253247] text-sm">{user.fullName}</span>
+                        <span className="font-bold text-[#0C2348] text-sm">{user.fullName}</span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <h1 className="text-lg sm:text-xl font-bold text-[#253247]">
+                        <h1 className="text-lg sm:text-xl font-black text-[#0C2348] tracking-tight">
                           Member Dashboard
                         </h1>
                         <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
@@ -1017,89 +1047,276 @@ function DashboardContent() {
                         >
                           {getTierDisplayName(user.currentPackage)}
                         </span>
-                        {user.isFullQualified && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-[#15803D] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                            <Check className="w-3 h-3" />
-                            <span>Qualified</span>
-                          </span>
-                        )}
                       </div>
                     </div>
 
+                    {/* Prominent Book EV Button */}
                     <div className="flex items-center gap-2 shrink-0">
                       <button
-                        onClick={() => setShowShareModal(true)}
-                        className="px-3.5 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-2xs"
+                        onClick={() => {
+                          setSelectedRequestType(
+                            user.currentPackage === 'BASIC'
+                              ? 'BASIC_TO_FULL_UPGRADE'
+                              : 'BASIC_ACTIVATION'
+                          );
+                          setPaymentModalOpen(true);
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center gap-2"
                       >
-                        <Share2 className="w-3.5 h-3.5" />
-                        <span>Share Links</span>
+                        <Bike className="w-4 h-4" />
+                        <span>Book EV</span>
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* =========================================================================
-                    TASK 3 & 6 — FOUR PRIMARY SUMMARY CARDS WITH ACCURATE TERMINOLOGY
-                    Values from authenticated API responses; no false withdrawable claims.
+                    SECTION 1 & 6 — PREMIUM GRADIENT EARNINGS CARDS (5 COORDINATED CARDS)
+                    Order: Total Earnings, EV Crown Bonus, EV Royal Match, EV Legacy, EV Club Fund
                     ========================================================================= */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {/* 1. Earnings Wallet */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>Earnings Wallet</span>
-                      <Wallet className="w-4 h-4 text-[#15803D]" />
-                    </div>
-                    <div className="text-2xl font-bold text-[#253247] mt-2">
-                      ₹{user.wallet?.availableEarningsINR?.toLocaleString('en-IN') ?? 0}
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-1 font-medium flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                      <span>Available Balance (Simulation Mode)</span>
-                    </div>
-                  </div>
+                {(() => {
+                  const totalEarnedINR = Number(walletOverview?.totalEarnedINR ?? user?.wallet?.totalEarnedINR ?? 0);
+                  const royalMatchINR = Number(
+                    walletOverview?.breakdown?.royalMatchINR ??
+                    binaryTree?.node?.totalRewardEarnedINR ??
+                    user?.binaryPlacement?.totalRewardEarnedINR ??
+                    0
+                  );
+                  const crownBonusINR = Number(
+                    walletOverview?.breakdown?.crownBonusINR ??
+                    Math.max(0, totalEarnedINR - royalMatchINR)
+                  );
+                  const activeDirectsCount = Number(directTeam?.metrics?.totalActivatedDirects ?? 0);
+                  const totalDirectsCount = Number(directTeam?.metrics?.totalDirects ?? 0);
+                  const proDirectsCount = Number(
+                    directTeam?.metrics?.totalProDirects ??
+                    directTeam?.directs?.filter((d: any) => d.currentPackage === 'BASIC').length ??
+                    0
+                  );
+                  const ultraDirectsCount = Number(
+                    directTeam?.metrics?.totalUltraDirects ??
+                    directTeam?.directs?.filter((d: any) => d.currentPackage === 'FULL').length ??
+                    0
+                  );
 
-                  {/* 2. Shopping Vouchers */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>Shopping Vouchers</span>
-                      <Ticket className="w-4 h-4 text-[#165DAD]" />
-                    </div>
-                    <div className="text-2xl font-bold text-[#165DAD] mt-2">
-                      ₹{user.wallet?.shoppingVoucherINR?.toLocaleString('en-IN') ?? 0}
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Redeemable on EV bookings
-                    </div>
-                  </div>
+                  return (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+                        {/* 1. Total Earnings: Deep Navy -> Royal Blue */}
+                        <div className="col-span-2 lg:col-span-1 rounded-2xl p-5 bg-gradient-to-br from-[#0C2348] via-[#103062] to-[#1D4ED8] text-white shadow-md shadow-slate-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                          <div className="flex items-center justify-between text-white/80">
+                            <span className="text-xs font-bold uppercase tracking-wider">Total Earnings</span>
+                            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                              <Wallet className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                          <div className="my-2">
+                            <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                              ₹{totalEarnedINR.toLocaleString('en-IN')}
+                            </div>
+                            <div className="text-[11px] text-blue-200/90 font-medium mt-0.5">
+                              Lifetime Settled
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-white/60 font-medium">
+                            Reconciled with Ledger
+                          </div>
+                        </div>
 
-                  {/* 3. Direct Referrals */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>Direct Referrals</span>
-                      <Users className="w-4 h-4 text-slate-600" />
-                    </div>
-                    <div className="text-2xl font-bold text-[#253247] mt-2">
-                      {directTeam?.metrics?.totalDirects ?? 0}
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      {directTeam?.metrics?.totalActivatedDirects ?? 0} activated members
-                    </div>
-                  </div>
+                        {/* 2. EV Crown Bonus: Royal Blue -> Electric Blue */}
+                        <div className="rounded-2xl p-5 bg-gradient-to-br from-[#155EBA] via-[#1070C5] to-[#0891D2] text-white shadow-md shadow-blue-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                          <div className="flex items-center justify-between text-white/80">
+                            <span className="text-xs font-bold uppercase tracking-wider">EV Crown Bonus</span>
+                            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                              <Crown className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                          <div className="my-2">
+                            <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                              ₹{crownBonusINR.toLocaleString('en-IN')}
+                            </div>
+                            <div className="text-[11px] text-cyan-100/90 font-medium mt-0.5">
+                              Sponsor Direct
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-white/70 font-medium">
+                            Direct Member Referrals
+                          </div>
+                        </div>
 
-                  {/* 4. Active EV Bookings */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-                      <span>EV Bookings</span>
-                      <Bike className="w-4 h-4 text-[#165DAD]" />
+                        {/* 3. EV Royal Match: Teal Blue -> Emerald Teal */}
+                        <div className="rounded-2xl p-5 bg-gradient-to-br from-[#087E8B] via-[#0B7A7C] to-[#0F766E] text-white shadow-md shadow-teal-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                          <div className="flex items-center justify-between text-white/80">
+                            <span className="text-xs font-bold uppercase tracking-wider">EV Royal Match</span>
+                            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                              <GitBranch className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                          <div className="my-2">
+                            <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                              ₹{royalMatchINR.toLocaleString('en-IN')}
+                            </div>
+                            <div className="text-[11px] text-emerald-100/90 font-medium mt-0.5">
+                              Matching Income
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-white/70 font-medium">
+                            1:1 Pair Settlement
+                          </div>
+                        </div>
+
+                        {/* 4. EV Legacy Income: Indigo -> Muted Violet */}
+                        <div className="rounded-2xl p-5 bg-gradient-to-br from-[#354D9B] via-[#484A9F] to-[#6546A3] text-white shadow-md shadow-indigo-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                          <div className="flex items-center justify-between text-white/80">
+                            <span className="text-xs font-bold uppercase tracking-wider">EV Legacy Income</span>
+                            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                              <Layers className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                          <div className="my-2">
+                            <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                              ₹0
+                            </div>
+                            <div className="text-[11px] text-purple-200/90 font-medium mt-0.5">
+                              Level Income
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-purple-200/80">{Math.min(activeDirectsCount, 3)}/3 Active</span>
+                            <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
+                              {activeDirectsCount >= 3 ? 'Qualified' : 'Pending'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 5. EV Club Fund: Emerald Green -> Deep Teal */}
+                        <div className="rounded-2xl p-5 bg-gradient-to-br from-[#126F61] via-[#0E5E4D] to-[#064E3B] text-white shadow-md shadow-emerald-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                          <div className="flex items-center justify-between text-white/80">
+                            <span className="text-xs font-bold uppercase tracking-wider">EV Club Fund</span>
+                            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                              <Globe className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                          <div className="my-2">
+                            <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                              ₹0
+                            </div>
+                            <div className="text-[11px] text-teal-200/90 font-medium mt-0.5">
+                              Leadership Pool
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-teal-200/80">Status</span>
+                            <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
+                              Leadership Pool
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* =========================================================================
+                          SECTION 7 — QUALIFICATION & ELIGIBILITY METRICS
+                          ========================================================================= */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* 1. EV Legacy Qualification Dynamic Card */}
+                        <div className="bg-white rounded-2xl border-2 border-indigo-100 p-5 shadow-xs flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-indigo-900">
+                              <span>EV Legacy Eligibility</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                {Math.min(activeDirectsCount, 3)} / 3 Active
+                              </span>
+                            </div>
+                            <div className="mt-2.5">
+                              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full transition-all"
+                                  style={{ width: `${Math.min(100, (activeDirectsCount / 3) * 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100">
+                            {activeDirectsCount >= 3
+                              ? '✓ Qualified for EV Legacy Generation Income'
+                              : `Need ${3 - activeDirectsCount} more active direct referral(s) to unlock.`}
+                          </div>
+                        </div>
+
+                        {/* 2. Referral Summary */}
+                        <div className="bg-white rounded-2xl border-2 border-blue-100 p-5 shadow-xs flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-blue-900">
+                              <span>Referral Summary</span>
+                              <Users className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                              <div>
+                                <span className="text-[11px] text-slate-500 font-medium">Total</span>
+                                <div className="text-xl font-black text-[#0C2348]">{totalDirectsCount}</div>
+                              </div>
+                              <div>
+                                <span className="text-[11px] text-slate-500 font-medium">Active</span>
+                                <div className="text-xl font-black text-emerald-600">{activeDirectsCount}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100">
+                            {totalDirectsCount > 0
+                              ? `${Math.round((activeDirectsCount / totalDirectsCount) * 100)}% activation rate`
+                              : 'No direct referrals registered yet'}
+                          </div>
+                        </div>
+
+                        {/* 3. Direct Package Counts */}
+                        <div className="bg-white rounded-2xl border-2 border-cyan-100 p-5 shadow-xs flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-cyan-900">
+                              <span>Direct Packages</span>
+                              <Sparkles className="w-4 h-4 text-cyan-600" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                              <div>
+                                <span className="text-[11px] text-slate-500 font-medium">EV PRO (₹3k)</span>
+                                <div className="text-xl font-black text-[#165DAD]">{proDirectsCount}</div>
+                              </div>
+                              <div>
+                                <span className="text-[11px] text-slate-500 font-medium">EV ULTRA (₹33k)</span>
+                                <div className="text-xl font-black text-purple-700">{ultraDirectsCount}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100">
+                            Based on approved membership packages
+                          </div>
+                        </div>
+
+                        {/* 4. Binary Carry Summary */}
+                        <div className="bg-white rounded-2xl border-2 border-teal-100 p-5 shadow-xs flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-teal-900">
+                              <span>Binary Carry</span>
+                              <GitBranch className="w-4 h-4 text-teal-600" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                              <div>
+                                <span className="text-[11px] text-slate-500 font-medium">Left Carry</span>
+                                <div className="text-xl font-black text-[#165DAD]">{binaryTree?.node?.carryLeftUnits ?? 0}u</div>
+                              </div>
+                              <div>
+                                <span className="text-[11px] text-slate-500 font-medium">Right Carry</span>
+                                <div className="text-xl font-black text-emerald-600">{binaryTree?.node?.carryRightUnits ?? 0}u</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100">
+                            {binaryTree?.node?.totalMatchesConsumed ?? 0} total pair(s) matched
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-[#253247] mt-2">
-                      {userBookings.length}
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Verified reservations
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Upgrade Path for EV PRO (BASIC) */}
                 {user.currentPackage === 'BASIC' && !user.isFullQualified && (
@@ -1539,20 +1756,26 @@ function DashboardContent() {
             {activeTab === 'team' && (
               <div className="space-y-6">
                 {/* Metric Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
                     <div className="text-xs text-slate-500 font-medium">Total Direct Referrals</div>
                     <div className="text-2xl font-bold text-[#253247] mt-1">
                       {directTeam?.metrics?.totalDirects ?? 0}
                     </div>
                   </div>
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <div className="text-xs text-[#165DAD] font-medium">Activated Directs (₹3k+)</div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+                    <div className="text-xs text-[#165DAD] font-medium">EV PRO Directs (₹3k)</div>
                     <div className="text-2xl font-bold text-[#165DAD] mt-1">
-                      {directTeam?.metrics?.totalActivatedDirects ?? 0}
+                      {directTeam?.metrics?.totalProDirects ?? 0}
                     </div>
                   </div>
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+                    <div className="text-xs text-purple-700 font-medium">EV ULTRA Directs (₹33k)</div>
+                    <div className="text-2xl font-bold text-purple-700 mt-1">
+                      {directTeam?.metrics?.totalUltraDirects ?? 0}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
                     <div className="text-xs text-[#15803D] font-medium">Full Qualified Directs</div>
                     <div className="text-2xl font-bold text-[#15803D] mt-1">
                       {directTeam?.metrics?.totalFullQualifiedDirects ?? 0}
@@ -1560,37 +1783,116 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* Direct Team Table */}
+                {/* Direct Team Table with Leg Filters */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+                  <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-bold text-[#253247]">Direct Sponsor Lineage</h3>
-                      <p className="text-xs text-slate-500">Members registered using your referral code</p>
+                      <h3 className="text-sm font-bold text-[#253247]">Direct Lineage & Placement Roster</h3>
+                      <p className="text-xs text-slate-500">Members registered using your referral code and their binary placement</p>
                     </div>
-                    <span className="text-xs text-slate-500 font-mono">
-                      {directTeam?.directs?.length ?? 0} Members
-                    </span>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg text-xs font-semibold self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setTeamFilter('ALL')}
+                        className={`px-3 py-1.5 rounded-md transition-colors ${
+                          teamFilter === 'ALL'
+                            ? 'bg-white text-[#165DAD] shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        ALL ({directTeam?.directs?.length ?? 0})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTeamFilter('LEFT')}
+                        className={`px-3 py-1.5 rounded-md transition-colors ${
+                          teamFilter === 'LEFT'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        LEFT LEG ({(directTeam?.directs || []).filter((d: any) => d.placementLeg === 'LEFT').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTeamFilter('RIGHT')}
+                        className={`px-3 py-1.5 rounded-md transition-colors ${
+                          teamFilter === 'RIGHT'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        RIGHT LEG ({(directTeam?.directs || []).filter((d: any) => d.placementLeg === 'RIGHT').length})
+                      </button>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
                       <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
                         <tr>
+                          <th className="py-3 px-4">Member Name</th>
                           <th className="py-3 px-4">Member ID</th>
-                          <th className="py-3 px-4">Full Name</th>
-                          <th className="py-3 px-4">Package</th>
-                          <th className="py-3 px-4">Full Qualification</th>
+                          <th className="py-3 px-4">Sponsor ID</th>
+                          <th className="py-3 px-4">Placement Parent ID</th>
+                          <th className="py-3 px-4">Placement Leg</th>
+                          <th className="py-3 px-4">Package Tier</th>
+                          <th className="py-3 px-4">Status</th>
                           <th className="py-3 px-4">Joined Date</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-[#253247]">
-                        {directTeam?.directs && directTeam.directs.length > 0 ? (
-                          directTeam.directs.map((d: any) => (
+                        {(() => {
+                          const list = (directTeam?.directs || []).filter((d: any) => {
+                            if (teamFilter === 'ALL') return true;
+                            return d.placementLeg === teamFilter;
+                          });
+
+                          if (list.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={8} className="py-8 text-center text-slate-400">
+                                  {teamFilter === 'ALL'
+                                    ? 'No direct referrals found. Use your referral link to invite members.'
+                                    : `No direct members placed on ${teamFilter} LEG.`}
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return list.map((d: any) => (
                             <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-4 font-medium text-slate-900">{d.fullName}</td>
                               <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
                                 {d.memberId}
                               </td>
-                              <td className="py-3 px-4 font-medium">{d.fullName}</td>
+                              <td className="py-3 px-4 font-mono text-slate-600">
+                                {d.sponsorId || user.memberId}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-slate-600">
+                                {d.placementParentId ? (
+                                  <span>{d.placementParentId}</span>
+                                ) : (
+                                  <span className="text-slate-400 italic">Pending Placement</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4">
+                                {d.placementLeg === 'LEFT' ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    LEFT LEG
+                                  </span>
+                                ) : d.placementLeg === 'RIGHT' ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    RIGHT LEG
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                                    Unassigned
+                                  </span>
+                                )}
+                              </td>
                               <td className="py-3 px-4">
                                 <span
                                   className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getPackageBadge(
@@ -1601,26 +1903,24 @@ function DashboardContent() {
                                 </span>
                               </td>
                               <td className="py-3 px-4">
-                                {d.isFullQualified ? (
-                                  <span className="text-[#15803D] font-medium flex items-center gap-1">
-                                    <Check className="w-3 h-3" /> Qualified
+                                {d.status === 'ACTIVE' || d.currentPackage === 'BASIC' || d.currentPackage === 'FULL' ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-fit">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    Active
                                   </span>
                                 ) : (
-                                  <span className="text-slate-500">Pending Upgrade</span>
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1 w-fit">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                    Inactive
+                                  </span>
                                 )}
                               </td>
                               <td className="py-3 px-4 text-slate-500">
                                 {new Date(d.createdAt).toLocaleDateString('en-IN')}
                               </td>
                             </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={5} className="py-8 text-center text-slate-400">
-                              No direct referrals found. Use your referral link above to invite members.
-                            </td>
-                          </tr>
-                        )}
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -1695,150 +1995,82 @@ function DashboardContent() {
             {/* TAB 3B: MY BINARY TREE (READ-ONLY MEMBER VIEW) */}
             {activeTab === 'binary' && (
               <div className="space-y-6">
-                {/* Header & Read-Only Placement Status Banner */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-[#253247] flex items-center gap-2">
-                        <GitBranch className="w-5 h-5 text-[#165DAD]" />
-                        <span>My Binary Tree & Matching Volume</span>
-                      </h2>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Approved 1:1 matching (1 Left : 1 Right Full-Qualified unit) • ₹3,000/pair • Daily Cap: 15 pairs (₹45,000/day)
-                      </p>
-                    </div>
-                    <span
-                      className={`self-start text-xs font-semibold px-3 py-1 rounded-full border ${binaryTree?.node?.isPlaced
+                {/* Header & Clean Placement Status Banner */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#253247] flex items-center gap-2">
+                      <GitBranch className="w-5 h-5 text-[#165DAD]" />
+                      <span>Binary Matching Tree</span>
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Track left and right leg placement, carry units, and daily 1:1 matched pairs
+                    </p>
+                  </div>
+                  <span
+                    className={`self-start sm:self-auto text-xs font-semibold px-3 py-1 rounded-full border ${
+                      binaryTree?.node?.isPlaced
                         ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
                         : user?.role === 'SUPER_ADMIN'
                           ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                           : 'bg-amber-50 text-amber-800 border-amber-200'
-                        }`}
-                    >
-                      {binaryTree?.node?.isPlaced
-                        ? `Placed (${binaryTree.node.parent?.leg} Leg)`
-                        : user?.role === 'SUPER_ADMIN'
-                          ? 'Company Binary Root'
-                          : 'Pending Admin Placement'}
-                    </span>
+                    }`}
+                  >
+                    {binaryTree?.node?.isPlaced
+                      ? `Placed (${binaryTree.node.parent?.leg || 'Assigned'} Leg)`
+                      : user?.role === 'SUPER_ADMIN'
+                        ? 'Company Binary Root'
+                        : 'Pending Placement'}
+                  </span>
+                </div>
+
+                {/* 4 Compact Summary Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">Left Carry</span>
+                    <div className="text-2xl font-bold text-[#165DAD] mt-1">
+                      {binaryTree?.node?.carryLeftUnits ?? 0} <span className="text-xs font-medium text-slate-500">Units</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Team: {binaryTree?.node?.leftCount ?? 0} • Volume: {binaryTree?.node?.leftVolumeUnits ?? 0}u
+                    </p>
                   </div>
 
-                  {/* Placement Identity Grid (Parent, Leg, Sponsor, Qualification) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 text-xs">
-                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] font-semibold uppercase text-slate-400">Placement Status</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.isPlaced
-                          ? 'Placed in Binary Tree'
-                          : user?.role === 'SUPER_ADMIN'
-                            ? 'Root Node (Top of Tree)'
-                            : 'Not Yet Placed in Binary Tree'}
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        Leg: <span className="font-semibold text-[#165DAD]">{binaryTree?.node?.parent?.leg || (user?.role === 'SUPER_ADMIN' ? 'Root' : 'Unassigned')}</span>
-                      </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">Right Carry</span>
+                    <div className="text-2xl font-bold text-[#15803D] mt-1">
+                      {binaryTree?.node?.carryRightUnits ?? 0} <span className="text-xs font-medium text-slate-500">Units</span>
                     </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Team: {binaryTree?.node?.rightCount ?? 0} • Volume: {binaryTree?.node?.rightVolumeUnits ?? 0}u
+                    </p>
+                  </div>
 
-                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] font-semibold uppercase text-slate-400">Binary Parent Node</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.parent
-                          ? binaryTree.node.parent.fullName
-                          : user?.role === 'SUPER_ADMIN'
-                            ? 'None (Company Root)'
-                            : 'Awaiting Placement'}
-                      </div>
-                      <div className="text-[11px] font-mono text-[#165DAD] mt-0.5">
-                        {binaryTree?.node?.parent
-                          ? binaryTree.node.parent.memberId
-                          : user?.role === 'SUPER_ADMIN'
-                            ? 'Top-level origin node'
-                            : 'No parent assigned yet'}
-                      </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">Total Matches</span>
+                    <div className="text-2xl font-bold text-[#253247] mt-1">
+                      {binaryTree?.node?.totalMatchesConsumed ?? 0} <span className="text-xs font-medium text-slate-500">Pairs</span>
                     </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Reward: ₹{(binaryTree?.node?.totalRewardEarnedINR ?? 0).toLocaleString('en-IN')}
+                    </p>
+                  </div>
 
-                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] font-semibold uppercase text-slate-400">Direct Sponsor</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.sponsor ? binaryTree.node.sponsor.fullName : 'Company Root'}
-                      </div>
-                      <div className="text-[11px] font-mono text-slate-600 mt-0.5">
-                        {binaryTree?.node?.sponsor ? binaryTree.node.sponsor.memberId : 'N/A'}
-                      </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+                    <span className="text-xs font-semibold uppercase text-slate-400">Daily Cap (IST)</span>
+                    <div className="text-2xl font-bold text-amber-700 mt-1">
+                      {binaryTree?.node?.todayMatchesSettled ?? 0} / {binaryTree?.node?.dailyMaxMatches ?? 15}
                     </div>
-
-                    <div className="p-3.5 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <div className="text-[11px] font-semibold uppercase text-slate-400">Daily Cap Status (IST)</div>
-                      <div className="font-bold text-[#253247] mt-1">
-                        {binaryTree?.node?.todayMatchesSettled ?? 0} / {binaryTree?.node?.dailyMaxMatches ?? 15} matches today
-                      </div>
-                      <div className="text-[11px] text-[#15803D] font-medium mt-0.5">
-                        Remaining: {binaryTree?.node?.dailyCapRemaining ?? 15} (₹{((binaryTree?.node?.dailyCapRemaining ?? 15) * 3000).toLocaleString('en-IN')})
-                      </div>
-                    </div>
+                    <p className="text-xs text-emerald-700 font-medium mt-1">
+                      Remaining: {binaryTree?.node?.dailyCapRemaining ?? 15} pairs
+                    </p>
                   </div>
                 </div>
 
-                {/* 6 Core Binary Metrics Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <div className="text-xs font-semibold uppercase text-slate-400">Left Leg Metrics</div>
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-xs text-slate-500">Team Members</span>
-                      <span className="text-lg font-bold text-[#253247]">{binaryTree?.node?.leftCount ?? 0}</span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between">
-                      <span className="text-xs text-slate-500">Qualified Volume</span>
-                      <span className="text-sm font-bold text-[#165DAD]">{binaryTree?.node?.leftVolumeUnits ?? 0} Units</span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between">
-                      <span className="text-xs text-slate-500">Carry Forward</span>
-                      <span className="text-sm font-bold text-emerald-700">{binaryTree?.node?.carryLeftUnits ?? 0} Units</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <div className="text-xs font-semibold uppercase text-slate-400">Right Leg Metrics</div>
-                    <div className="mt-2 flex items-baseline justify-between">
-                      <span className="text-xs text-slate-500">Team Members</span>
-                      <span className="text-lg font-bold text-[#253247]">{binaryTree?.node?.rightCount ?? 0}</span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between">
-                      <span className="text-xs text-slate-500">Qualified Volume</span>
-                      <span className="text-sm font-bold text-[#15803D]">{binaryTree?.node?.rightVolumeUnits ?? 0} Units</span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between">
-                      <span className="text-xs text-slate-500">Carry Forward</span>
-                      <span className="text-sm font-bold text-emerald-700">{binaryTree?.node?.carryRightUnits ?? 0} Units</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <div className="text-xs font-semibold uppercase text-slate-400">Total Matched Pairs</div>
-                    <div className="text-2xl font-bold text-[#253247] mt-2">
-                      {binaryTree?.node?.totalMatchesConsumed ?? 0}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Consumed: {binaryTree?.node?.matchedLeftUnits ?? 0} Left : {binaryTree?.node?.matchedRightUnits ?? 0} Right
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <div className="text-xs font-semibold uppercase text-slate-400">Binary Matching Reward</div>
-                    <div className="text-2xl font-bold text-[#15803D] mt-2">
-                      ₹{(binaryTree?.node?.totalRewardEarnedINR ?? 0).toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      {user.isFullQualified ? 'EV ULTRA Qualified for Matching' : 'EV ULTRA required to settle'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Visual Multi-Level Binary Subtree Visualizer */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-5">
+                {/* Graphical Binary Tree Visualizer with Visible Connector Lines */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-5">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div>
-                      <h3 className="text-sm font-bold text-[#253247]">Visual Binary Downline Subtree</h3>
+                      <h3 className="text-sm font-bold text-[#253247]">Graphical Binary Downline</h3>
                       <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-1">
                         {binaryBreadcrumb.map((crumb, idx) => (
                           <React.Fragment key={crumb.memberId}>
@@ -1846,8 +2078,9 @@ function DashboardContent() {
                             <button
                               type="button"
                               onClick={() => handleInspectBinarySubtree(crumb.memberId, crumb.fullName, idx === 0)}
-                              className={`font-medium hover:underline ${idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
-                                }`}
+                              className={`font-medium hover:underline ${
+                                idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
+                              }`}
                             >
                               {crumb.fullName} ({crumb.memberId})
                             </button>
@@ -1874,123 +2107,195 @@ function DashboardContent() {
                   )}
 
                   {loadingBinarySubtree ? (
-                    <div className="py-10 text-center text-xs text-slate-500">Loading binary subtree...</div>
+                    <div className="py-12 text-center text-xs text-slate-500">Loading binary subtree...</div>
                   ) : inspectedBinaryTree?.node ? (
-                    <div className="space-y-6">
-                      {/* Inspected Root Node */}
-                      <div className="flex justify-center">
-                        <div className="w-full max-w-xs bg-blue-50 border-2 border-[#165DAD] rounded-xl p-4 shadow-sm text-center">
+                    <div className="overflow-x-auto pb-4">
+                      <div className="min-w-[680px] flex flex-col items-center">
+                        {/* Parent Node (Top of Tree) */}
+                        <div className="w-64 bg-slate-50 border-2 border-[#165DAD] rounded-xl p-3.5 shadow-sm text-center relative z-10">
                           <div className="flex items-center justify-center gap-1.5">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#165DAD] text-white uppercase">
-                              {inspectedBinaryTree.node.user.memberId === user.memberId ? 'You (Root)' : 'Subtree Node'}
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-[#165DAD] text-white uppercase">
+                              {inspectedBinaryTree.node.user.memberId === user.memberId ? 'You (Root)' : 'Subtree Root'}
                             </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white text-[#253247] border border-blue-200">
+                            <span className="px-2 py-0.5 rounded text-[9px] font-semibold bg-white text-[#253247] border border-slate-200">
                               {getTierDisplayName(inspectedBinaryTree.node.user.currentPackage)}
                             </span>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-semibold ${
+                              inspectedBinaryTree.node.user.isFullQualified
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {inspectedBinaryTree.node.user.isFullQualified ? 'Active' : 'Pending'}
+                            </span>
                           </div>
-                          <div className="font-bold text-sm text-[#253247] mt-2">
+                          <div className="font-bold text-xs text-[#253247] mt-1.5 truncate">
                             {inspectedBinaryTree.node.user.fullName}
                           </div>
-                          <div className="text-xs font-mono font-bold text-[#165DAD]">
+                          <div className="text-[11px] font-mono font-bold text-[#165DAD]">
                             {inspectedBinaryTree.node.user.memberId}
                           </div>
-                          <div className="text-[11px] text-slate-600 mt-1">
-                            {inspectedBinaryTree.node.user.isFullQualified ? 'EV ULTRA Qualified' : 'EV PRO (Qualification Pending)'}
-                          </div>
-                          <div className="mt-2.5 pt-2.5 border-t border-blue-200/70 grid grid-cols-2 gap-2 text-[11px]">
-                            <div>
-                              <div className="text-slate-500">Left</div>
-                              <div className="font-bold text-slate-800">
-                                {inspectedBinaryTree.node.leftCount} ({inspectedBinaryTree.node.carryLeftUnits}u carry)
-                              </div>
+                          <div className="mt-2 pt-2 border-t border-slate-200 grid grid-cols-2 gap-1 text-[10px]">
+                            <div className="text-blue-700 font-medium">
+                              L: {inspectedBinaryTree.node.leftCount} ({inspectedBinaryTree.node.carryLeftUnits}u carry)
                             </div>
-                            <div>
-                              <div className="text-slate-500">Right</div>
-                              <div className="font-bold text-slate-800">
-                                {inspectedBinaryTree.node.rightCount} ({inspectedBinaryTree.node.carryRightUnits}u carry)
-                              </div>
+                            <div className="text-emerald-700 font-medium">
+                              R: {inspectedBinaryTree.node.rightCount} ({inspectedBinaryTree.node.carryRightUnits}u carry)
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Level 1 & Level 2 Downline Branches */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {[
-                          { label: 'LEFT BRANCH', child: inspectedBinaryTree.leftChild, accent: 'text-[#165DAD]', badge: 'bg-blue-50 text-[#165DAD] border-blue-200' },
-                          { label: 'RIGHT BRANCH', child: inspectedBinaryTree.rightChild, accent: 'text-[#15803D]', badge: 'bg-emerald-50 text-[#15803D] border-emerald-200' },
-                        ].map(({ label, child, accent, badge }) => (
-                          <div key={label} className="bg-[#F7F9FC] border border-slate-200 rounded-xl p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className={`text-xs font-bold ${accent}`}>{label}</span>
-                              <span className="text-[10px] font-semibold uppercase text-slate-400">Level 1</span>
-                            </div>
+                        {/* Root-to-Level 1 Connecting Lines */}
+                        <div className="w-full max-w-[480px] h-8 relative flex justify-center">
+                          <div className="w-0.5 h-4 bg-slate-300" />
+                          <div className="absolute top-4 left-[25%] right-[25%] h-0.5 bg-slate-300" />
+                          <div className="absolute top-4 left-[25%] w-0.5 h-4 bg-slate-300" />
+                          <div className="absolute top-4 right-[25%] w-0.5 h-4 bg-slate-300" />
+                        </div>
 
-                            {child ? (
-                              <div className="space-y-3">
-                                <div className="bg-white rounded-lg border border-slate-200 p-3.5 space-y-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-bold text-xs text-[#253247]">{child.fullName}</span>
-                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${badge}`}>
-                                      {getTierDisplayName(child.currentPackage)}
-                                    </span>
-                                  </div>
-                                  <div className={`text-xs font-mono font-bold ${accent}`}>{child.memberId}</div>
-                                  <div className="text-[11px] text-slate-500">
-                                    {child.isFullQualified ? 'EV ULTRA Qualified' : 'EV PRO (Qualification Pending)'}
-                                  </div>
-                                  <div className="pt-2 mt-1 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                                    <span>L: {child.leftCount} ({child.leftVolumeUnits}u)</span>
-                                    <span>R: {child.rightCount} ({child.rightVolumeUnits}u)</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleInspectBinarySubtree(child.memberId, child.fullName)}
-                                      className={`${accent} font-bold hover:underline`}
-                                    >
-                                      Inspect Subtree →
-                                    </button>
-                                  </div>
+                        {/* Level 1: Left & Right Branches */}
+                        <div className="grid grid-cols-2 gap-8 w-full max-w-[680px]">
+                          {/* LEFT BRANCH */}
+                          <div className="flex flex-col items-center">
+                            <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">
+                              LEFT BRANCH
+                            </span>
+                            {inspectedBinaryTree.leftChild ? (
+                              <div className="w-full bg-white border border-blue-200 rounded-xl p-3 shadow-xs space-y-2">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-bold text-xs text-[#253247] truncate">
+                                    {inspectedBinaryTree.leftChild.fullName}
+                                  </span>
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                    {getTierDisplayName(inspectedBinaryTree.leftChild.currentPackage)}
+                                  </span>
+                                </div>
+                                <div className="text-xs font-mono font-bold text-blue-700">
+                                  {inspectedBinaryTree.leftChild.memberId}
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                                  <span>L: {inspectedBinaryTree.leftChild.leftCount} • R: {inspectedBinaryTree.leftChild.rightCount}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.memberId, inspectedBinaryTree.leftChild.fullName)}
+                                    className="text-blue-700 font-bold hover:underline"
+                                  >
+                                    Inspect →
+                                  </button>
                                 </div>
 
-                                {/* Level 2 Children */}
-                                <div className="grid grid-cols-2 gap-2.5">
-                                  {[
-                                    { subLabel: 'LEFT SLOT', subChild: child.leftChild },
-                                    { subLabel: 'RIGHT SLOT', subChild: child.rightChild },
-                                  ].map(({ subLabel, subChild }) =>
-                                    subChild ? (
-                                      <button
-                                        key={subLabel}
-                                        type="button"
-                                        onClick={() => handleInspectBinarySubtree(subChild.memberId, subChild.fullName)}
-                                        className="p-2.5 rounded-lg bg-white border border-slate-200 hover:border-[#165DAD] text-left transition-colors"
-                                      >
-                                        <div className="text-[9px] font-bold text-slate-400 uppercase">{subLabel}</div>
-                                        <div className="font-bold text-[11px] text-[#253247] truncate">{subChild.fullName}</div>
-                                        <div className="text-[10px] font-mono text-[#165DAD]">{subChild.memberId}</div>
-                                        <div className="text-[9px] text-slate-500 mt-0.5">
-                                          {getTierDisplayName(subChild.currentPackage)} • {subChild.isFullQualified ? 'Qualified' : 'Pending'}
-                                        </div>
-                                      </button>
-                                    ) : (
-                                      <div
-                                        key={subLabel}
-                                        className="p-2.5 rounded-lg bg-white/80 border border-dashed border-slate-200 text-center text-[10px] text-slate-400 flex flex-col items-center justify-center min-h-[70px]"
-                                      >
-                                        <span className="font-semibold uppercase text-[9px]">{subLabel}</span>
-                                        <span>Vacant Slot</span>
-                                      </div>
-                                    )
+                                {/* Level 2 Slots Under Left Child */}
+                                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+                                  {inspectedBinaryTree.leftChild.leftChild ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.leftChild.memberId, inspectedBinaryTree.leftChild.leftChild.fullName)}
+                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors"
+                                    >
+                                      <div className="text-[8px] font-bold text-blue-600 uppercase">LEFT SLOT</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.leftChild.leftChild.fullName}</div>
+                                      <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.leftChild.memberId}</div>
+                                    </button>
+                                  ) : (
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant Left
+                                    </div>
+                                  )}
+
+                                  {inspectedBinaryTree.leftChild.rightChild ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.rightChild.memberId, inspectedBinaryTree.leftChild.rightChild.fullName)}
+                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors"
+                                    >
+                                      <div className="text-[8px] font-bold text-blue-600 uppercase">RIGHT SLOT</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.leftChild.rightChild.fullName}</div>
+                                      <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.rightChild.memberId}</div>
+                                    </button>
+                                  ) : (
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant Right
+                                    </div>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-6 rounded-lg bg-white border border-dashed border-slate-200 text-center text-xs text-slate-400">
-                                {label === 'LEFT BRANCH' ? 'Vacant Left Slot' : 'Vacant Right Slot'}
+                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                                Vacant Left Branch
                               </div>
                             )}
                           </div>
-                        ))}
+
+                          {/* RIGHT BRANCH */}
+                          <div className="flex flex-col items-center">
+                            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">
+                              RIGHT BRANCH
+                            </span>
+                            {inspectedBinaryTree.rightChild ? (
+                              <div className="w-full bg-white border border-emerald-200 rounded-xl p-3 shadow-xs space-y-2">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-bold text-xs text-[#253247] truncate">
+                                    {inspectedBinaryTree.rightChild.fullName}
+                                  </span>
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                    {getTierDisplayName(inspectedBinaryTree.rightChild.currentPackage)}
+                                  </span>
+                                </div>
+                                <div className="text-xs font-mono font-bold text-emerald-700">
+                                  {inspectedBinaryTree.rightChild.memberId}
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                                  <span>L: {inspectedBinaryTree.rightChild.leftCount} • R: {inspectedBinaryTree.rightChild.rightCount}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.memberId, inspectedBinaryTree.rightChild.fullName)}
+                                    className="text-emerald-700 font-bold hover:underline"
+                                  >
+                                    Inspect →
+                                  </button>
+                                </div>
+
+                                {/* Level 2 Slots Under Right Child */}
+                                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+                                  {inspectedBinaryTree.rightChild.leftChild ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.leftChild.memberId, inspectedBinaryTree.rightChild.leftChild.fullName)}
+                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors"
+                                    >
+                                      <div className="text-[8px] font-bold text-emerald-600 uppercase">LEFT SLOT</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.rightChild.leftChild.fullName}</div>
+                                      <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.memberId}</div>
+                                    </button>
+                                  ) : (
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant Left
+                                    </div>
+                                  )}
+
+                                  {inspectedBinaryTree.rightChild.rightChild ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.rightChild.memberId, inspectedBinaryTree.rightChild.rightChild.fullName)}
+                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors"
+                                    >
+                                      <div className="text-[8px] font-bold text-emerald-600 uppercase">RIGHT SLOT</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">{inspectedBinaryTree.rightChild.rightChild.fullName}</div>
+                                      <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.memberId}</div>
+                                    </button>
+                                  ) : (
+                                    <div className="p-2 rounded-lg bg-slate-50 border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant Right
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400">
+                                Vacant Right Branch
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ) : null}
@@ -2056,16 +2361,26 @@ function DashboardContent() {
               <div className="space-y-6">
                 {/* 4 Balances: Available, Held, Recovery, Total Earned */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <span className="text-xs font-semibold uppercase text-slate-400">
-                      Available Balance
-                    </span>
-                    <div className="text-2xl font-bold text-[#15803D] mt-2">
-                      ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-xs font-semibold uppercase text-slate-400">
+                        Available Balance
+                      </span>
+                      <div className="text-2xl font-bold text-[#15803D] mt-2">
+                        ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Authoritative ledger balance ready for withdrawal clearance.
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-500 mt-2">
-                      Simulated earnings ledger balance (withdrawals disabled in SIMULATION_ONLY mode).
-                    </p>
+                    <button
+                      type="button"
+                      onClick={handleInitiateWithdrawal}
+                      className="mt-4 w-full py-2.5 px-4 bg-[#15803D] hover:bg-[#126F61] text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px]"
+                    >
+                      <ArrowDownToLine className="w-4 h-4" />
+                      <span>Withdraw Earnings</span>
+                    </button>
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -2105,7 +2420,7 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* Authoritative Wallet Ledger Transactions Table */}
+                {/* Authoritative Wallet Ledger Transactions Table with Clean Rows & Expandable Details */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
                     <div>
@@ -2116,54 +2431,102 @@ function DashboardContent() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
                       <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
                         <tr>
-                          <th className="py-3 px-4">Transaction ID / Ref</th>
-                          <th className="py-3 px-4">Date & Time</th>
-                          <th className="py-3 px-4">Type</th>
-                          <th className="py-3 px-4">Description</th>
+                          <th className="py-3 px-4">Date</th>
+                          <th className="py-3 px-4">Income Type</th>
                           <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Source Member ID</th>
+                          <th className="py-3 px-4">Short Description</th>
                           <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 text-center">Technical Details</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-[#253247]">
                         {walletTransactions.length > 0 ? (
-                          walletTransactions.map((tx: any) => (
-                            <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
-                                {tx.referenceId}
-                              </td>
-                              <td className="py-3 px-4 text-slate-500">
-                                {new Date(tx.date).toLocaleString('en-IN')}
-                              </td>
-                              <td className="py-3 px-4 font-mono text-[11px] text-slate-600">
-                                {tx.transactionType}
-                              </td>
-                              <td className="py-3 px-4 text-slate-700 max-w-xs truncate">
-                                {tx.description}
-                              </td>
-                              <td className="py-3 px-4 font-bold">
-                                {tx.isCredit ? (
-                                  <span className="text-[#15803D]">
-                                    +₹{tx.amountINR.toLocaleString('en-IN')}
-                                  </span>
-                                ) : (
-                                  <span className="text-[#DC2626]">
-                                    -₹{tx.amountINR.toLocaleString('en-IN')}
-                                  </span>
+                          walletTransactions.map((tx: any) => {
+                            const isExpanded = Boolean(expandedTxIds[tx.id || tx.referenceId]);
+                            const incomeTypeDisplay =
+                              tx.transactionType === 'BINARY_MATCH'
+                                ? 'EV Royal Match'
+                                : tx.transactionType === 'DIRECT_SPONSOR'
+                                  ? 'EV Crown Bonus'
+                                  : tx.transactionType === 'VOUCHER_ALLOCATION'
+                                    ? 'Shopping Voucher'
+                                    : tx.transactionType;
+
+                            return (
+                              <React.Fragment key={tx.id || tx.referenceId}>
+                                <tr className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-4 text-slate-600 font-medium">
+                                    {new Date(tx.date).toLocaleDateString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 font-semibold text-slate-900">
+                                    {incomeTypeDisplay}
+                                  </td>
+                                  <td className="py-3 px-4 font-bold">
+                                    {tx.isCredit ? (
+                                      <span className="text-[#15803D]">
+                                        +₹{tx.amountINR.toLocaleString('en-IN')}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[#DC2626]">
+                                        -₹{tx.amountINR.toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono text-slate-600">
+                                    {tx.sourceMemberId || tx.referenceUserMemberId || '—'}
+                                  </td>
+                                  <td className="py-3 px-4 text-slate-700 max-w-xs truncate">
+                                    {tx.description}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
+                                      Completed (Simulation)
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTxExpanded(tx.id || tx.referenceId)}
+                                      className="px-2.5 py-1 text-[11px] font-medium text-[#165DAD] hover:bg-blue-50 rounded border border-blue-200 transition-colors"
+                                    >
+                                      {isExpanded ? 'Hide Details' : 'View Details'}
+                                    </button>
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-slate-50/90 text-slate-600 border-b border-slate-200">
+                                    <td colSpan={7} className="px-4 py-3">
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Reference ID</span>
+                                          <span className="font-mono text-slate-800 break-all">{tx.referenceId}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Journal ID</span>
+                                          <span className="font-mono text-slate-800 break-all">{tx.journalId || 'N/A'}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Ledger Account</span>
+                                          <span className="font-mono text-slate-800">{tx.ledgerAccount || 'EARNINGS_WALLET'}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Accounting Type</span>
+                                          <span className="font-semibold text-slate-800">{tx.isCredit ? 'CREDIT' : 'DEBIT'}</span>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 )}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
-                                  SIMULATED_LEDGER
-                                </span>
-                              </td>
-                            </tr>
-                          ))
+                              </React.Fragment>
+                            );
+                          })
                         ) : (
                           <tr>
-                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                            <td colSpan={7} className="py-8 text-center text-slate-400">
                               No wallet transactions found. Refer members or complete binary matches to earn commissions.
                             </td>
                           </tr>
@@ -2173,19 +2536,27 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* Withdrawal Request Card */}
+                {/* Withdrawal Request & Compliance Safeguard Card */}
                 <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <h3 className="text-sm font-bold text-[#253247]">Withdrawal Request</h3>
-                      <p className="text-xs text-slate-500">Payout processing status</p>
+                      <h3 className="text-sm font-bold text-[#253247]">Withdrawal Request & Clearance</h3>
+                      <p className="text-xs text-slate-500">Payout processing status and compliance threshold verification</p>
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-semibold self-start">
-                      Simulation Mode — Withdrawals Unavailable
+                      Compliance Simulation Mode
                     </span>
                   </div>
 
-                  <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 text-xs text-slate-600 space-y-1">
+                  <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 text-xs text-slate-600 space-y-2">
+                    <div>
+                      <strong>Email Verification Requirement:</strong>{' '}
+                      {Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified) ? (
+                        <span className="text-emerald-700 font-semibold">Verified</span>
+                      ) : (
+                        <span className="text-amber-700 font-semibold">Verification Required Before Payout</span>
+                      )}
+                    </div>
                     <div>
                       <strong>Compliance Notice:</strong> In compliance simulation mode, payouts are simulated and live bank debits or wire transfers are strictly disabled until supervisory admin clearance.
                     </div>
@@ -2193,10 +2564,12 @@ function DashboardContent() {
                   </div>
 
                   <button
-                    disabled
-                    className="px-5 py-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-400 font-medium text-xs cursor-not-allowed min-h-[44px]"
+                    type="button"
+                    onClick={handleInitiateWithdrawal}
+                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px]"
                   >
-                    Withdrawals Unavailable (Simulation Only Mode)
+                    <ArrowDownToLine className="w-4 h-4" />
+                    <span>Request Withdrawal</span>
                   </button>
                 </div>
               </div>
@@ -2791,241 +3164,7 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* TAB: EARNINGS SIMULATOR */}
-            {activeTab === 'calculator' && (
-              <div className="space-y-6">
-                {/* Header Card */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[#15803D] text-xs font-semibold">
-                      <Cpu className="w-3.5 h-3.5" />
-                      <span>Calculation Engine Testbench</span>
-                    </div>
-                    <h2 className="text-lg font-bold text-[#253247] mt-2">
-                      Commission Ledger & Binary Matching Simulator
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Simulates hold reserves, upgrade reconciliations, and double-entry accounting in SIMULATION_ONLY mode.
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={runCanonicalSimulation}
-                    disabled={simLoading}
-                    className="px-4 py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors flex items-center gap-2 self-start md:self-auto shrink-0 shadow-xs"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>{simLoading ? 'Simulating...' : 'Re-Run Scenario (A → B, C, D, E)'}</span>
-                  </button>
-                </div>
-
-                {/* Compliance Advisory */}
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
-                  <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-                  <div className="text-xs text-amber-800 leading-relaxed">
-                    <span className="font-bold">Compliance & Safety Safeguard:</span> All calculations below are internal mathematical simulations. Live payouts, network commissions, and banking releases are strictly disabled under the Consumer Protection (Direct Selling) Rules, 2021.
-                  </div>
-                </div>
-
-                {simError && (
-                  <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-[#DC2626] text-xs font-medium">
-                    {simError}
-                  </div>
-                )}
-
-                {/* SECTION 1: Canonical Scenario Results */}
-                {simulationResult && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                      <div>
-                        <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wider">
-                          Scenario Execution
-                        </span>
-                        <h3 className="text-base font-bold text-[#253247] mt-0.5">
-                          Sponsor A Sponsoring 4 Members (B, C, D, E) & Upgrades
-                        </h3>
-                      </div>
-                      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 border border-emerald-200 text-[#15803D] flex items-center gap-1.5 self-start">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Double-Entry Balanced: 100%</span>
-                      </span>
-                    </div>
-
-                    {/* Final State Counters */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Available Earnings</div>
-                        <div className="text-xl font-bold text-[#15803D] mt-1">
-                          ₹{simulationResult.finalWalletState?.availableEarningsINR?.toLocaleString('en-IN') ?? 0}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">₹3k base + ₹9k D upgrade</div>
-                      </div>
-
-                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Hold Reserve Balance</div>
-                        <div className="text-xl font-bold text-amber-600 mt-1">
-                          ₹{simulationResult.finalWalletState?.heldCommissionsINR?.toLocaleString('en-IN') ?? 0}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">₹1,000 released on 2nd direct</div>
-                      </div>
-
-                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Shopping Voucher</div>
-                        <div className="text-xl font-bold text-[#165DAD] mt-1">
-                          ₹{simulationResult.finalWalletState?.shoppingVoucherINR?.toLocaleString('en-IN') ?? 0}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">Issued on E upgrade</div>
-                      </div>
-
-                      <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase">Pending Recovery</div>
-                        <div className="text-xl font-bold text-purple-600 mt-1">
-                          ₹{simulationResult.finalWalletState?.pendingVoucherRecoveryINR?.toLocaleString('en-IN') ?? 0}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">₹4,000 auto-recovered</div>
-                      </div>
-                    </div>
-
-                    {/* Step-by-Step Scenario Audit Log */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Scenario Event Execution Log
-                      </h4>
-                      <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
-                        {simulationResult.steps?.map((step: any, idx: number) => (
-                          <div
-                            key={idx}
-                            className="p-3 bg-white text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50 transition"
-                          >
-                            <div>
-                              <span className="font-mono font-bold text-slate-500 mr-2">#{step.step}</span>
-                              <span className="font-semibold text-[#253247]">{step.description}</span>
-                            </div>
-                            <div className="flex items-center gap-3 text-[11px]">
-                              <span className="text-slate-500">
-                                Hold: ₹{step.heldBalanceINR?.toLocaleString('en-IN')}
-                              </span>
-                              <span className="font-bold text-[#15803D]">
-                                Avail: ₹{step.availableEarningsINR?.toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* SECTION 2: Interactive Binary Matching Calculator */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                  <div className="flex items-center gap-2 pb-4 border-b border-slate-200">
-                    <GitBranch className="w-5 h-5 text-[#165DAD]" />
-                    <h3 className="text-base font-bold text-[#253247]">
-                      Interactive 1:1 Binary Matching Calculator
-                    </h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Left Units Today
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={leftUnits}
-                        onChange={(e) => setLeftUnits(Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Right Units Today
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={rightUnits}
-                        onChange={(e) => setRightUnits(Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Prev Carry Left
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={prevCarryLeft}
-                        onChange={(e) => setPrevCarryLeft(Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Prev Carry Right
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={prevCarryRight}
-                        onChange={(e) => setPrevCarryRight(Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:border-[#165DAD]"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={calculateBinaryMatching}
-                    className="px-4 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold transition"
-                  >
-                    Calculate Binary Matching
-                  </button>
-
-                  {binaryResult && (
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
-                      <div>
-                        <div className="text-[10px] uppercase font-semibold text-slate-500">Pairs Matched</div>
-                        <div className="text-lg font-bold text-[#165DAD] mt-0.5">{binaryResult.matchedPairs}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] uppercase font-semibold text-slate-500">Daily Cap</div>
-                        <div className="text-lg font-bold text-slate-700 mt-0.5">15 Pairs</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] uppercase font-semibold text-slate-500">Gross Reward</div>
-                        <div className="text-lg font-bold text-slate-800 mt-0.5">
-                          ₹{binaryResult.grossRewardINR?.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] uppercase font-semibold text-slate-500">TDS (5%)</div>
-                        <div className="text-lg font-bold text-amber-600 mt-0.5">
-                          ₹{binaryResult.tdsDeductionINR?.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] uppercase font-semibold text-slate-500">Admin (10%)</div>
-                        <div className="text-lg font-bold text-amber-600 mt-0.5">
-                          ₹{binaryResult.adminFeeDeductionINR?.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] uppercase font-semibold text-slate-500">Net Credit</div>
-                        <div className="text-lg font-bold text-[#15803D] mt-0.5">
-                          ₹{binaryResult.netCreditedINR?.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </main>
+            </main>
         </div>
       </div>
 
@@ -3569,6 +3708,141 @@ function DashboardContent() {
                     <span>{upgrading ? 'Submitting Request...' : 'Submit Booking Request'}</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EMAIL VERIFICATION REQUIRED MODAL */}
+      {emailVerifyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+            onClick={() => setEmailVerifyModalOpen(false)}
+          />
+          <div className="relative bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <span>Email Verification Required</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmailVerifyModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Email verification is strictly required before submitting a withdrawal request to protect your accumulated earnings.
+            </p>
+
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+              <span className="text-slate-500 block text-[10px] font-semibold uppercase">Registered Email</span>
+              <span className="font-medium text-slate-800">{user.email}</span>
+            </div>
+
+            {withdrawVerifyNotice && (
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-[#165DAD] font-medium">
+                {withdrawVerifyNotice}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEmailVerifyModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSendWithdrawVerification}
+                disabled={sendingWithdrawVerify}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#165DAD] hover:bg-[#12498a] flex items-center gap-2 transition-colors min-h-[40px]"
+              >
+                <Mail className="w-4 h-4" />
+                <span>{sendingWithdrawVerify ? 'Sending Link...' : 'Send Verification Email'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WITHDRAWAL REQUEST & COMPLIANCE MODAL */}
+      {withdrawModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+            onClick={() => !withdrawing && setWithdrawModalOpen(false)}
+          />
+          <div className="relative bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#253247] font-bold text-sm">
+                <ArrowDownToLine className="w-5 h-5 text-[#15803D]" />
+                <span>Earnings Withdrawal Request</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => !withdrawing && setWithdrawModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs">
+              <span className="text-slate-500 block text-[10px] font-semibold uppercase">Available Balance</span>
+              <span className="text-xl font-bold text-[#15803D]">
+                ₹{(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+
+            {/* Compliance Restricted Notice */}
+            <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Compliance Simulation Safeguard</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Withdrawals are restricted in compliance simulation mode. Live payouts and banking transfers are non-operational until supervisory admin clearance. Minimum withdrawal: ₹1,000.
+              </p>
+            </div>
+
+            {withdrawError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                {withdrawError}
+              </div>
+            )}
+
+            {withdrawResult && (
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 space-y-1">
+                <div className="font-bold">Withdrawal Status: {withdrawResult.status || 'PROCESSED'}</div>
+                <p className="text-[11px]">{withdrawResult.message}</p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setWithdrawModalOpen(false)}
+                disabled={withdrawing}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExecuteWithdrawal(100000)}
+                disabled={withdrawing}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#15803D] hover:bg-[#126F61] flex items-center gap-2 transition-colors min-h-[40px]"
+              >
+                <ArrowDownToLine className="w-4 h-4" />
+                <span>{withdrawing ? 'Submitting...' : 'Submit Withdrawal (₹1,000)'}</span>
               </button>
             </div>
           </div>
