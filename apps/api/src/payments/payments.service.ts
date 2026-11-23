@@ -50,6 +50,12 @@ export class PaymentsService {
     });
 
     const supportedList = this.gatewayRegistry.getSupportedList();
+    const providerPriority: Record<string, number> = {
+      PINELABS: 1,
+      RAZORPAY: 2,
+      CASHFREE: 3,
+      PHONEPE: 4,
+    };
 
     const availableGateways = gateways
       .map((g) => {
@@ -57,12 +63,14 @@ export class PaymentsService {
         return {
           provider: g.provider,
           name: meta?.name || g.provider,
+          displayName: meta?.name || g.provider,
           isFunctional: meta?.isFunctional ?? false,
           isSandbox: g.isSandbox,
-          merchantId: g.merchantId, // Public Key ID (e.g. rzp_test_...)
+          merchantId: g.merchantId, // Public Key ID / Client ID
         };
       })
-      .filter((g) => g.isFunctional); // Only expose functional gateways to users for live checkout
+      .filter((g) => g.isFunctional) // Only expose functional gateways to users for live checkout
+      .sort((a, b) => (providerPriority[a.provider] || 99) - (providerPriority[b.provider] || 99));
 
     return {
       upi: {
@@ -157,6 +165,17 @@ export class PaymentsService {
         lastTestMessage: cfg?.lastTestMessage || null,
       };
     });
+
+    const providerPriority: Record<string, number> = {
+      PINELABS: 1,
+      RAZORPAY: 2,
+      CASHFREE: 3,
+      PHONEPE: 4,
+    };
+
+    gatewaysWithMaskedSecrets.sort(
+      (a, b) => (providerPriority[a.provider] || 99) - (providerPriority[b.provider] || 99)
+    );
 
     return {
       upi: {
@@ -524,23 +543,37 @@ export class PaymentsService {
     }
 
     const webhookSecret = this.encryptionService.decrypt(gatewayConfig.encryptedWebhookKey);
-    const verification = await provider.verifyWebhook(rawBody, signature, webhookSecret);
+    const verification = await provider.verifyWebhook(rawBody, signature, webhookSecret, headers);
+
+    const isRefundEvent =
+      verification.status === 'REFUND' ||
+      String(verification.event).toLowerCase().includes('refund');
+
+    const logEvent = isRefundEvent
+      ? verification.status === 'FAILED'
+        ? 'REFUND_FAILED'
+        : 'REFUND_PROCESSED'
+      : 'WEBHOOK_RECEIVED';
 
     await this.prisma.paymentGatewayLog.create({
       data: {
         provider: providerKey,
-        event: 'WEBHOOK_RECEIVED',
+        event: logEvent,
         orderId: verification.orderId || null,
         paymentId: verification.paymentId || null,
+        referenceId: verification.referenceId || null,
         amountPaise: verification.amountPaise || null,
-        status: verification.isValid ? 'SUCCESS' : 'FAILED',
+        status: verification.isValid ? (isRefundEvent ? 'REFUND' : 'SUCCESS') : 'FAILED',
         errorMessage: verification.error || null,
         rawPayload: {
           event: verification.event,
           headers: {
-            'user-agent': headers['user-agent'],
-            'x-razorpay-signature': headers['x-razorpay-signature'] ? '[REDACTED]' : undefined,
+            'user-agent': headers?.['user-agent'],
+            'webhook-id': headers?.['webhook-id'],
+            'webhook-timestamp': headers?.['webhook-timestamp'],
+            'signature': signature ? '[REDACTED]' : undefined,
           },
+          metadata: verification.metadata,
         },
         ipAddress: ipAddress || null,
       },
@@ -563,6 +596,56 @@ export class PaymentsService {
       received: true,
       event: verification.event,
       status: verification.status,
+    };
+  }
+
+  /**
+   * Super Admin Server-Side Order Status & Amount Reconciliation
+   */
+  async verifyAndReconcileOrder(adminId: string, orderIdOrRef: string, providerId: string) {
+    const providerKey = providerId.toUpperCase();
+    const provider = this.gatewayRegistry.getProvider(providerKey);
+
+    const gatewayConfig = await this.prisma.paymentGatewayConfig.findUnique({
+      where: { provider: providerKey },
+    });
+
+    if (!gatewayConfig || !gatewayConfig.encryptedSecretKey || !gatewayConfig.merchantId) {
+      throw new BadRequestException(`Credentials for provider ${providerKey} are not configured.`);
+    }
+
+    if (!provider.getOrderStatus) {
+      throw new BadRequestException(`Server-side order inquiry is not supported by ${provider.displayName}`);
+    }
+
+    const secretKey = this.encryptionService.decrypt(gatewayConfig.encryptedSecretKey);
+    const statusResult = await provider.getOrderStatus(orderIdOrRef, {
+      merchantId: gatewayConfig.merchantId,
+      secretKey,
+      isSandbox: gatewayConfig.isSandbox,
+    });
+
+    await this.prisma.paymentGatewayLog.create({
+      data: {
+        provider: providerKey,
+        event: 'ORDER_RECONCILED',
+        orderId: statusResult.orderId,
+        paymentId: statusResult.paymentId || null,
+        referenceId: statusResult.referenceId || null,
+        amountPaise: statusResult.amountPaise || null,
+        status: statusResult.status,
+        rawPayload: {
+          rawStatus: statusResult.rawStatus,
+          currency: statusResult.currency,
+          reconciledBy: adminId,
+          reconciledAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    return {
+      success: true,
+      order: statusResult,
     };
   }
 }

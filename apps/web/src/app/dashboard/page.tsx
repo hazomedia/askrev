@@ -96,7 +96,8 @@ function DashboardContent() {
     gateways: Array<{
       provider: string;
       isSandbox: boolean;
-      displayName: string;
+      name?: string;
+      displayName?: string;
     }>;
     pricing: {
       BASIC_ACTIVATION: number;
@@ -104,7 +105,7 @@ function DashboardContent() {
       BASIC_TO_FULL_UPGRADE: number;
     };
   } | null>(null);
-  const [selectedGatewayProvider, setSelectedGatewayProvider] = useState<string>('RAZORPAY');
+  const [selectedGatewayProvider, setSelectedGatewayProvider] = useState<string>('PINELABS');
   const [isProcessingGateway, setIsProcessingGateway] = useState(false);
   const [gatewayOrder, setGatewayOrder] = useState<any | null>(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
@@ -457,8 +458,13 @@ function DashboardContent() {
       const orderData = orderRes?.order;
       setGatewayOrder(orderData);
 
+      // If Pine Labs or gateway provides a hosted checkout redirect URL, open it
+      if (orderData?.clientPayload?.redirectUrl && typeof window !== 'undefined') {
+        window.open(orderData.clientPayload.redirectUrl, '_blank', 'noopener,noreferrer');
+      }
+
       // Check if Razorpay Checkout script is loaded on window
-      if (typeof window !== 'undefined' && (window as any).Razorpay && orderData?.keyId) {
+      if (selectedGatewayProvider === 'RAZORPAY' && typeof window !== 'undefined' && (window as any).Razorpay && orderData?.keyId) {
         const options = {
           key: orderData.keyId,
           amount: orderData.amountPaise,
@@ -3316,13 +3322,63 @@ function DashboardContent() {
             {/* Payment Method Details */}
             {paymentMethod === 'GATEWAY' ? (
               <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4 text-xs">
+                {/* Gateway Provider Selection (if multiple enabled) */}
+                {paymentMethods?.gateways && paymentMethods.gateways.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Select Online Gateway Provider
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {paymentMethods.gateways.map((gw) => {
+                        const isSelected = selectedGatewayProvider === gw.provider;
+                        const isPrimary = gw.provider === 'PINELABS';
+                        return (
+                          <button
+                            key={gw.provider}
+                            type="button"
+                            onClick={() => {
+                              setSelectedGatewayProvider(gw.provider);
+                              setGatewayOrder(null);
+                            }}
+                            className={`p-2.5 rounded-lg border text-left transition-all ${
+                              isSelected
+                                ? 'border-[#165DAD] bg-white ring-1 ring-[#165DAD] shadow-xs'
+                                : 'border-slate-200 bg-white/70 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[#253247]">{gw.displayName || gw.name || gw.provider}</span>
+                              {isPrimary && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-[#165DAD]">
+                                  PRIMARY
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              {gw.isSandbox ? 'Sandbox Mode' : 'Live Production'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-[#165DAD]" />
-                    <span className="font-bold text-[#253247]">Razorpay Secure Checkout</span>
+                    <span className="font-bold text-[#253247]">
+                      {selectedGatewayProvider === 'PINELABS'
+                        ? 'Pine Labs (Plural) Payment Gateway'
+                        : selectedGatewayProvider === 'RAZORPAY'
+                        ? 'Razorpay Secure Checkout'
+                        : 'Online Payment Gateway'}
+                    </span>
                   </div>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-[#165DAD] border border-blue-200">
-                    {paymentMethods?.gateways?.[0]?.isSandbox ? 'Sandbox Mode' : 'Production'}
+                    {paymentMethods?.gateways?.find((g) => g.provider === selectedGatewayProvider)?.isSandbox
+                      ? 'Sandbox Mode'
+                      : 'Production'}
                   </span>
                 </div>
 
@@ -3338,7 +3394,9 @@ function DashboardContent() {
                     </strong>
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Seamless online payment via Cards, UPI, NetBanking, and Wallets through Razorpay.
+                    {selectedGatewayProvider === 'PINELABS'
+                      ? 'Official Primary Gateway: Instant processing via UPI, Credit/Debit Cards, NetBanking, and Wallets on Pine Labs Plural.'
+                      : 'Seamless online payment via Cards, UPI, NetBanking, and Wallets.'}
                   </p>
                 </div>
 
@@ -3349,10 +3407,23 @@ function DashboardContent() {
                       <span>Order Created Successfully</span>
                     </div>
                     <div className="text-[11px] text-emerald-700 font-mono">
-                      Order ID: <strong>{gatewayOrder.orderId}</strong>
+                      Order Reference: <strong>{gatewayOrder.orderId}</strong>
                     </div>
+                    {gatewayOrder.clientPayload?.redirectUrl && (
+                      <div className="pt-1">
+                        <a
+                          href={gatewayOrder.clientPayload.redirectUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#165DAD] underline hover:text-[#12498a]"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open Pine Labs Hosted Payment Page</span>
+                        </a>
+                      </div>
+                    )}
                     <p className="text-[10px] text-emerald-600">
-                      Click below to complete authorization and submit your booking request for audit reconciliation.
+                      After completing payment on the gateway page, click below to confirm your booking for audit reconciliation.
                     </p>
                   </div>
                 ) : (
@@ -3364,7 +3435,11 @@ function DashboardContent() {
                   >
                     <CreditCard className="w-4 h-4" />
                     <span>
-                      {isProcessingGateway ? 'Initializing Secure Order...' : 'Pay Online via Razorpay'}
+                      {isProcessingGateway
+                        ? 'Connecting to Gateway...'
+                        : selectedGatewayProvider === 'PINELABS'
+                        ? 'Pay Online via Pine Labs (Primary)'
+                        : 'Pay Online via Gateway'}
                     </span>
                   </button>
                 )}

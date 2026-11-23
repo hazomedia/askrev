@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EncryptionService } from '../common/encryption.service';
+import { PineLabsGatewayProvider } from './providers/pinelabs.provider';
 import { RazorpayGatewayProvider } from './providers/razorpay.provider';
 import { CashfreeGatewayProvider } from './providers/cashfree.provider';
 import { PhonePeGatewayProvider } from './providers/phonepe.provider';
@@ -9,6 +10,7 @@ import * as crypto from 'crypto';
 
 describe('Payment Settings & Gateway Integration Suite', () => {
   let encryptionService: EncryptionService;
+  let pineLabsProvider: PineLabsGatewayProvider;
   let razorpayProvider: RazorpayGatewayProvider;
   let cashfreeProvider: CashfreeGatewayProvider;
   let phonepeProvider: PhonePeGatewayProvider;
@@ -18,10 +20,16 @@ describe('Payment Settings & Gateway Integration Suite', () => {
 
   beforeEach(() => {
     encryptionService = new EncryptionService();
+    pineLabsProvider = new PineLabsGatewayProvider();
     razorpayProvider = new RazorpayGatewayProvider();
     cashfreeProvider = new CashfreeGatewayProvider();
     phonepeProvider = new PhonePeGatewayProvider();
-    registry = new PaymentGatewayRegistry(razorpayProvider, cashfreeProvider, phonepeProvider);
+    registry = new PaymentGatewayRegistry(
+      pineLabsProvider,
+      razorpayProvider,
+      cashfreeProvider,
+      phonepeProvider
+    );
 
     mockPrisma = {
       paymentConfig: {
@@ -220,6 +228,42 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       await expect(
         paymentsService.handleGatewayWebhook('RAZORPAY', '{"event":"test"}', 'bad_signature', {}, '127.0.0.1')
       ).rejects.toThrow('Invalid webhook signature');
+    });
+
+    it('should prioritize Pine Labs as Primary gateway in registry and public methods', async () => {
+      const providers = registry.getAllProviders();
+      expect(providers[0].providerId).toBe('PINELABS');
+
+      mockPrisma.paymentConfig.findUnique.mockResolvedValue({
+        upiEnabled: true,
+        merchantUpiVpa: 'askrev@icici',
+        isVerified: true,
+      });
+
+      mockPrisma.paymentGatewayConfig.findMany.mockResolvedValue([
+        { provider: 'RAZORPAY', isEnabled: true, isSandbox: true, merchantId: 'rzp_123' },
+        { provider: 'PINELABS', isEnabled: true, isSandbox: true, merchantId: 'pine_123' },
+      ]);
+
+      const methods = await paymentsService.getPublicPaymentMethods();
+      expect(methods.gateways[0].provider).toBe('PINELABS');
+      expect(methods.gateways[1].provider).toBe('RAZORPAY');
+    });
+
+    it('should enforce PAYMENT_ENCRYPTION_KEY in production environment', () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalKey = process.env.PAYMENT_ENCRYPTION_KEY;
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.PAYMENT_ENCRYPTION_KEY;
+
+        expect(() => new EncryptionService()).toThrow(
+          'PAYMENT_ENCRYPTION_KEY environment variable is required in production'
+        );
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalKey) process.env.PAYMENT_ENCRYPTION_KEY = originalKey;
+      }
     });
   });
 });

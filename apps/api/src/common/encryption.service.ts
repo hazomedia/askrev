@@ -8,6 +8,13 @@ export class EncryptionService {
   private readonly algorithm = 'aes-256-gcm';
 
   constructor() {
+    // Enforce PAYMENT_ENCRYPTION_KEY in production environment
+    if (process.env.NODE_ENV === 'production' && !process.env.PAYMENT_ENCRYPTION_KEY) {
+      throw new Error(
+        'CRITICAL CONFIGURATION ERROR: PAYMENT_ENCRYPTION_KEY environment variable is required in production to safeguard payment credentials.'
+      );
+    }
+
     // Derive a fixed 32-byte key from PAYMENT_ENCRYPTION_KEY or JWT_ACCESS_SECRET fallback
     const rawKey =
       process.env.PAYMENT_ENCRYPTION_KEY ||

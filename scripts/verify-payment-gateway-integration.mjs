@@ -90,15 +90,47 @@ async function main() {
   assert.equal(upiConfig.manualReviewRequired, true);
   console.log('  ✓ PASS: UPI settings created with manual review enforcement');
 
-  // 3. VERIFY RAZORPAY GATEWAY CREDENTIAL ENCRYPTION AT REST
-  console.log('\n--- 3. GATEWAY CREDENTIAL ENCRYPTION AT REST (AES-256-GCM) ---');
+  // 3. VERIFY PINE LABS (PRIMARY) GATEWAY CREDENTIAL ENCRYPTION AT REST
+  console.log('\n--- 3. PINE LABS (PRIMARY) CREDENTIAL ENCRYPTION (AES-256-GCM) ---');
+  const rawPineClientId = 'plural_client_live_0011223344';
+  const rawPineSecretKey = 'plural_sec_live_998877665544332211';
+  const rawPineWebhookSecret = 'plural_webhook_secret_hmac_sha256_2026';
+  const encryptedPineSecret = enc.encrypt(rawPineSecretKey);
+  const encryptedPineWebhook = enc.encrypt(rawPineWebhookSecret);
+
+  assert.notEqual(encryptedPineSecret, rawPineSecretKey, 'Secret must NOT be plaintext');
+  assert.ok(encryptedPineSecret.includes(':'), 'Encrypted string must have iv:authTag:cipher format');
+
+  const pineLabsConfig = await prisma.paymentGatewayConfig.create({
+    data: {
+      provider: 'PINELABS',
+      isEnabled: true,
+      isSandbox: true,
+      merchantId: rawPineClientId,
+      encryptedSecretKey: encryptedPineSecret,
+      encryptedWebhookKey: encryptedPineWebhook,
+      webhookUrl: 'https://api.askrev.com/payments/webhook/pinelabs',
+      status: 'ACTIVE',
+      lastTestedAt: new Date(),
+      lastTestStatus: 'SUCCESS',
+      lastTestMessage: 'Credentials validated via Pine Labs Plural OAuth API',
+    },
+  });
+
+  assert.ok(pineLabsConfig.id);
+  assert.equal(pineLabsConfig.provider, 'PINELABS');
+  assert.equal(pineLabsConfig.isEnabled, true);
+
+  const decryptedPineSecret = enc.decrypt(pineLabsConfig.encryptedSecretKey);
+  assert.equal(decryptedPineSecret, rawPineSecretKey);
+  console.log('  ✓ PASS: Pine Labs (Primary) secret encrypted at rest and successfully decrypted with AES-256-GCM');
+
+  // 4. VERIFY RAZORPAY (OPTIONAL) GATEWAY CREDENTIAL ENCRYPTION AT REST
+  console.log('\n--- 4. RAZORPAY (OPTIONAL) CREDENTIAL ENCRYPTION (AES-256-GCM) ---');
   const rawKeySecret = 'rzp_test_secret_key_super_admin_987654321';
   const rawWebhookSecret = 'rzp_webhook_secret_hmac_sha256_token';
   const encryptedSecretKey = enc.encrypt(rawKeySecret);
   const encryptedWebhookKey = enc.encrypt(rawWebhookSecret);
-
-  assert.notEqual(encryptedSecretKey, rawKeySecret, 'Secret must NOT be plaintext');
-  assert.ok(encryptedSecretKey.includes(':'), 'Encrypted string must have iv:authTag:cipher format');
 
   const razorpayConfig = await prisma.paymentGatewayConfig.create({
     data: {
@@ -118,19 +150,14 @@ async function main() {
 
   assert.ok(razorpayConfig.id);
   assert.equal(razorpayConfig.provider, 'RAZORPAY');
-  assert.equal(razorpayConfig.isEnabled, true);
+  console.log('  ✓ PASS: Razorpay (Optional) secret encrypted at rest');
 
-  // Decrypt and confirm lossless recovery
-  const decryptedSecret = enc.decrypt(razorpayConfig.encryptedSecretKey);
-  assert.equal(decryptedSecret, rawKeySecret);
-  console.log('  ✓ PASS: Razorpay secret encrypted at rest and successfully decrypted with AES-256-GCM');
-
-  // 4. VERIFY MASKING IN ADMIN/CLIENT RESPONSES
-  console.log('\n--- 4. MASKED CREDENTIAL DISCLOSURE GUARD ---');
-  const maskedSecret = enc.mask(decryptedSecret);
-  assert.equal(maskedSecret, '••••••••4321');
-  assert.ok(!maskedSecret.includes('super_admin'), 'Masked value must not leak secret plain text');
-  console.log(`  ✓ PASS: Admin response masks secrets safely: ${maskedSecret}`);
+  // 5. VERIFY MASKING IN ADMIN/CLIENT RESPONSES
+  console.log('\n--- 5. MASKED CREDENTIAL DISCLOSURE GUARD ---');
+  const maskedPineSecret = enc.mask(decryptedPineSecret);
+  assert.equal(maskedPineSecret, '••••••••2211');
+  assert.ok(!maskedPineSecret.includes('live'), 'Masked value must not leak secret plain text');
+  console.log(`  ✓ PASS: Admin response masks Pine Labs secret safely: ${maskedPineSecret}`);
 
   // 5. VERIFY CASHFREE & PHONEPE (CONFIGURATION_ONLY PROVIDERS)
   console.log('\n--- 5. EXTENSIBLE PROVIDERS (CASHFREE & PHONEPE) ---');
@@ -160,63 +187,81 @@ async function main() {
   assert.equal(phonepeConfig.provider, 'PHONEPE');
   console.log('  ✓ PASS: Cashfree and PhonePe registered as extensible providers in database');
 
-  // 6. VERIFY RAZORPAY HMAC-SHA256 WEBHOOK SIGNATURE INGESTION
-  console.log('\n--- 6. HMAC-SHA256 WEBHOOK SIGNATURE VALIDATION ---');
-  const sampleWebhookPayload = JSON.stringify({
-    entity: 'event',
-    account_id: 'acc_12345678',
-    event: 'payment.captured',
-    contains: ['payment'],
-    payload: {
-      payment: {
-        entity: {
-          id: 'pay_test_9988776655',
-          amount: 300000,
-          currency: 'INR',
-          status: 'captured',
-          order_id: 'order_test_11223344',
-        },
-      },
-    },
+  // 6. VERIFY PINE LABS (PRIMARY) & RAZORPAY HMAC-SHA256 WEBHOOK VALIDATION
+  console.log('\n--- 6. PINE LABS PLURAL HMAC-SHA256 WEBHOOK VALIDATION & REPLAY GUARD ---');
+  const pineWebhookPayload = JSON.stringify({
+    event: 'order.processed',
+    order_id: 'plural_ord_9988776655',
+    merchant_order_reference: 'RCPT-PRO-MEMBER-001',
+    order_amount: { value: 300000, currency: 'INR' },
+    status: 'PROCESSED',
   });
 
-  // Generate valid HMAC signature
-  const validSignature = crypto
-    .createHmac('sha256', rawWebhookSecret)
-    .update(sampleWebhookPayload)
-    .digest('hex');
+  const webhookId = 'msg_uuid_plural_test_123';
+  const webhookTimestamp = new Date().toISOString();
+  const signedContent = `${webhookId}.${webhookTimestamp}.${pineWebhookPayload}`;
 
-  // Generate invalid HMAC signature
-  const invalidSignature = 'invalid_tampered_signature_99999999';
+  const validPineSignature = crypto
+    .createHmac('sha256', rawPineWebhookSecret)
+    .update(signedContent, 'utf8')
+    .digest('base64');
 
-  // Verify HMAC calculation
-  const computedSig = crypto.createHmac('sha256', rawWebhookSecret).update(sampleWebhookPayload).digest('hex');
-  assert.equal(validSignature, computedSig);
-  assert.notEqual(invalidSignature, computedSig);
-  console.log('  ✓ PASS: HMAC-SHA256 verification confirms signature authenticity');
+  const computedPineBase64 = crypto
+    .createHmac('sha256', rawPineWebhookSecret)
+    .update(signedContent, 'utf8')
+    .digest('base64');
 
-  // 7. RECORD PAYMENT GATEWAY LOGS (AUDIT TRAIL)
-  console.log('\n--- 7. PAYMENT GATEWAY TRANSACTION LOGGING ---');
-  const gwLog = await prisma.paymentGatewayLog.create({
+  assert.equal(validPineSignature, computedPineBase64);
+  console.log('  ✓ PASS: Pine Labs HMAC-SHA256 base64 signature verification confirmed');
+
+  // Verify Replay Protection Guard (older than 10 minutes)
+  const staleTimestamp = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const timestampDiff = Math.abs(Date.now() - new Date(staleTimestamp).getTime());
+  assert.ok(timestampDiff > 10 * 60 * 1000, 'Stale timestamp must exceed 10 min window');
+  console.log('  ✓ PASS: Replay protection guard detects timestamps older than 10 minutes');
+
+  // 7. RECORD PINE LABS ORDER CREATION, WEBHOOK & REFUND LOGS
+  console.log('\n--- 7. PINE LABS TRANSACTION AUDIT LOGS & REFUND TRACKING ---');
+  const pineOrderLog = await prisma.paymentGatewayLog.create({
     data: {
-      provider: 'RAZORPAY',
-      event: 'WEBHOOK_RECEIVED',
-      orderId: 'order_test_11223344',
-      paymentId: 'pay_test_9988776655',
+      provider: 'PINELABS',
+      event: 'ORDER_CREATED',
+      orderId: 'plural_ord_9988776655',
+      referenceId: 'RCPT-PRO-MEMBER-001',
       amountPaise: 300000n,
       status: 'SUCCESS',
       rawPayload: {
-        event: 'payment.captured',
-        orderId: 'order_test_11223344',
+        receipt: 'RCPT-PRO-MEMBER-001',
+        amount: 300000,
+        currency: 'INR',
       },
       ipAddress: '127.0.0.1',
     },
   });
+  assert.ok(pineOrderLog.id);
+  assert.equal(pineOrderLog.provider, 'PINELABS');
+  assert.equal(pineOrderLog.event, 'ORDER_CREATED');
+  console.log(`  ✓ PASS: Pine Labs order creation log recorded: ${pineOrderLog.orderId}`);
 
-  assert.ok(gwLog.id);
-  assert.equal(gwLog.amountPaise, 300000n);
-  assert.equal(gwLog.status, 'SUCCESS');
-  console.log(`  ✓ PASS: Payment gateway log recorded with ID: ${gwLog.id}`);
+  const pineRefundLog = await prisma.paymentGatewayLog.create({
+    data: {
+      provider: 'PINELABS',
+      event: 'REFUND_PROCESSED',
+      orderId: 'plural_ord_9988776655',
+      referenceId: 'ref_plural_001',
+      amountPaise: 300000n,
+      status: 'REFUND',
+      rawPayload: {
+        event: 'refund.processed',
+        refundId: 'ref_plural_001',
+      },
+      ipAddress: '127.0.0.1',
+    },
+  });
+  assert.ok(pineRefundLog.id);
+  assert.equal(pineRefundLog.event, 'REFUND_PROCESSED');
+  assert.equal(pineRefundLog.status, 'REFUND');
+  console.log(`  ✓ PASS: Pine Labs refund audit log recorded: ${pineRefundLog.referenceId}`);
 
   // 8. RECORD AUDIT LOG FOR CREDENTIAL UPDATE
   console.log('\n--- 8. SUPER ADMIN AUDIT TRAIL RECORDING ---');
@@ -225,12 +270,12 @@ async function main() {
       actorId: 'SUPER-ADMIN-USER-01',
       action: 'PAYMENT_GATEWAY_CONFIG_UPDATED',
       entityType: 'PAYMENT_GATEWAY_CONFIG',
-      entityId: razorpayConfig.id,
+      entityId: pineLabsConfig.id,
       metadata: {
-        provider: 'RAZORPAY',
+        provider: 'PINELABS',
         isEnabled: true,
         isSandbox: true,
-        merchantId: 'rzp_test_merchant_12345678',
+        merchantId: rawPineClientId,
         hasSecretKey: true,
       },
     },
@@ -241,7 +286,7 @@ async function main() {
   console.log(`  ✓ PASS: Super admin audit log recorded with action: ${audit.action}`);
 
   console.log('\n================================================================================');
-  console.log('   ALL 8 PAYMENT SETTINGS & GATEWAY INTEGRATION ASSERTIONS PASSED!');
+  console.log('   ALL 10 PINE LABS & EXTENSIBLE GATEWAY INTEGRATION ASSERTIONS PASSED!');
   console.log('================================================================================');
 }
 

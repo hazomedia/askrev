@@ -58,7 +58,7 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
 
   // Gateway Settings State
   const [gateways, setGateways] = useState<any[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string>('RAZORPAY');
+  const [selectedProvider, setSelectedProvider] = useState<string>('PINELABS');
   const [gatewayFormData, setGatewayFormData] = useState<Record<string, any>>({});
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
 
@@ -265,7 +265,7 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
             <span>Centralized Payment Settings & Gateway Integration</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Configure official merchant UPI collections, scannable QR generation, and extensible payment gateway integrations (Razorpay, Cashfree, PhonePe).
+            Configure official merchant UPI collections, scannable QR generation, and payment gateway integrations (Pine Labs Primary, Razorpay, Cashfree, PhonePe).
           </p>
         </div>
 
@@ -553,9 +553,10 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
       {activeSection === 'gateways' && (
         <div className="space-y-6">
           {/* Provider Selection Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {gateways.map((gw) => {
               const isSelected = selectedProvider === gw.provider;
+              const isPrimary = gw.provider === 'PINELABS';
               return (
                 <button
                   key={gw.provider}
@@ -572,9 +573,13 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-xs text-[#253247]">{gw.name}</span>
-                    {gw.isFunctional ? (
+                    {isPrimary ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-[#165DAD] border border-blue-300">
+                        PRIMARY
+                      </span>
+                    ) : gw.isFunctional ? (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        FUNCTIONAL
+                        OPTIONAL
                       </span>
                     ) : (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
@@ -714,7 +719,12 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block font-semibold text-[#253247] mb-1">
-                        Merchant Key ID / App ID <span className="text-red-500">*</span>
+                        {gw.provider === 'PINELABS'
+                          ? 'Client ID (Plural Merchant ID)'
+                          : gw.provider === 'RAZORPAY'
+                          ? 'Key ID'
+                          : 'Merchant Key ID / App ID'}{' '}
+                        <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -725,14 +735,21 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
                             [gw.provider]: { ...form, merchantId: e.target.value.trim() },
                           })
                         }
-                        placeholder={gw.provider === 'RAZORPAY' ? 'rzp_test_... or rzp_live_...' : 'Merchant ID'}
+                        placeholder={
+                          gw.provider === 'PINELABS'
+                            ? 'Plural Client ID'
+                            : gw.provider === 'RAZORPAY'
+                            ? 'rzp_test_... or rzp_live_...'
+                            : 'Merchant ID'
+                        }
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs focus:outline-none focus:border-[#165DAD]"
                       />
                     </div>
 
                     <div>
                       <label className="block font-semibold text-[#253247] mb-1">
-                        Merchant Key Secret <span className="text-red-500">*</span>
+                        {gw.provider === 'PINELABS' ? 'Client Secret' : 'Merchant Key Secret'}{' '}
+                        <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -856,9 +873,10 @@ export function AdminPaymentSettings({ currentUser }: AdminPaymentSettingsProps)
                 className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700"
               >
                 <option value="ALL">All Providers</option>
-                <option value="RAZORPAY">Razorpay</option>
-                <option value="CASHFREE">Cashfree</option>
-                <option value="PHONEPE">PhonePe</option>
+                <option value="PINELABS">Pine Labs (Primary)</option>
+                <option value="RAZORPAY">Razorpay (Optional)</option>
+                <option value="CASHFREE">Cashfree (Optional)</option>
+                <option value="PHONEPE">PhonePe (Optional)</option>
               </select>
 
               <button

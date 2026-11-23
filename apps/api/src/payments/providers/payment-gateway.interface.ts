@@ -22,8 +22,9 @@ export interface WebhookVerificationResult {
   event: string;
   orderId?: string;
   paymentId?: string;
+  referenceId?: string;
   amountPaise?: bigint;
-  status?: 'SUCCESS' | 'FAILED' | 'PENDING';
+  status?: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REFUND';
   error?: string;
   metadata?: Record<string, any>;
 }
@@ -42,12 +43,40 @@ export interface ProviderCredentials {
   isSandbox: boolean;
 }
 
+export interface OrderStatusResult {
+  orderId: string;
+  referenceId?: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  amountPaise?: bigint;
+  currency?: string;
+  paymentId?: string;
+  rawStatus?: string;
+  details?: Record<string, any>;
+}
+
+export interface RefundStatusResult {
+  refundId: string;
+  orderId?: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  amountPaise?: bigint;
+  currency?: string;
+  rawStatus?: string;
+  details?: Record<string, any>;
+}
+
 export interface PaymentGatewayProvider {
   readonly providerId: string;
   readonly displayName: string;
   readonly isFunctional: boolean; // true if API, signature verification, and reconciliation are fully implemented
 
   createOrder(params: CreateOrderParams, credentials: ProviderCredentials): Promise<GatewayOrderResult>;
-  verifyWebhook(rawBody: string | Buffer, signature: string, webhookSecret: string): Promise<WebhookVerificationResult>;
+  verifyWebhook(
+    rawBody: string | Buffer,
+    signature: string,
+    webhookSecret: string,
+    headers?: Record<string, string>
+  ): Promise<WebhookVerificationResult>;
   testConnection(credentials: ProviderCredentials): Promise<ConnectionTestResult>;
+  getOrderStatus?(orderIdOrReference: string, credentials: ProviderCredentials): Promise<OrderStatusResult>;
+  trackRefund?(refundId: string, credentials: ProviderCredentials): Promise<RefundStatusResult>;
 }

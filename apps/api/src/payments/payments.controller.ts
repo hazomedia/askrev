@@ -97,8 +97,9 @@ export class PaymentsController {
     @Ip() ip: string
   ) {
     const signature =
-      headers['x-razorpay-signature'] ||
+      headers['webhook-signature'] ||
       headers['x-webhook-signature'] ||
+      headers['x-razorpay-signature'] ||
       headers['x-verify'] ||
       headers['signature'] ||
       '';
