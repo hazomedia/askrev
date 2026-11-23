@@ -58,27 +58,32 @@ describe('BannersService', () => {
       );
     });
 
-    it('should be idempotent and update existing welcome campaign to EVERY_VISIT if needed', async () => {
+    it('should be idempotent and NOT overwrite Admin-configured frequency on subsequent restarts', async () => {
       prismaMock.dashboardTopBanner.count.mockResolvedValue(1);
       prismaMock.popupCampaign.findFirst.mockResolvedValue({
         id: 'existing-welcome',
-        frequency: PopupFrequency.ONCE_PER_CAMPAIGN,
-      });
-      prismaMock.popupCampaign.update.mockResolvedValue({
-        id: 'existing-welcome',
-        frequency: PopupFrequency.EVERY_VISIT,
+        name: 'ASKR EV Welcome',
+        frequency: PopupFrequency.ONCE_DAILY, // Admin explicitly changed to ONCE_DAILY
       });
 
       await service.seedDefaults();
 
       expect(prismaMock.dashboardTopBanner.create).not.toHaveBeenCalled();
       expect(prismaMock.popupCampaign.create).not.toHaveBeenCalled();
-      expect(prismaMock.popupCampaign.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'existing-welcome' },
-          data: { frequency: PopupFrequency.EVERY_VISIT },
-        })
-      );
+      expect(prismaMock.popupCampaign.update).not.toHaveBeenCalled();
+    });
+
+    it('should preserve ONCE_PER_CAMPAIGN if Admin configured it across restarts', async () => {
+      prismaMock.dashboardTopBanner.count.mockResolvedValue(1);
+      prismaMock.popupCampaign.findFirst.mockResolvedValue({
+        id: 'existing-welcome',
+        name: 'ASKR EV Welcome',
+        frequency: PopupFrequency.ONCE_PER_CAMPAIGN, // Admin configured
+      });
+
+      await service.seedDefaults();
+
+      expect(prismaMock.popupCampaign.update).not.toHaveBeenCalled();
     });
   });
 
@@ -217,6 +222,48 @@ describe('BannersService', () => {
       const result = await service.getActiveBanners('user-1');
       expect(result.popupCampaign).toBeDefined();
       expect(result.popupCampaign?.id).toBe('popup-daily');
+    });
+
+    it('should return empty slides array and null topBanner when all slides are disabled', async () => {
+      prismaMock.dashboardTopBanner.findMany.mockResolvedValue([]); // No active slides returned
+      prismaMock.popupCampaign.findMany.mockResolvedValue([]);
+
+      const result = await service.getActiveBanners('user-1');
+
+      expect(result.topBanner).toBeNull();
+      expect(result.slides).toEqual([]);
+    });
+
+    it('should filter out slides that are scheduled for future or expired', async () => {
+      const future = new Date(Date.now() + 86400000);
+      const past = new Date(Date.now() - 86400000);
+
+      prismaMock.dashboardTopBanner.findMany.mockResolvedValue([
+        {
+          id: 'future-slide',
+          desktopImageUrl: '/future.webp',
+          isEnabled: true,
+          status: BannerStatus.PUBLISHED,
+          startDate: future,
+          endDate: null,
+          displayOrder: 0,
+        },
+        {
+          id: 'expired-slide',
+          desktopImageUrl: '/expired.webp',
+          isEnabled: true,
+          status: BannerStatus.PUBLISHED,
+          startDate: null,
+          endDate: past,
+          displayOrder: 1,
+        },
+      ]);
+      prismaMock.popupCampaign.findMany.mockResolvedValue([]);
+
+      const result = await service.getActiveBanners('user-1');
+
+      expect(result.topBanner).toBeNull();
+      expect(result.slides).toEqual([]);
     });
   });
 

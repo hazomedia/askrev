@@ -46,17 +46,33 @@ export default function DashboardTopBanner({
   banner,
   autoplayInterval = 5000,
 }: DashboardTopBannerProps) {
-  // Determine effective slide list
+  // Determine effective slide list respecting Admin disable / unpublish status
   const effectiveSlides: SlideItem[] = React.useMemo(() => {
-    if (slides && slides.length > 0) {
-      const enabled = slides.filter((s) => s.isEnabled !== false);
-      if (enabled.length > 0) return enabled;
+    // 1. If slides array is explicitly passed (even empty):
+    if (Array.isArray(slides)) {
+      return slides.filter(
+        (s) => s.isEnabled !== false && s.status !== 'DISABLED' && s.status !== 'DRAFT'
+      );
     }
-    if (banner && banner.isEnabled !== false) {
+    // 2. If single banner object is passed:
+    if (banner) {
+      if (banner.isEnabled === false || banner.status === 'DISABLED' || banner.status === 'DRAFT') {
+        return [];
+      }
       return [banner];
     }
-    return [DEFAULT_FALLBACK_SLIDE];
+    // 3. Fallback only when both props are strictly undefined (standalone unconfigured preview)
+    if (slides === undefined && banner === undefined) {
+      return [DEFAULT_FALLBACK_SLIDE];
+    }
+    // When API explicitly returned null / empty
+    return [];
   }, [slides, banner]);
+
+  // If Admin disabled or unpublished all slides, hide the entire slider
+  if (effectiveSlides.length === 0) {
+    return null;
+  }
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);

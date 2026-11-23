@@ -10,3 +10,9 @@ ALTER TABLE "DashboardTopBanner" ADD COLUMN IF NOT EXISTS "autoplayInterval" INT
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "DashboardTopBanner_status_idx" ON "DashboardTopBanner"("status");
 CREATE INDEX IF NOT EXISTS "DashboardTopBanner_displayOrder_idx" ON "DashboardTopBanner"("displayOrder");
+
+-- One-time initialization of default welcome campaign frequency to EVERY_VISIT
+UPDATE "PopupCampaign"
+SET "frequency" = 'EVERY_VISIT'
+WHERE "name" = 'ASKR EV Welcome' AND "frequency" = 'ONCE_PER_CAMPAIGN';
+

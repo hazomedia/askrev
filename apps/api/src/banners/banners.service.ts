@@ -116,12 +116,11 @@ export class BannersService implements OnModuleInit {
           },
         });
         this.logger.log('Seeded initial ASKR EV Welcome Popup Campaign (EVERY_VISIT).');
-      } else if (existingWelcome.frequency !== PopupFrequency.EVERY_VISIT) {
-        await this.prisma.popupCampaign.update({
-          where: { id: existingWelcome.id },
-          data: { frequency: PopupFrequency.EVERY_VISIT },
-        });
-        this.logger.log('Updated existing ASKR EV Welcome Popup Campaign frequency to EVERY_VISIT.');
+      } else {
+        // Do NOT overwrite Admin-configured frequency on subsequent API restarts
+        this.logger.log(
+          `ASKR EV Welcome Popup Campaign verified (frequency: ${existingWelcome.frequency}).`
+        );
       }
     } catch (err: any) {
       this.logger.warn(`Banner defaults check notice: ${err.message}`);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -85,6 +85,7 @@ function DashboardContent() {
   const [slides, setSlides] = useState<any[]>([]);
   const [popupCampaign, setPopupCampaign] = useState<any>(null);
   const [welcomePopupOpen, setWelcomePopupOpen] = useState(false);
+  const popupPresentedInDocumentRef = useRef(false);
 
   // Withdrawal & Email Verification States
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
@@ -440,28 +441,22 @@ function DashboardContent() {
         }
       }
 
-      // Handle Dashboard Banners and Welcome Popup
-      if (bannersData?.slides && Array.isArray(bannersData.slides) && bannersData.slides.length > 0) {
-        setSlides(bannersData.slides);
-      }
-      if (bannersData?.topBanner) {
-        setTopBanner(bannersData.topBanner);
+      // Handle Dashboard Banners and Welcome Popup (respecting Admin enable/disable)
+      if (bannersData) {
+        setSlides(Array.isArray(bannersData.slides) ? bannersData.slides : []);
+        setTopBanner(bannersData.topBanner || null);
       }
       if (bannersData?.popupCampaign) {
         const campaign = bannersData.popupCampaign;
         setPopupCampaign(campaign);
 
-        // Check client-side dismissal cache for frequency controls
+        // Check presentation controls (respecting Admin frequency)
         let shouldDisplay = true;
 
         if (campaign.frequency === 'EVERY_VISIT') {
-          // EVERY_VISIT: show on fresh website opening, PWA launch, and fresh login.
-          // Closing dismisses only within the current session.
-          const sessionDismissed =
-            typeof window !== 'undefined'
-              ? sessionStorage.getItem('askrev_popup_session_dismissed_' + campaign.id)
-              : null;
-          if (sessionDismissed) {
+          // EVERY_VISIT: Appears on each new Dashboard presentation (fresh login, browser reload, fresh PWA launch).
+          // Guarded by in-memory ref so it appears exactly once per document presentation without repeating on rerenders or background data refreshes.
+          if (popupPresentedInDocumentRef.current) {
             shouldDisplay = false;
           }
         } else {
@@ -480,8 +475,12 @@ function DashboardContent() {
         }
 
         if (shouldDisplay) {
+          popupPresentedInDocumentRef.current = true;
           setWelcomePopupOpen(true);
         }
+      } else {
+        setPopupCampaign(null);
+        setWelcomePopupOpen(false);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
@@ -493,11 +492,10 @@ function DashboardContent() {
   const handleDismissWelcomePopup = async () => {
     if (!popupCampaign) return;
     setWelcomePopupOpen(false);
+    popupPresentedInDocumentRef.current = true;
 
     if (typeof window !== 'undefined') {
-      if (popupCampaign.frequency === 'EVERY_VISIT') {
-        sessionStorage.setItem('askrev_popup_session_dismissed_' + popupCampaign.id, 'true');
-      } else {
+      if (popupCampaign.frequency !== 'EVERY_VISIT') {
         const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
         localStorage.setItem('askrev_popup_dismissed_' + popupCampaign.id, todayIST);
       }
