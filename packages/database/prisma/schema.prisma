@@ -707,5 +707,18 @@ model RevokedToken {
   @@index([expiresAt])
 }
 
+model PaymentConfig {
+  id             String    @id @default(uuid())
+  configKey      String    @unique @default("DEFAULT_PAYMENT_CONFIG")
+  merchantUpiVpa String?
+  merchantName   String?   @default("ASKR EV Mobility")
+  isVerified     Boolean   @default(false)
+  verifiedAt     DateTime?
+  verifiedBy     String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
 
 

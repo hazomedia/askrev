@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -22,6 +22,7 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
+  @IsIn(['LEFT', 'RIGHT'], { message: 'Placement leg must be either LEFT or RIGHT' })
   side?: 'LEFT' | 'RIGHT';
 
   @IsString()

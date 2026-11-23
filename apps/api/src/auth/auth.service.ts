@@ -84,8 +84,35 @@ export class AuthService {
     }
 
     const sponsorId = sponsor.id;
-    const intendedBinarySide =
-      dto.side?.trim().toUpperCase() === 'RIGHT' ? BinaryLeg.RIGHT : BinaryLeg.LEFT;
+    let intendedBinarySide: BinaryLeg;
+    const rawSide = dto.side?.trim().toUpperCase();
+
+    if (rawSide) {
+      if (rawSide === 'LEFT') {
+        intendedBinarySide = BinaryLeg.LEFT;
+      } else if (rawSide === 'RIGHT') {
+        intendedBinarySide = BinaryLeg.RIGHT;
+      } else {
+        throw new BadRequestException('Invalid team placement leg specified. Leg must be explicitly LEFT or RIGHT.');
+      }
+    } else {
+      // Dynamic weaker leg auto-balancing when leg parameter is omitted:
+      // Safely balance based on sponsor's volume and member count
+      const sponsorPlacement = await this.prisma.binaryPlacement?.findUnique?.({
+        where: { userId: sponsorId },
+        select: { leftVolumePaise: true, rightVolumePaise: true, leftCount: true, rightCount: true },
+      });
+
+      if (sponsorPlacement && sponsorPlacement.rightVolumePaise < sponsorPlacement.leftVolumePaise) {
+        intendedBinarySide = BinaryLeg.RIGHT;
+      } else if (sponsorPlacement && sponsorPlacement.leftVolumePaise < sponsorPlacement.rightVolumePaise) {
+        intendedBinarySide = BinaryLeg.LEFT;
+      } else if (sponsorPlacement && sponsorPlacement.rightCount < sponsorPlacement.leftCount) {
+        intendedBinarySide = BinaryLeg.RIGHT;
+      } else {
+        intendedBinarySide = BinaryLeg.LEFT;
+      }
+    }
 
     const memberId = await this.generateUniqueMemberId();
     const passwordHash = await bcrypt.hash(dto.password, 10);

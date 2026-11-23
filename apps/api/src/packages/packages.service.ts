@@ -21,6 +21,7 @@ import {
   CreateMembershipRequestDto,
   QueryMembershipRequestsDto,
   ReviewMembershipRequestDto,
+  UpdatePaymentConfigDto,
 } from './dto/membership-request.dto';
 
 @Injectable()
@@ -109,6 +110,98 @@ export class PackagesService {
   }
 
   // =========================================================================
+  // MERCHANT PAYMENT CONFIGURATION
+  // =========================================================================
+
+  async getPaymentConfig() {
+    const config = await this.prisma.paymentConfig.findUnique({
+      where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
+    });
+
+    const isConfigured = Boolean(config && config.isVerified && config.merchantUpiVpa);
+
+    return {
+      isConfigured,
+      merchantUpiVpa: isConfigured ? config!.merchantUpiVpa : null,
+      merchantName: config?.merchantName || 'ASKR EV Mobility',
+      isVerified: Boolean(config?.isVerified),
+      pricing: {
+        BASIC_ACTIVATION: 3000,
+        FULL_ACTIVATION: 33000,
+        BASIC_TO_FULL_UPGRADE: 30000,
+      },
+    };
+  }
+
+  async getAdminPaymentConfig() {
+    let config = await this.prisma.paymentConfig.findUnique({
+      where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
+    });
+
+    if (!config) {
+      config = await this.prisma.paymentConfig.create({
+        data: {
+          configKey: 'DEFAULT_PAYMENT_CONFIG',
+          merchantUpiVpa: null,
+          merchantName: 'ASKR EV Mobility',
+          isVerified: false,
+          notes: 'Default merchant UPI configuration initialized.',
+        },
+      });
+    }
+
+    return config;
+  }
+
+  async updateAdminPaymentConfig(adminId: string, dto: UpdatePaymentConfigDto) {
+    const existing = await this.prisma.paymentConfig.findUnique({
+      where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
+    });
+
+    const willBeVerified = dto.isVerified !== undefined ? dto.isVerified : (existing?.isVerified ?? false);
+    const verifiedAt = willBeVerified ? (existing?.verifiedAt || new Date()) : null;
+    const verifiedBy = willBeVerified ? (existing?.verifiedBy || adminId) : null;
+
+    const updated = await this.prisma.paymentConfig.upsert({
+      where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
+      create: {
+        configKey: 'DEFAULT_PAYMENT_CONFIG',
+        merchantUpiVpa: dto.merchantUpiVpa?.trim() || null,
+        merchantName: dto.merchantName?.trim() || 'ASKR EV Mobility',
+        isVerified: Boolean(dto.isVerified),
+        verifiedAt,
+        verifiedBy,
+        notes: dto.notes?.trim() || null,
+      },
+      update: {
+        merchantUpiVpa: dto.merchantUpiVpa !== undefined ? dto.merchantUpiVpa.trim() : undefined,
+        merchantName: dto.merchantName !== undefined ? dto.merchantName.trim() : undefined,
+        isVerified: dto.isVerified !== undefined ? dto.isVerified : undefined,
+        verifiedAt,
+        verifiedBy,
+        notes: dto.notes !== undefined ? dto.notes.trim() : undefined,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        action: 'PAYMENT_CONFIG_UPDATED',
+        entityType: 'PAYMENT_CONFIG',
+        entityId: updated.id,
+        metadata: {
+          merchantUpiVpa: updated.merchantUpiVpa,
+          merchantName: updated.merchantName,
+          isVerified: updated.isVerified,
+          complianceMode: 'SIMULATION_ONLY',
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  // =========================================================================
   // PHASE 3A: MEMBERSHIP ACTIVATION & UPGRADE REQUESTS
   // =========================================================================
 
@@ -187,19 +280,87 @@ export class PackagesService {
         );
       }
 
+      // Payment mode validation & UTR checks
+      const paymentMode = dto.paymentMode || 'SIMULATED_TEST';
+      let cleanPaymentRef: string;
+      let verifiedMerchantVpa: string | null = null;
+
+      if (paymentMode === 'UPI') {
+        // 1. Verify merchant UPI VPA is configured and verified by administration
+        const paymentConfig = await tx.paymentConfig.findUnique({
+          where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
+        });
+
+        if (!paymentConfig || !paymentConfig.isVerified || !paymentConfig.merchantUpiVpa) {
+          throw new BadRequestException(
+            'Merchant UPI payment is currently unavailable. Official company UPI VPA is pending administrator verification. Please use Portal Simulation Clearance or contact support.'
+          );
+        }
+        verifiedMerchantVpa = paymentConfig.merchantUpiVpa;
+
+        // 2. Validate UTR format (12-digit numeric or 12-22 alphanumeric standard banking reference)
+        const rawRef = dto.paymentReference?.trim().toUpperCase();
+        const utrRegex = /^([0-9]{12}|[A-Z0-9]{12,22})$/;
+        if (!rawRef || !utrRegex.test(rawRef)) {
+          throw new BadRequestException(
+            'Invalid payment reference / UTR format. Standard UPI reference must be a 12-digit numeric or 12-22 alphanumeric transaction reference.'
+          );
+        }
+        cleanPaymentRef = rawRef;
+
+        // 3. Prevent duplicate payment references across pending or approved Membership Requests
+        const duplicateRequest = await tx.membershipRequest.findFirst({
+          where: {
+            paymentReference: cleanPaymentRef,
+            status: { in: [MembershipRequestStatus.PENDING, MembershipRequestStatus.APPROVED] },
+          },
+        });
+        if (duplicateRequest) {
+          throw new BadRequestException(
+            'This payment reference / UTR has already been submitted for another membership request.'
+          );
+        }
+
+        // 4. Prevent duplicate payment references across EV Bookings
+        const duplicateBooking = await tx.evBooking.findFirst({
+          where: {
+            paymentReference: cleanPaymentRef,
+            bookingStatus: { not: 'CANCELLED' },
+          },
+        });
+        if (duplicateBooking) {
+          throw new BadRequestException(
+            'This payment reference / UTR has already been used for an EV vehicle booking.'
+          );
+        }
+      } else {
+        cleanPaymentRef =
+          dto.paymentReference?.trim().toUpperCase() ||
+          `SIM-REF-${Date.now().toString().slice(-8)}-${Math.floor(100 + Math.random() * 900)}`;
+      }
+
+      // Build clean metadata without any hardcoded UPI IDs
+      const cleanMetadata: Record<string, any> = {
+        compliance: 'SIMULATION_ONLY',
+        source: 'member_portal',
+        ...(dto.metadata ? { ...dto.metadata } : {}),
+      };
+      delete cleanMetadata.upiId;
+      if (verifiedMerchantVpa) {
+        cleanMetadata.verifiedMerchantVpa = verifiedMerchantVpa;
+      }
+
       const request = await tx.membershipRequest.create({
         data: {
           userId,
           requestType: dto.requestType,
           feePaise: expectedFeePaise,
-          paymentMode: dto.paymentMode || 'SIMULATED_TEST',
-          paymentReference:
-            dto.paymentReference ||
-            `SIM-REF-${Date.now().toString().slice(-8)}-${Math.floor(100 + Math.random() * 900)}`,
+          paymentMode,
+          paymentReference: cleanPaymentRef,
           idempotencyKey: dto.idempotencyKey || null,
           isSimulated: true,
           status: MembershipRequestStatus.PENDING,
-          metadata: dto.metadata || { compliance: 'SIMULATION_ONLY', source: 'member_portal' },
+          metadata: cleanMetadata,
         },
       });
 

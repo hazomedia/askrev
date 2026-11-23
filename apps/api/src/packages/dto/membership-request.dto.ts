@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { MembershipRequestType, MembershipRequestStatus } from '@askrev/shared';
 
 export class CreateMembershipRequestDto {
@@ -12,6 +12,9 @@ export class CreateMembershipRequestDto {
 
   @IsString()
   @IsOptional()
+  @Matches(/^([0-9]{12}|[A-Za-z0-9]{12,22})$/, {
+    message: 'Payment reference / UTR must be a 12-digit numeric or 12-22 alphanumeric transaction reference.',
+  })
   paymentReference?: string;
 
   @IsString()
@@ -38,3 +41,24 @@ export class QueryMembershipRequestsDto {
   requestType?: MembershipRequestType;
 }
 
+export class UpdatePaymentConfigDto {
+  @IsString()
+  @IsOptional()
+  @Matches(/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/, {
+    message: 'Merchant UPI VPA must be a valid UPI ID (e.g. merchant@bank)',
+  })
+  merchantUpiVpa?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  merchantName?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isVerified?: boolean;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}

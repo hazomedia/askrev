@@ -37,6 +37,7 @@ import {
   QrCode,
   Home,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
 type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'calculator' | 'bookings' | 'profile';
@@ -74,6 +75,14 @@ function DashboardContent() {
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'SIMULATED'>('UPI');
   const [paymentUtr, setPaymentUtr] = useState('');
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [paymentConfig, setPaymentConfig] = useState<{
+    isConfigured: boolean;
+    merchantUpiVpa: string | null;
+    merchantName: string;
+    isVerified: boolean;
+    pricing?: { BASIC_ACTIVATION: number; FULL_ACTIVATION: number; BASIC_TO_FULL_UPGRADE: number };
+  } | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -224,6 +233,7 @@ function DashboardContent() {
         walletTxData,
         voucherTxData,
         requestsData,
+        paymentConfigData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -235,6 +245,7 @@ function DashboardContent() {
         fetchApi<any>('/wallet/transactions').catch(() => []),
         fetchApi<any>('/vouchers/transactions').catch(() => []),
         fetchApi<any>('/packages/my-requests').catch(() => []),
+        fetchApi<any>('/packages/payment-config').catch(() => null),
       ]);
 
       setUser(profileData);
@@ -251,6 +262,7 @@ function DashboardContent() {
       setWalletTransactions(walletTxData);
       setVoucherTransactions(voucherTxData);
       setMembershipRequests(Array.isArray(requestsData) ? requestsData : []);
+      setPaymentConfig(paymentConfigData);
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
@@ -331,15 +343,41 @@ function DashboardContent() {
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE'
   ) => {
     setSelectedRequestType(requestType);
-    setPaymentMethod('UPI');
+    setPaymentMethod(paymentConfig?.isConfigured ? 'UPI' : 'SIMULATED');
     setPaymentUtr('');
     setPaymentModalOpen(true);
   };
 
+  useEffect(() => {
+    if (paymentConfig?.isConfigured && paymentConfig.merchantUpiVpa && selectedRequestType) {
+      const amount =
+        selectedRequestType === 'BASIC_ACTIVATION'
+          ? 3000
+          : selectedRequestType === 'FULL_ACTIVATION'
+          ? 33000
+          : 30000;
+      const note = `ASKREV-${selectedRequestType}-${user?.memberId || 'MEMBER'}`;
+      const upiUri = `upi://pay?pa=${paymentConfig.merchantUpiVpa}&pn=${encodeURIComponent(
+        paymentConfig.merchantName || 'ASKR EV Mobility'
+      )}&am=${amount}.00&cu=INR&tn=${encodeURIComponent(note)}`;
+
+      QRCode.toDataURL(upiUri, { width: 220, margin: 1 })
+        .then((url) => setQrCodeDataUrl(url))
+        .catch((err) => {
+          console.error('Failed to generate UPI QR code:', err);
+          setQrCodeDataUrl(null);
+        });
+    } else {
+      setQrCodeDataUrl(null);
+    }
+  }, [paymentConfig, selectedRequestType, user?.memberId]);
+
   const handleCopyUpi = () => {
-    navigator.clipboard.writeText('pay@askrev');
-    setCopiedUpi(true);
-    setTimeout(() => setCopiedUpi(false), 2000);
+    if (paymentConfig?.merchantUpiVpa) {
+      navigator.clipboard.writeText(paymentConfig.merchantUpiVpa);
+      setCopiedUpi(true);
+      setTimeout(() => setCopiedUpi(false), 2000);
+    }
   };
 
   const handleMembershipRequest = async (
@@ -356,11 +394,13 @@ function DashboardContent() {
         body: JSON.stringify({
           requestType,
           paymentMode: mode === 'UPI' ? 'UPI' : 'SIMULATED_PORTAL',
-          paymentReference: mode === 'UPI' ? (refNumber?.trim() || 'UPI-REF') : 'SIMULATED-CLEARANCE',
+          paymentReference: mode === 'UPI' ? (refNumber?.trim().toUpperCase() || 'UPI-REF') : 'SIMULATED-CLEARANCE',
           metadata: {
             compliance: 'SIMULATION_ONLY',
             source: 'member_dashboard_booking',
-            upiId: mode === 'UPI' ? 'pay@askrev' : undefined,
+            ...(mode === 'UPI' && paymentConfig?.merchantUpiVpa
+              ? { merchantUpiVpa: paymentConfig.merchantUpiVpa }
+              : {}),
           },
         }),
       });
@@ -376,11 +416,21 @@ function DashboardContent() {
 
   const handleConfirmPaymentRequest = async () => {
     if (!selectedRequestType) return;
-    if (paymentMethod === 'UPI' && !paymentUtr.trim()) {
-      setError('Please provide the UPI UTR / Transaction reference number.');
-      return;
+    if (paymentMethod === 'UPI') {
+      const trimmedUtr = paymentUtr.trim().toUpperCase();
+      const utrRegex = /^([0-9]{12}|[A-Z0-9]{12,22})$/;
+      if (!trimmedUtr) {
+        setError('Please provide the UPI UTR / Transaction reference number.');
+        return;
+      }
+      if (!utrRegex.test(trimmedUtr)) {
+        setError('Invalid UTR format. Expected 12-digit numeric or 12-22 alphanumeric standard banking reference.');
+        return;
+      }
+      await handleMembershipRequest(selectedRequestType, 'UPI', trimmedUtr);
+    } else {
+      await handleMembershipRequest(selectedRequestType, 'SIMULATED');
     }
-    await handleMembershipRequest(selectedRequestType, paymentMethod, paymentUtr);
   };
 
   const handleOpenEditProfile = () => {
@@ -3116,49 +3166,99 @@ function DashboardContent() {
 
             {/* UPI Payment Instructions & Reference Entry */}
             {paymentMethod === 'UPI' ? (
-              <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4">
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <div className="w-28 h-28 bg-white p-2 rounded-xl border border-blue-200 shadow-xs flex items-center justify-center shrink-0">
-                    <QrCode className="w-24 h-24 text-[#253247]" />
-                  </div>
-                  <div className="space-y-1.5 text-center sm:text-left text-xs">
-                    <span className="font-bold text-[#253247]">Official Company UPI ID</span>
-                    <div className="flex items-center gap-1.5 justify-center sm:justify-start">
-                      <code className="font-mono font-bold text-sm text-[#165DAD] bg-white px-2 py-0.5 rounded border border-blue-200">
-                        pay@askrev
-                      </code>
-                      <button
-                        type="button"
-                        onClick={handleCopyUpi}
-                        className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
-                        title="Copy UPI ID"
-                      >
-                        {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+              paymentConfig?.isConfigured && paymentConfig.merchantUpiVpa ? (
+                <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <div className="w-32 h-32 bg-white p-2 rounded-xl border border-blue-200 shadow-xs flex items-center justify-center shrink-0">
+                      {qrCodeDataUrl ? (
+                        <img
+                          src={qrCodeDataUrl}
+                          alt="Scan UPI QR Code to Pay"
+                          className="w-28 h-28 object-contain"
+                        />
+                      ) : (
+                        <div className="w-28 h-28 flex items-center justify-center text-slate-400">
+                          <QrCode className="w-20 h-20 animate-pulse text-blue-400" />
+                        </div>
+                      )}
                     </div>
-                    <p className="text-[11px] text-slate-500">
-                      Scan using Google Pay, PhonePe, Paytm, BHIM, or any banking app.
+                    <div className="space-y-1.5 text-center sm:text-left text-xs flex-1">
+                      <div className="flex items-center gap-1.5 justify-center sm:justify-start">
+                        <span className="font-bold text-[#253247]">Verified Company UPI ID</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Verified
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 justify-center sm:justify-start">
+                        <code className="font-mono font-bold text-sm text-[#165DAD] bg-white px-2 py-0.5 rounded border border-blue-200">
+                          {paymentConfig.merchantUpiVpa}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={handleCopyUpi}
+                          className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
+                          title="Copy UPI ID"
+                        >
+                          {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-600">
+                        Payee: <strong>{paymentConfig.merchantName || 'ASKR EV Mobility'}</strong>
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Payable:{' '}
+                        <strong className="text-[#165DAD]">
+                          {selectedRequestType === 'BASIC_ACTIVATION'
+                            ? '₹3,000'
+                            : selectedRequestType === 'FULL_ACTIVATION'
+                            ? '₹33,000'
+                            : '₹30,000'}
+                        </strong>
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        Scan using Google Pay, PhonePe, Paytm, BHIM, or any banking app.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#253247] mb-1">
+                      Enter UPI Reference / UTR Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={paymentUtr}
+                      onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
+                      placeholder="e.g. 432109876543 (12-digit UTR)"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Enter the 12-digit numeric or 12-22 alphanumeric UTR from your bank transaction receipt.
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 space-y-0.5">
+                    <span className="font-bold">Verification Notice:</span>
+                    <p className="text-[10px] text-amber-700 leading-relaxed">
+                      Payment requests remain PENDING until authorized administrator verification against actual bank/PSP records. Submitting a UTR number is for audit reconciliation and does not guarantee activation until verified.
                     </p>
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#253247] mb-1">
-                    Enter UPI Reference / UTR Number <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={paymentUtr}
-                    onChange={(e) => setPaymentUtr(e.target.value)}
-                    placeholder="e.g. 432109876543 (12-digit UTR)"
-                    className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Enter the 12-digit UTR from your UPI payment receipt. Admin will verify and activate your booking tier.
+              ) : (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-xs text-amber-800">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Merchant UPI Payment Setup in Progress</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    The official company UPI VPA is pending verification by administration. Live UPI QR payment instructions are temporarily withheld until verified.
+                  </p>
+                  <p className="text-[11px] text-amber-700">
+                    Please use <strong>Portal Simulation Clearance</strong> to test bookings or contact support.
                   </p>
                 </div>
-              </div>
+              )
             ) : (
               <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
                 <span className="font-bold">Test & Demonstration Clearance</span>
@@ -3181,7 +3281,10 @@ function DashboardContent() {
               <button
                 type="button"
                 onClick={handleConfirmPaymentRequest}
-                disabled={upgrading || (paymentMethod === 'UPI' && !paymentUtr.trim())}
+                disabled={
+                  upgrading ||
+                  (paymentMethod === 'UPI' && (!paymentConfig?.isConfigured || !paymentUtr.trim()))
+                }
                 className="px-5 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
               >
                 <Sparkles className="w-3.5 h-3.5" />

@@ -16,7 +16,7 @@ function RegisterForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
-  const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
+  const [side, setSide] = useState<'LEFT' | 'RIGHT' | undefined>(undefined);
   const [sponsorMemberId, setSponsorMemberId] = useState('');
   const [sponsorInfo, setSponsorInfo] = useState<{ memberId: string; fullName: string } | null>(null);
   const [sponsorChecking, setSponsorChecking] = useState(false);
@@ -59,8 +59,12 @@ function RegisterForm() {
       lookupSponsor(clean);
     }
     const sideParam = searchParams.get('side')?.toUpperCase().trim();
-    if (sideParam === 'RIGHT' || sideParam === 'LEFT') {
-      setSide(sideParam as 'LEFT' | 'RIGHT');
+    if (sideParam === 'RIGHT') {
+      setSide('RIGHT');
+    } else if (sideParam === 'LEFT') {
+      setSide('LEFT');
+    } else {
+      setSide(undefined);
     }
   }, [searchParams]);
 
@@ -90,7 +94,7 @@ function RegisterForm() {
           password,
           phone: phone || undefined,
           sponsorMemberId: sponsorMemberId.trim().toUpperCase(),
-          side,
+          side: side || undefined,
         }),
       });
 
