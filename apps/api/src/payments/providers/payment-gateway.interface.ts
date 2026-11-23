@@ -24,6 +24,7 @@ export interface WebhookVerificationResult {
   paymentId?: string;
   referenceId?: string;
   amountPaise?: bigint;
+  currency?: string;
   status?: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REFUND';
   error?: string;
   metadata?: Record<string, any>;

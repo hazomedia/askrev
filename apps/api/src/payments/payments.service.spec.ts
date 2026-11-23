@@ -53,6 +53,22 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       user: {
         findUnique: vi.fn(),
       },
+      paymentOrder: {
+        create: vi.fn().mockResolvedValue({ id: 'po-1', amountPaise: 300000n, currency: 'INR' }),
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: 'po-1' }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      processedWebhookEvent: {
+        create: vi.fn().mockResolvedValue({ id: 'pwe-1' }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+      membershipRequest: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 'mr-1', status: 'PENDING' }),
+        update: vi.fn().mockResolvedValue({ id: 'mr-1', status: 'PENDING' }),
+      },
     };
 
     paymentsService = new PaymentsService(mockPrisma, encryptionService, registry);
@@ -78,26 +94,25 @@ describe('Payment Settings & Gateway Integration Suite', () => {
     });
   });
 
-  describe('RazorpayGatewayProvider (Functional Implementation)', () => {
-    it('should create an order result with correct payload', async () => {
-      const order = await razorpayProvider.createOrder(
-        {
-          amountPaise: 300000n, // ₹3,000
-          receipt: 'RCPT-TEST-001',
-          customerName: 'Test Member',
-          customerEmail: 'test@askrev.com',
-        },
-        {
-          merchantId: 'rzp_test_key_12345678',
-          secretKey: 'rzp_test_secret_12345678',
-          isSandbox: true,
-        }
-      );
+  describe('RazorpayGatewayProvider (Disabled for Live Checkout)', () => {
+    it('should be marked isFunctional = false and throw on createOrder', async () => {
+      expect(razorpayProvider.isFunctional).toBe(false);
 
-      expect(order.orderId).toContain('order_rzp_');
-      expect(order.amountPaise).toBe(300000n);
-      expect(order.clientPayload?.key).toBe('rzp_test_key_12345678');
-      expect(order.clientPayload?.amount).toBe(300000);
+      await expect(
+        razorpayProvider.createOrder(
+          {
+            amountPaise: 300000n, // ₹3,000
+            receipt: 'RCPT-TEST-001',
+            customerName: 'Test Member',
+            customerEmail: 'test@askrev.com',
+          },
+          {
+            merchantId: 'rzp_test_key_12345678',
+            secretKey: 'rzp_test_secret_12345678',
+            isSandbox: true,
+          }
+        )
+      ).rejects.toThrow('Razorpay live checkout is disabled pending replacement');
     });
 
     it('should verify valid HMAC-SHA256 webhook signatures', async () => {
@@ -227,10 +242,10 @@ describe('Payment Settings & Gateway Integration Suite', () => {
 
       await expect(
         paymentsService.handleGatewayWebhook('RAZORPAY', '{"event":"test"}', 'bad_signature', {}, '127.0.0.1')
-      ).rejects.toThrow('Invalid webhook signature');
+      ).rejects.toThrow('Invalid HMAC SHA256 webhook signature');
     });
 
-    it('should prioritize Pine Labs as Primary gateway in registry and public methods', async () => {
+    it('should prioritize Pine Labs as Primary gateway in registry and filter out non-functional gateways from public methods', async () => {
       const providers = registry.getAllProviders();
       expect(providers[0].providerId).toBe('PINELABS');
 
@@ -246,8 +261,171 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       ]);
 
       const methods = await paymentsService.getPublicPaymentMethods();
+      // Only functional gateways are exposed for checkout (Pine Labs is functional, Razorpay is config-only)
+      expect(methods.gateways.length).toBe(1);
       expect(methods.gateways[0].provider).toBe('PINELABS');
-      expect(methods.gateways[1].provider).toBe('RAZORPAY');
+    });
+
+    it('should handle idempotent duplicate webhooks gracefully', async () => {
+      mockPrisma.processedWebhookEvent.findUnique.mockResolvedValue({
+        id: 'event-uuid-1',
+        eventId: 'msg-id-12345',
+        provider: 'PINELABS',
+        eventType: 'order.processed',
+        status: 'SUCCESS',
+      });
+
+      mockPrisma.paymentGatewayConfig.findUnique.mockResolvedValue({
+        provider: 'PINELABS',
+        encryptedWebhookKey: encryptionService.encrypt('wh_secret'),
+      });
+
+      const res = await paymentsService.handleGatewayWebhook(
+        'PINELABS',
+        '{}',
+        'any_sig',
+        { 'webhook-id': 'msg-id-12345' },
+        '127.0.0.1'
+      );
+
+      expect(res.idempotent).toBe(true);
+      expect(res.received).toBe(true);
+      expect(res.status).toBe('SUCCESS');
+    });
+
+    it('should maintain Booking Approval Separation (MembershipRequest stays PENDING after gateway payment verified)', async () => {
+      const webhookSecret = 'test_webhook_sec_123456';
+      const encryptedSecret = encryptionService.encrypt(webhookSecret);
+
+      mockPrisma.paymentGatewayConfig.findUnique.mockResolvedValue({
+        id: 'cfg-pine',
+        provider: 'PINELABS',
+        encryptedWebhookKey: encryptedSecret,
+        webhookVerifiedAt: new Date(),
+      });
+      mockPrisma.processedWebhookEvent.findUnique.mockResolvedValue(null);
+
+      const orderPayload = JSON.stringify({
+        event: 'order.processed',
+        order_id: 'plural_ord_verify_test_01',
+        merchant_order_reference: 'RCPT-PRO-001',
+        order_amount: { value: 300000, currency: 'INR' },
+        status: 'PROCESSED',
+      });
+
+      const webhookId = 'msg_test_sep_01';
+      const webhookTimestamp = new Date().toISOString();
+      const signedContent = `${webhookId}.${webhookTimestamp}.${orderPayload}`;
+      const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
+
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue({
+        id: 'po-sep-01',
+        providerOrderId: 'plural_ord_verify_test_01',
+        merchantReference: 'RCPT-PRO-001',
+        amountPaise: 300000n,
+        currency: 'INR',
+        status: 'PROCESSING',
+        membershipRequestId: 'mr-sep-01',
+      });
+
+      const res = await paymentsService.handleGatewayWebhook(
+        'PINELABS',
+        orderPayload,
+        validSig,
+        {
+          'webhook-id': webhookId,
+          'webhook-timestamp': webhookTimestamp,
+        },
+        '127.0.0.1'
+      );
+
+      expect(res.received).toBe(true);
+      expect(res.status).toBe('SUCCESS');
+
+      // 1. PaymentOrder marked VERIFIED
+      expect(mockPrisma.paymentOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'po-sep-01' },
+          data: expect.objectContaining({
+            status: 'VERIFIED',
+          }),
+        })
+      );
+
+      // 2. MembershipRequest metadata updated with paymentVerified, but status remains PENDING!
+      expect(mockPrisma.membershipRequest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'mr-sep-01' },
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({
+              paymentVerified: true,
+              approvalRequirement: 'PENDING_AUTHORIZED_ADMIN_APPROVAL',
+              compliance: 'SIMULATION_ONLY',
+            }),
+          }),
+        })
+      );
+    });
+
+    it('should fail reconciliation and reject on amount mismatch', async () => {
+      const webhookSecret = 'test_webhook_sec_mismatch';
+      const encryptedSecret = encryptionService.encrypt(webhookSecret);
+
+      mockPrisma.paymentGatewayConfig.findUnique.mockResolvedValue({
+        id: 'cfg-pine',
+        provider: 'PINELABS',
+        encryptedWebhookKey: encryptedSecret,
+        webhookVerifiedAt: new Date(),
+      });
+      mockPrisma.processedWebhookEvent.findUnique.mockResolvedValue(null);
+
+      // Webhook claims 150000 paise (₹1,500), but order expected 300000 paise (₹3,000)
+      const orderPayload = JSON.stringify({
+        event: 'order.processed',
+        order_id: 'plural_ord_mismatch_01',
+        merchant_order_reference: 'RCPT-PRO-002',
+        order_amount: { value: 150000, currency: 'INR' },
+        status: 'PROCESSED',
+      });
+
+      const webhookId = 'msg_test_mismatch_01';
+      const webhookTimestamp = new Date().toISOString();
+      const signedContent = `${webhookId}.${webhookTimestamp}.${orderPayload}`;
+      const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
+
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue({
+        id: 'po-mismatch-01',
+        providerOrderId: 'plural_ord_mismatch_01',
+        merchantReference: 'RCPT-PRO-002',
+        amountPaise: 300000n, // Expected ₹3,000
+        currency: 'INR',
+        status: 'PROCESSING',
+      });
+
+      const res = await paymentsService.handleGatewayWebhook(
+        'PINELABS',
+        orderPayload,
+        validSig,
+        {
+          'webhook-id': webhookId,
+          'webhook-timestamp': webhookTimestamp,
+        },
+        '127.0.0.1'
+      );
+
+      expect(res.status).toBe('FAILED');
+      expect(res.error).toBe('Amount mismatch');
+
+      // Verify order was marked FAILED
+      expect(mockPrisma.paymentOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'po-mismatch-01' },
+          data: expect.objectContaining({
+            status: 'FAILED',
+            failureReason: expect.stringContaining('Amount mismatch'),
+          }),
+        })
+      );
     });
 
     it('should enforce PAYMENT_ENCRYPTION_KEY in production environment', () => {

@@ -92,6 +92,7 @@ model User {
   retailOrders            RetailOrderRecord[]
   retailQualifications    RetailQualificationEvent[]
   binaryMatchingOutbox    BinaryMatchingOutbox[]
+  paymentOrders           PaymentOrder[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -763,6 +764,62 @@ model PaymentGatewayLog {
   @@index([status])
   @@index([createdAt])
 }
+
+enum PaymentOrderStatus {
+  CREATED
+  PROCESSING
+  VERIFIED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model PaymentOrder {
+  id                  String             @id @default(uuid())
+  userId              String
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberId            String
+  provider            String             // 'PINELABS', 'RAZORPAY', etc.
+  requestType         MembershipRequestType
+  merchantReference   String             @unique // e.g. 'RCPT-PRO-ASKR-123456-789012'
+  providerOrderId     String?            @unique // Provider issued order ID
+  providerPaymentId   String?            // Provider payment ID
+  amountPaise         BigInt
+  currency            String             @default("INR")
+  status              PaymentOrderStatus @default(CREATED)
+  clientPayload       Json?
+  rawResponse         Json?
+  reconciledAt        DateTime?
+  verifiedAt          DateTime?
+  refundedAt          DateTime?
+  failedAt            DateTime?
+  failureReason       String?
+  membershipRequestId String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+  @@index([providerOrderId])
+  @@index([merchantReference])
+}
+
+model ProcessedWebhookEvent {
+  id         String   @id @default(uuid())
+  eventId    String   @unique // Provider webhook-id or message ID
+  provider   String   // 'PINELABS', etc.
+  eventType  String   // 'order.processed', 'refund.processed', etc.
+  orderId    String?  // Linked provider orderId
+  paymentId  String?  // Linked paymentId
+  status     String   // 'PROCESSED', 'FAILED', 'IGNORED'
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([provider, eventId])
+  @@index([orderId])
+}
+
 
 
 

@@ -14,39 +14,12 @@ export class RazorpayGatewayProvider implements PaymentGatewayProvider {
   private readonly logger = new Logger(RazorpayGatewayProvider.name);
   readonly providerId = 'RAZORPAY';
   readonly displayName = 'Razorpay Payment Gateway';
-  readonly isFunctional = true; // Fully implemented order creation, HMAC signature verification, and webhook handling
+  readonly isFunctional = false; // Disabled pending replacement of mock order creation with genuine API integration
 
   async createOrder(params: CreateOrderParams, credentials: ProviderCredentials): Promise<GatewayOrderResult> {
-    if (!credentials.merchantId || !credentials.secretKey) {
-      throw new Error('Razorpay Merchant Key ID and Secret Key must be configured.');
-    }
-
-    const orderId = `order_rzp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    this.logger.log(`Created Razorpay Order ${orderId} for receipt ${params.receipt} (₹${Number(params.amountPaise) / 100})`);
-
-    return {
-      orderId,
-      provider: this.providerId,
-      amountPaise: params.amountPaise,
-      currency: params.currency || 'INR',
-      status: 'CREATED',
-      clientPayload: {
-        key: credentials.merchantId,
-        amount: Number(params.amountPaise),
-        currency: params.currency || 'INR',
-        name: 'ASKR EV Mobility',
-        description: `Booking Order #${params.receipt}`,
-        order_id: orderId,
-        prefill: {
-          name: params.customerName || '',
-          email: params.customerEmail || '',
-          contact: params.customerPhone || '',
-        },
-        theme: {
-          color: '#165DAD',
-        },
-      },
-    };
+    throw new Error(
+      'Razorpay live checkout is disabled pending replacement of fabricated orders with genuine API integration. Please use Pine Labs Plural or manual UPI.'
+    );
   }
 
   async verifyWebhook(rawBody: string | Buffer, signature: string, webhookSecret: string): Promise<WebhookVerificationResult> {

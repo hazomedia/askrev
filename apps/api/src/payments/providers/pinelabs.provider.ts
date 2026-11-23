@@ -270,6 +270,12 @@ export class PineLabsGatewayProvider implements PaymentGatewayProvider {
 
       const amountPaise = rawAmount !== undefined ? BigInt(Math.round(Number(rawAmount))) : undefined;
 
+      const rawCurrency =
+        payload.order_amount?.currency ||
+        payload.data?.order_amount?.currency ||
+        payload.currency ||
+        'INR';
+
       const rawStatus = String(
         payload.status || payload.order_status || payload.data?.status || payload.payment_status || ''
       ).toUpperCase();
@@ -290,9 +296,11 @@ export class PineLabsGatewayProvider implements PaymentGatewayProvider {
         paymentId,
         referenceId,
         amountPaise,
+        currency: rawCurrency,
         status,
         metadata: {
           rawStatus,
+          currency: rawCurrency,
           merchantReference: referenceId,
           refundId: payload.refund_id || payload.data?.refund_id,
         },

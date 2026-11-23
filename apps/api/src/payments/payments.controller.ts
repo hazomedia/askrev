@@ -84,6 +84,23 @@ export class PaymentsController {
     return this.paymentsService.getGatewayLogs(limit ? parseInt(limit, 10) : 50, provider);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @Post('admin/reconcile-order')
+  async reconcileOrder(
+    @CurrentUser() admin: any,
+    @Body() body: { orderIdOrRef: string; provider: string }
+  ) {
+    return this.paymentsService.verifyAndReconcileOrder(admin.id, body.orderIdOrRef, body.provider);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @Post('admin/reconcile-pending')
+  async reconcilePending(@CurrentUser() admin: any) {
+    return this.paymentsService.reconcilePendingPaymentOrders(admin.id);
+  }
+
   // =========================================================================
   // GATEWAY WEBHOOK ENDPOINT
   // =========================================================================

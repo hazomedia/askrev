@@ -25,7 +25,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly encryptionService: EncryptionService,
     private readonly gatewayRegistry: PaymentGatewayRegistry
-  ) {}
+  ) { }
 
   // =========================================================================
   // PUBLIC / MEMBER PAYMENT METHODS
@@ -446,6 +446,20 @@ export class PaymentsService {
 
     if (!user) throw new NotFoundException('Member not found');
 
+    // Prevent duplicate pending requests under administrative review
+    const pendingRequest = await this.prisma.membershipRequest.findFirst({
+      where: {
+        userId,
+        status: 'PENDING',
+      },
+    });
+
+    if (pendingRequest) {
+      throw new BadRequestException(
+        'You already have a pending membership activation/upgrade request under administrative review.'
+      );
+    }
+
     let amountPaise: bigint;
     switch (dto.requestType) {
       case MembershipRequestType.BASIC_ACTIVATION:
@@ -473,50 +487,114 @@ export class PaymentsService {
     const secretKey = this.encryptionService.decrypt(gatewayConfig.encryptedSecretKey);
     const receipt = `RCPT-${dto.requestType.slice(0, 4)}-${user.memberId}-${Date.now().toString().slice(-6)}`;
 
-    const orderResult = await provider.createOrder(
-      {
-        amountPaise,
-        receipt,
-        customerName: user.fullName,
-        customerEmail: user.email,
-        customerPhone: user.phone || undefined,
-        notes: {
-          userId: user.id,
-          memberId: user.memberId,
-          requestType: dto.requestType,
-        },
-      },
-      {
-        merchantId: gatewayConfig.merchantId,
-        secretKey,
-        isSandbox: gatewayConfig.isSandbox,
-      }
-    );
-
-    // Record order in PaymentGatewayLog
-    await this.prisma.paymentGatewayLog.create({
+    // 1. Create MembershipRequest record in PENDING status (requiring authorized admin review)
+    const membershipRequest = await this.prisma.membershipRequest.create({
       data: {
-        provider: providerKey,
-        event: 'ORDER_CREATED',
-        orderId: orderResult.orderId,
-        amountPaise,
-        status: 'SUCCESS',
-        rawPayload: {
-          receipt,
-          userId,
-          memberId: user.memberId,
-          requestType: dto.requestType,
+        userId,
+        requestType: dto.requestType,
+        feePaise: amountPaise,
+        paymentMode: providerKey,
+        paymentReference: receipt,
+        isSimulated: true,
+        status: 'PENDING',
+        metadata: {
+          provider: providerKey,
+          merchantReference: receipt,
+          compliance: 'SIMULATION_ONLY',
+          source: 'gateway_checkout',
         },
       },
     });
 
-    return {
-      message: 'Online booking payment order created successfully.',
-      order: {
-        ...orderResult,
-        amountINR: paiseToRupees(amountPaise),
+    // 2. Persist PaymentOrder in CREATED status
+    const paymentOrder = await this.prisma.paymentOrder.create({
+      data: {
+        userId: user.id,
+        memberId: user.memberId,
+        provider: providerKey,
+        requestType: dto.requestType,
+        merchantReference: receipt,
+        amountPaise,
+        currency: 'INR',
+        status: 'CREATED',
+        membershipRequestId: membershipRequest.id,
       },
-    };
+    });
+
+    // 3. Invoke provider genuine order creation
+    try {
+      const orderResult = await provider.createOrder(
+        {
+          amountPaise,
+          receipt,
+          customerName: user.fullName,
+          customerEmail: user.email,
+          customerPhone: user.phone || undefined,
+          notes: {
+            userId: user.id,
+            memberId: user.memberId,
+            requestType: dto.requestType,
+            paymentOrderId: paymentOrder.id,
+            membershipRequestId: membershipRequest.id,
+          },
+        },
+        {
+          merchantId: gatewayConfig.merchantId,
+          secretKey,
+          isSandbox: gatewayConfig.isSandbox,
+        }
+      );
+
+      // 4. Update PaymentOrder to PROCESSING with providerOrderId
+      await this.prisma.paymentOrder.update({
+        where: { id: paymentOrder.id },
+        data: {
+          providerOrderId: orderResult.orderId,
+          clientPayload: orderResult.clientPayload as any,
+          status: 'PROCESSING',
+        },
+      });
+
+      // Record order in PaymentGatewayLog
+      await this.prisma.paymentGatewayLog.create({
+        data: {
+          provider: providerKey,
+          event: 'ORDER_CREATED',
+          orderId: orderResult.orderId,
+          referenceId: receipt,
+          amountPaise,
+          status: 'SUCCESS',
+          rawPayload: {
+            receipt,
+            userId,
+            memberId: user.memberId,
+            requestType: dto.requestType,
+            paymentOrderId: paymentOrder.id,
+            membershipRequestId: membershipRequest.id,
+          },
+        },
+      });
+
+      return {
+        message: 'Online booking payment order created successfully.',
+        order: {
+          ...orderResult,
+          paymentOrderId: paymentOrder.id,
+          membershipRequestId: membershipRequest.id,
+          amountINR: paiseToRupees(amountPaise),
+        },
+      };
+    } catch (err: any) {
+      await this.prisma.paymentOrder.update({
+        where: { id: paymentOrder.id },
+        data: {
+          status: 'FAILED',
+          failedAt: new Date(),
+          failureReason: err.message || 'Provider order creation failed',
+        },
+      });
+      throw err;
+    }
   }
 
   // =========================================================================
@@ -542,6 +620,30 @@ export class PaymentsService {
       throw new ForbiddenException(`Webhook configuration missing for provider ${providerKey}`);
     }
 
+    // 1. Webhook Deduplication Guard via ProcessedWebhookEvent
+    const eventId =
+      headers?.['webhook-id'] ||
+      headers?.['x-webhook-id'] ||
+      headers?.['x-request-id'] ||
+      headers?.['id'] ||
+      null;
+
+    if (eventId) {
+      const existingEvent = await this.prisma.processedWebhookEvent.findUnique({
+        where: { eventId },
+      });
+      if (existingEvent) {
+        this.logger.log(`Duplicate webhook event ${eventId} already processed for ${providerKey}. Returning idempotent OK.`);
+        return {
+          received: true,
+          event: existingEvent.eventType,
+          status: existingEvent.status,
+          idempotent: true,
+        };
+      }
+    }
+
+    // 2. Authenticated Signature Verification
     const webhookSecret = this.encryptionService.decrypt(gatewayConfig.encryptedWebhookKey);
     const verification = await provider.verifyWebhook(rawBody, signature, webhookSecret, headers);
 
@@ -580,8 +682,130 @@ export class PaymentsService {
     });
 
     if (!verification.isValid) {
-      this.logger.warn(`Rejected invalid webhook signature from ${providerKey} [IP: ${ipAddress}]`);
-      throw new UnauthorizedException(`Invalid webhook signature for provider ${providerKey}`);
+      this.logger.warn(`Rejected invalid webhook signature from ${providerKey} [IP: ${ipAddress}]: ${verification.error}`);
+      throw new UnauthorizedException(verification.error || `Invalid webhook signature for provider ${providerKey}`);
+    }
+
+    // 3. Persist ProcessedWebhookEvent (atomic deduplication guard against concurrent deliveries)
+    if (eventId) {
+      try {
+        await this.prisma.processedWebhookEvent.create({
+          data: {
+            eventId,
+            provider: providerKey,
+            eventType: String(verification.event || 'webhook'),
+            orderId: verification.orderId || null,
+            paymentId: verification.paymentId || null,
+            status: verification.status || 'PROCESSED',
+            payload: typeof rawBody === 'string' ? JSON.parse(rawBody) : JSON.parse(rawBody.toString('utf8')),
+          },
+        });
+      } catch (dedupErr: any) {
+        this.logger.warn(`ProcessedWebhookEvent concurrent write handled for ${eventId}: ${dedupErr.message}`);
+      }
+    }
+
+    // 4. Match Existing PaymentOrder
+    let matchedOrder = null;
+    if (verification.orderId) {
+      matchedOrder = await this.prisma.paymentOrder.findFirst({
+        where: { providerOrderId: verification.orderId },
+      });
+    }
+    if (!matchedOrder && verification.referenceId) {
+      matchedOrder = await this.prisma.paymentOrder.findUnique({
+        where: { merchantReference: verification.referenceId },
+      });
+    }
+
+    // 5. Reconcile Payment Status, Amount, and Currency
+    if (matchedOrder) {
+      // Currency check
+      const orderCurrency = matchedOrder.currency || 'INR';
+      const incomingCurrency = (verification.currency || 'INR').toUpperCase();
+      if (incomingCurrency !== orderCurrency.toUpperCase()) {
+        this.logger.error(`Currency mismatch for order ${matchedOrder.id}: expected ${orderCurrency}, got ${incomingCurrency}`);
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            failureReason: `Currency mismatch: expected ${orderCurrency}, got ${incomingCurrency}`,
+          },
+        });
+        return { received: true, event: verification.event, status: 'FAILED', error: 'Currency mismatch' };
+      }
+
+      // Amount reconciliation check
+      if (verification.amountPaise !== undefined && verification.amountPaise !== matchedOrder.amountPaise) {
+        this.logger.error(
+          `Amount mismatch for order ${matchedOrder.id}: expected ${matchedOrder.amountPaise} paise, received ${verification.amountPaise} paise`
+        );
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            failureReason: `Amount mismatch: expected ${matchedOrder.amountPaise} paise, received ${verification.amountPaise} paise`,
+          },
+        });
+        return { received: true, event: verification.event, status: 'FAILED', error: 'Amount mismatch' };
+      }
+
+      // Handle Success: Mark PaymentOrder VERIFIED
+      if (verification.status === 'SUCCESS') {
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'VERIFIED',
+            providerPaymentId: verification.paymentId || matchedOrder.providerPaymentId,
+            verifiedAt: new Date(),
+            reconciledAt: new Date(),
+            rawResponse: verification.metadata as any,
+          },
+        });
+
+        // BOOKING APPROVAL SEPARATION:
+        // Verified gateway payment must NOT automatically activate EV PRO or EV ULTRA.
+        // Maintain existing authorized Admin approval workflow (MembershipRequest.status === PENDING awaiting admin review).
+        // Never generate referral or binary credits from an unapproved booking.
+        if (matchedOrder.membershipRequestId) {
+          await this.prisma.membershipRequest.update({
+            where: { id: matchedOrder.membershipRequestId },
+            data: {
+              // Keeps status as PENDING
+              metadata: {
+                ...(typeof matchedOrder.clientPayload === 'object' ? (matchedOrder.clientPayload as any) : {}),
+                paymentVerified: true,
+                verifiedPaymentOrderId: matchedOrder.id,
+                verifiedProviderPaymentId: verification.paymentId || null,
+                paymentVerifiedAt: new Date().toISOString(),
+                approvalRequirement: 'PENDING_AUTHORIZED_ADMIN_APPROVAL',
+                compliance: 'SIMULATION_ONLY',
+              },
+            },
+          });
+        }
+      } else if (verification.status === 'FAILED') {
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            failureReason: verification.error || 'Payment failed or declined by provider',
+            rawResponse: verification.metadata as any,
+          },
+        });
+      } else if (verification.status === 'REFUND') {
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'REFUNDED',
+            refundedAt: new Date(),
+            rawResponse: verification.metadata as any,
+          },
+        });
+      }
     }
 
     // Mark webhook verified timestamp if not already set
@@ -596,6 +820,8 @@ export class PaymentsService {
       received: true,
       event: verification.event,
       status: verification.status,
+      orderId: verification.orderId,
+      paymentId: verification.paymentId,
     };
   }
 
@@ -625,6 +851,78 @@ export class PaymentsService {
       isSandbox: gatewayConfig.isSandbox,
     });
 
+    // Match and update persistent PaymentOrder if exists
+    let matchedOrder = null;
+    if (statusResult.orderId) {
+      matchedOrder = await this.prisma.paymentOrder.findFirst({
+        where: { providerOrderId: statusResult.orderId },
+      });
+    }
+    if (!matchedOrder && statusResult.referenceId) {
+      matchedOrder = await this.prisma.paymentOrder.findUnique({
+        where: { merchantReference: statusResult.referenceId },
+      });
+    }
+
+    if (matchedOrder) {
+      // Currency & Amount check
+      const orderCurrency = matchedOrder.currency || 'INR';
+      const incomingCurrency = (statusResult.currency || 'INR').toUpperCase();
+      const currencyMatch = incomingCurrency === orderCurrency.toUpperCase();
+      const amountMatch =
+        statusResult.amountPaise === undefined || statusResult.amountPaise === matchedOrder.amountPaise;
+
+      if (!currencyMatch || !amountMatch) {
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            failureReason: !currencyMatch ? 'Currency mismatch during reconciliation' : 'Amount mismatch during reconciliation',
+          },
+        });
+      } else if (statusResult.status === 'SUCCESS') {
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'VERIFIED',
+            providerPaymentId: statusResult.paymentId || matchedOrder.providerPaymentId,
+            verifiedAt: new Date(),
+            reconciledAt: new Date(),
+            rawResponse: statusResult.details as any,
+          },
+        });
+
+        // Booking approval separation: maintain PENDING status
+        if (matchedOrder.membershipRequestId) {
+          await this.prisma.membershipRequest.update({
+            where: { id: matchedOrder.membershipRequestId },
+            data: {
+              metadata: {
+                ...(typeof matchedOrder.clientPayload === 'object' ? (matchedOrder.clientPayload as any) : {}),
+                paymentVerified: true,
+                verifiedPaymentOrderId: matchedOrder.id,
+                verifiedProviderPaymentId: statusResult.paymentId || null,
+                paymentVerifiedAt: new Date().toISOString(),
+                approvalRequirement: 'PENDING_AUTHORIZED_ADMIN_APPROVAL',
+                compliance: 'SIMULATION_ONLY',
+              },
+            },
+          });
+        }
+      } else if (statusResult.status === 'FAILED') {
+        await this.prisma.paymentOrder.update({
+          where: { id: matchedOrder.id },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            failureReason: 'Provider confirmed failure during reconciliation',
+            rawResponse: statusResult.details as any,
+          },
+        });
+      }
+    }
+
     await this.prisma.paymentGatewayLog.create({
       data: {
         provider: providerKey,
@@ -646,6 +944,112 @@ export class PaymentsService {
     return {
       success: true,
       order: statusResult,
+      matchedPaymentOrderId: matchedOrder?.id || null,
+    };
+  }
+
+  /**
+   * Pending / Orphaned Payment Orders Auto-Recovery Poller & Reconciler
+   * Recovers orders interrupted by network timeouts or dropped webhooks after server restart.
+   */
+  async reconcilePendingPaymentOrders(adminId?: string) {
+    const pendingOrders = await this.prisma.paymentOrder.findMany({
+      where: {
+        status: { in: ['CREATED', 'PROCESSING'] },
+      },
+      take: 25,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const results: Array<{ orderId: string; status: string; reason?: string; error?: string }> = [];
+
+    for (const order of pendingOrders) {
+      try {
+        const provider = this.gatewayRegistry.getProvider(order.provider);
+        if (!provider.getOrderStatus) continue;
+
+        const config = await this.prisma.paymentGatewayConfig.findUnique({
+          where: { provider: order.provider },
+        });
+
+        if (!config || !config.encryptedSecretKey || !config.merchantId) continue;
+
+        const secretKey = this.encryptionService.decrypt(config.encryptedSecretKey);
+        const lookupKey = order.providerOrderId || order.merchantReference;
+
+        const statusRes = await provider.getOrderStatus(lookupKey, {
+          merchantId: config.merchantId,
+          secretKey,
+          isSandbox: config.isSandbox,
+        });
+
+        if (statusRes.status === 'SUCCESS') {
+          // Amount & currency verification
+          if (statusRes.amountPaise && statusRes.amountPaise !== order.amountPaise) {
+            await this.prisma.paymentOrder.update({
+              where: { id: order.id },
+              data: {
+                status: 'FAILED',
+                failedAt: new Date(),
+                failureReason: 'Amount mismatch during server reconciliation recovery',
+              },
+            });
+            results.push({ orderId: order.id, status: 'FAILED', reason: 'Amount mismatch' });
+            continue;
+          }
+
+          await this.prisma.paymentOrder.update({
+            where: { id: order.id },
+            data: {
+              status: 'VERIFIED',
+              providerPaymentId: statusRes.paymentId || order.providerPaymentId,
+              verifiedAt: new Date(),
+              reconciledAt: new Date(),
+              rawResponse: statusRes.details as any,
+            },
+          });
+
+          if (order.membershipRequestId) {
+            await this.prisma.membershipRequest.update({
+              where: { id: order.membershipRequestId },
+              data: {
+                metadata: {
+                  paymentVerified: true,
+                  verifiedPaymentOrderId: order.id,
+                  verifiedProviderPaymentId: statusRes.paymentId || null,
+                  paymentVerifiedAt: new Date().toISOString(),
+                  approvalRequirement: 'PENDING_AUTHORIZED_ADMIN_APPROVAL',
+                  compliance: 'SIMULATION_ONLY',
+                },
+              },
+            });
+          }
+
+          results.push({ orderId: order.id, status: 'VERIFIED' });
+        } else if (statusRes.status === 'FAILED') {
+          await this.prisma.paymentOrder.update({
+            where: { id: order.id },
+            data: {
+              status: 'FAILED',
+              failedAt: new Date(),
+              failureReason: 'Provider confirmed failure during recovery inquiry',
+            },
+          });
+          results.push({ orderId: order.id, status: 'FAILED' });
+        } else {
+          results.push({ orderId: order.id, status: 'PENDING' });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to reconcile order ${order.id}: ${err.message}`);
+        results.push({ orderId: order.id, status: 'ERROR', error: err.message });
+      }
+    }
+
+    return {
+      reconciledCount: results.filter((r) => r.status === 'VERIFIED').length,
+      failedCount: results.filter((r) => r.status === 'FAILED').length,
+      pendingCount: results.filter((r) => r.status === 'PENDING').length,
+      results,
     };
   }
 }
