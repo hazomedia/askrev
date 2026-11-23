@@ -185,6 +185,37 @@ export class MediaService {
       }
     }
 
+    // 4. Check DashboardTopBanner
+    const publishedTopBanner = this.prisma.dashboardTopBanner
+      ? await this.prisma.dashboardTopBanner.findFirst({
+          where: {
+            isEnabled: true,
+            OR: [
+              { desktopImageUrl: { contains: keyPattern } },
+              { mobileImageUrl: { contains: keyPattern } },
+            ],
+          },
+        })
+      : null;
+
+    if (publishedTopBanner) {
+      return true;
+    }
+
+    // 5. Check PopupCampaign
+    const publishedPopup = this.prisma.popupCampaign
+      ? await this.prisma.popupCampaign.findFirst({
+          where: {
+            status: 'PUBLISHED',
+            imageUrl: { contains: keyPattern },
+          },
+        })
+      : null;
+
+    if (publishedPopup) {
+      return true;
+    }
+
     return false;
   }
 

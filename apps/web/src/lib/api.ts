@@ -690,3 +690,103 @@ export async function restoreProductApi(id: string): Promise<{ success: boolean;
   });
 }
 
+/**
+ * =============================================================================
+ * DASHBOARD BANNERS & WELCOME POPUP APIS
+ * =============================================================================
+ */
+
+export async function fetchActiveBanners(): Promise<{
+  topBanner: any | null;
+  popupCampaign: any | null;
+}> {
+  return fetchApi<{ topBanner: any | null; popupCampaign: any | null }>('/banners/active');
+}
+
+export async function dismissPopupCampaign(campaignId: string): Promise<any> {
+  return fetchApi<any>(`/banners/popup/${campaignId}/dismiss`, {
+    method: 'POST',
+  });
+}
+
+export async function adminFetchTopBanner(): Promise<any> {
+  return fetchApi<any>('/admin/banners/top');
+}
+
+export async function adminUpdateTopBanner(dto: any): Promise<any> {
+  return fetchApi<any>('/admin/banners/top', {
+    method: 'PUT',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function adminUploadBannerImage(
+  file: File,
+  kind: 'top' | 'popup' = 'top'
+): Promise<{ url: string; filename: string }> {
+  const token = getAuthToken();
+  const csrf = getCsrfToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (csrf) headers['X-CSRF-Token'] = csrf;
+
+  const url = `${API_BASE}/admin/banners/upload-image?kind=${kind}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.message || `Failed to upload banner image: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function adminFetchPopupCampaigns(): Promise<any[]> {
+  return fetchApi<any[]>('/admin/banners/popups');
+}
+
+export async function adminFetchPopupCampaign(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/popups/${id}`);
+}
+
+export async function adminCreatePopupCampaign(dto: any): Promise<any> {
+  return fetchApi<any>('/admin/banners/popups', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function adminUpdatePopupCampaign(id: string, dto: any): Promise<any> {
+  return fetchApi<any>(`/admin/banners/popups/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function adminPublishPopupCampaign(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/popups/${id}/publish`, {
+    method: 'POST',
+  });
+}
+
+export async function adminDisablePopupCampaign(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/popups/${id}/disable`, {
+    method: 'POST',
+  });
+}
+
+export async function adminDeletePopupCampaign(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/popups/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+

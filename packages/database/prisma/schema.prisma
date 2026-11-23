@@ -93,6 +93,7 @@ model User {
   retailQualifications    RetailQualificationEvent[]
   binaryMatchingOutbox    BinaryMatchingOutbox[]
   paymentOrders           PaymentOrder[]
+  popupDismissals         PopupDismissal[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -827,6 +828,77 @@ model ProcessedWebhookEvent {
   @@index([provider, eventId])
   @@index([orderId])
 }
+
+// =============================================================================
+// DASHBOARD TOP BANNER & WELCOME POPUP CAMPAIGNS
+// =============================================================================
+
+enum PopupFrequency {
+  ONCE_PER_CAMPAIGN
+  ONCE_DAILY
+  EVERY_VISIT
+}
+
+enum BannerStatus {
+  DRAFT
+  PUBLISHED
+  DISABLED
+  ARCHIVED
+}
+
+model DashboardTopBanner {
+  id              String       @id @default(uuid())
+  title           String?
+  badgeText       String?
+  desktopImageUrl String
+  mobileImageUrl  String?
+  linkUrl         String?
+  altText         String?
+  isEnabled       Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model PopupCampaign {
+  id              String           @id @default(uuid())
+  name            String
+  heading         String
+  subheading      String?
+  message         String           @db.Text
+  buttonText      String           @default("EXPLORE DASHBOARD")
+  buttonLink      String           @default("/dashboard")
+  footerText      String?          @default("SMART MOBILITY • CONNECTED FUTURE")
+  imageUrl        String?
+  frequency       PopupFrequency   @default(ONCE_PER_CAMPAIGN)
+  status          BannerStatus     @default(DRAFT)
+  startDate       DateTime?
+  endDate         DateTime?
+  createdBy       String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  dismissals      PopupDismissal[]
+
+  @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+model PopupDismissal {
+  id           String        @id @default(uuid())
+  campaignId   String
+  userId       String
+  dismissedAt  DateTime      @default(now())
+  lastSeenDate String?       // 'YYYY-MM-DD' in Asia/Kolkata (IST) for ONCE_DAILY evaluation
+
+  campaign     PopupCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([userId])
+  @@index([campaignId])
+}
+
 
 
 

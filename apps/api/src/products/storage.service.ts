@@ -22,6 +22,7 @@ export class StorageService {
   private readonly maxSizeBytes = 10 * 1024 * 1024; // 10MB maximum
   private readonly uploadDir = path.resolve(process.cwd(), '../web/public/uploads/products');
   private readonly heroUploadDir = path.resolve(process.cwd(), '../web/public/uploads/hero');
+  private readonly bannerUploadDir = path.resolve(process.cwd(), '../web/public/uploads/banners');
   private s3Client: S3Client | null = null;
   private bucketName = '';
   private isR2Configured = false;
@@ -84,6 +85,14 @@ export class StorageService {
       }
       if (!fs.existsSync(heroMobileDir)) {
         fs.mkdirSync(heroMobileDir, { recursive: true });
+      }
+      const bannerTopDir = path.join(this.bannerUploadDir, 'top');
+      const bannerPopupDir = path.join(this.bannerUploadDir, 'popup');
+      if (!fs.existsSync(bannerTopDir)) {
+        fs.mkdirSync(bannerTopDir, { recursive: true });
+      }
+      if (!fs.existsSync(bannerPopupDir)) {
+        fs.mkdirSync(bannerPopupDir, { recursive: true });
       }
     } catch (err: any) {
       this.logger.error(`Could not create local upload directory: ${err.message}`);
@@ -249,6 +258,65 @@ export class StorageService {
     };
   }
 
+  /**
+   * Upload Banner Image (Dashboard Top Banner or Welcome Popup)
+   * Target path:
+   * R2: banners/{kind}/{uuid}.{ext}
+   * Local: /uploads/banners/{kind}/{uuid}.{ext}
+   */
+  async uploadBannerImage(
+    file: Express.Multer.File,
+    kind: 'top' | 'popup' = 'top'
+  ): Promise<UploadResult> {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('No image file payload provided');
+    }
+
+    if (file.size > this.maxSizeBytes) {
+      throw new BadRequestException(
+        `File size (${(file.size / 1024 / 1024).toFixed(1)} MB) exceeds maximum allowed limit (10 MB).`
+      );
+    }
+
+    const detected = this.detectMagicMime(file.buffer);
+    if (!detected) {
+      throw new BadRequestException(
+        'Invalid image format or corrupted file signature. Only authentic JPEG, PNG, and WebP images are permitted.'
+      );
+    }
+
+    const uuid = crypto.randomUUID();
+    const objectKey = `banners/${kind}/${uuid}.${detected.ext}`;
+
+    if (this.isR2Configured && this.s3Client) {
+      return this.uploadToR2(file, objectKey, detected.mime);
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+      throw new BadRequestException(
+        'Persistent cloud storage (Cloudflare R2) is not configured in production. Ephemeral banner uploads are disabled until R2 credentials are set.'
+      );
+    }
+
+    this.ensureUploadDir();
+    const basename = `${kind}_${uuid}.${detected.ext}`;
+    const targetPath = path.join(this.bannerUploadDir, kind, basename);
+
+    fs.writeFileSync(targetPath, file.buffer);
+
+    const publicUrl = `/uploads/banners/${kind}/${basename}`;
+    this.logger.log(`Saved banner ${kind} image locally: ${publicUrl} (${(file.size / 1024).toFixed(1)} KB)`);
+
+    return {
+      url: publicUrl,
+      filename: basename,
+      originalName: file.originalname,
+      sizeBytes: file.size,
+      mimeType: detected.mime,
+      storageProvider: 'local',
+    };
+  }
+
   private async uploadToR2(
     file: Express.Multer.File,
     objectKey: string,
@@ -344,10 +412,11 @@ export class StorageService {
       objectKey.startsWith('hero/') ||
       objectKey.startsWith('vehicles/') ||
       objectKey.startsWith('products/') ||
+      objectKey.startsWith('banners/') ||
       objectKey.startsWith('test-');
 
     if (!isApprovedNamespace) {
-      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, test)');
+      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, banners, test)');
     }
 
     const normalize = (val: any): string => {
@@ -410,7 +479,31 @@ export class StorageService {
       return { deleted: false, reason: 'Image is currently referenced by a homepage hero slide' };
     }
 
-    // 3. Delete from Cloudflare R2
+    // 3. Check if referenced by DashboardTopBanner or PopupCampaign
+    const allTopBanners = await this.prisma.dashboardTopBanner.findMany({
+      select: { desktopImageUrl: true, mobileImageUrl: true },
+    });
+    const isReferencedInTopBanner = allTopBanners.some((b) => {
+      return (
+        (b.desktopImageUrl && b.desktopImageUrl.includes(targetBasename)) ||
+        (b.mobileImageUrl && b.mobileImageUrl.includes(targetBasename))
+      );
+    });
+    if (isReferencedInTopBanner) {
+      this.logger.warn(`Skipped deletion of ${objectKey}: Referenced by Dashboard Top Banner.`);
+      return { deleted: false, reason: 'Image is currently referenced by Dashboard Top Banner' };
+    }
+
+    const allPopups = await this.prisma.popupCampaign.findMany({
+      select: { imageUrl: true },
+    });
+    const isReferencedInPopup = allPopups.some((p) => p.imageUrl && p.imageUrl.includes(targetBasename));
+    if (isReferencedInPopup) {
+      this.logger.warn(`Skipped deletion of ${objectKey}: Referenced by a Welcome Popup campaign.`);
+      return { deleted: false, reason: 'Image is currently referenced by a Welcome Popup campaign' };
+    }
+
+    // 4. Delete from Cloudflare R2
     if (this.isR2Configured && this.s3Client) {
       try {
         await this.s3Client.send(

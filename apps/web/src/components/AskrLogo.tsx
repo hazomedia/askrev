@@ -9,6 +9,7 @@ export interface AskrLogoProps {
   variant?: 'responsive' | 'full' | 'icon';
   href?: string;
   className?: string;
+  imgClassName?: string;
   priority?: boolean;
   alt?: string;
 }
@@ -32,6 +33,7 @@ export default function AskrLogo({
   variant = 'full',
   href = '/',
   className = '',
+  imgClassName = '',
   priority = true,
   alt = 'ASKR EV Mobility',
 }: AskrLogoProps) {
@@ -74,7 +76,7 @@ export default function AskrLogo({
         height={684}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
-        className={`${sizeConfig.fullHeightClass} ${sizeConfig.fullWidthClass} w-auto object-contain select-none transition-opacity duration-200`}
+        className={`${imgClassName || `${sizeConfig.fullHeightClass} ${sizeConfig.fullWidthClass}`} w-auto object-contain select-none transition-opacity duration-200`}
         style={{
           aspectRatio: '2048 / 684',
         }}
