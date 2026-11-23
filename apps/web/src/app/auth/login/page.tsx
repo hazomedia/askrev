@@ -156,8 +156,8 @@ export default function LoginPage() {
     <div className="flex-1 flex flex-col bg-[#F7F9FC]">
       <Navbar />
 
-      <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full bg-white rounded-xl border border-slate-200 p-8 shadow-sm space-y-6">
+      <main className="flex-1 flex items-center justify-center py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full bg-white rounded-xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5 sm:space-y-6">
           <div className="flex justify-center">
             <AskrLogo variant="full" size="md" href="/" />
           </div>
@@ -410,7 +410,9 @@ export default function LoginPage() {
         </div>
       </main>
 
-      <Footer />
+      <div className="hidden md:block">
+        <Footer />
+      </div>
     </div>
   );
 }
