@@ -173,7 +173,11 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (tabParam && ['overview', 'banners', 'hero-slider', 'products', 'members', 'approvals', 'binary', 'finance', 'vouchers', 'bookings', 'reconciliation', 'audit', 'payment-settings', 'security'].includes(tabParam)) {
+      if (
+        tabParam === 'security' ||
+        tabParam === 'payment-settings' ||
+        (tabParam === 'banners' && stored.role === 'SUPER_ADMIN')
+      ) {
         setActiveTab(tabParam as AdminTab);
       }
     }
@@ -628,9 +632,11 @@ export default function AdminPage() {
     }
   };
 
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+
   const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'banners', label: 'Banner Management', icon: Sparkles },
+    ...(isSuperAdmin ? [{ id: 'banners' as AdminTab, label: 'Banner Management', icon: Sparkles }] : []),
     { id: 'hero-slider', label: 'Hero Slider', icon: Sliders },
     { id: 'products', label: 'Product Catalog', icon: Package },
     { id: 'members', label: 'Members', icon: Users, count: membersTotal },
@@ -1160,11 +1166,19 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* TAB: BANNER MANAGEMENT */}
+            {/* TAB: BANNER MANAGEMENT (SUPER_ADMIN ONLY) */}
             {activeTab === 'banners' && (
-              <div className="space-y-6">
-                <AdminBannerManagement />
-              </div>
+              isSuperAdmin ? (
+                <div className="space-y-6">
+                  <AdminBannerManagement />
+                </div>
+              ) : (
+                <div className="p-8 text-center bg-white rounded-2xl border border-red-200 space-y-3">
+                  <AlertTriangle className="w-10 h-10 text-red-500 mx-auto" />
+                  <h3 className="text-base font-bold text-slate-800">Access Restricted</h3>
+                  <p className="text-xs text-slate-500">Banner and Welcome Popup management is restricted to Super Admin accounts only.</p>
+                </div>
+              )
             )}
 
             {/* TAB: HERO SLIDER (WEBSITE MANAGEMENT) */}

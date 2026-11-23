@@ -40,10 +40,7 @@ export default function DashboardTopBanner({ banner }: DashboardTopBannerProps) 
   const alt = effectiveBanner.altText || effectiveBanner.title || 'ASKR EV Banner';
 
   const content = (
-    <div
-      data-testid="dashboard-top-banner"
-      className="relative w-full rounded-2xl overflow-hidden shadow-xs border border-slate-200/90 bg-[#0C2348] group transition-all duration-300"
-    >
+    <div className="relative w-full rounded-2xl overflow-hidden shadow-xs border border-slate-200/90 bg-[#0C2348] group transition-all duration-300">
       {/* Responsive Aspect Ratio Container */}
       <div className="relative w-full h-32 xs:h-36 sm:h-44 md:h-52 lg:h-56">
         <picture className="w-full h-full block">
@@ -99,3 +96,4 @@ export default function DashboardTopBanner({ banner }: DashboardTopBannerProps) 
 
   return content;
 }
+

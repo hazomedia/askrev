@@ -412,10 +412,11 @@ export class StorageService {
       objectKey.startsWith('hero/') ||
       objectKey.startsWith('vehicles/') ||
       objectKey.startsWith('products/') ||
+      objectKey.startsWith('banners/') ||
       objectKey.startsWith('test-');
 
     if (!isApprovedNamespace) {
-      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, test)');
+      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, banners, test)');
     }
 
     const normalize = (val: any): string => {
@@ -478,7 +479,31 @@ export class StorageService {
       return { deleted: false, reason: 'Image is currently referenced by a homepage hero slide' };
     }
 
-    // 3. Delete from Cloudflare R2
+    // 3. Check if referenced by DashboardTopBanner or PopupCampaign
+    const allTopBanners = await this.prisma.dashboardTopBanner.findMany({
+      select: { desktopImageUrl: true, mobileImageUrl: true },
+    });
+    const isReferencedInTopBanner = allTopBanners.some((b) => {
+      return (
+        (b.desktopImageUrl && b.desktopImageUrl.includes(targetBasename)) ||
+        (b.mobileImageUrl && b.mobileImageUrl.includes(targetBasename))
+      );
+    });
+    if (isReferencedInTopBanner) {
+      this.logger.warn(`Skipped deletion of ${objectKey}: Referenced by Dashboard Top Banner.`);
+      return { deleted: false, reason: 'Image is currently referenced by Dashboard Top Banner' };
+    }
+
+    const allPopups = await this.prisma.popupCampaign.findMany({
+      select: { imageUrl: true },
+    });
+    const isReferencedInPopup = allPopups.some((p) => p.imageUrl && p.imageUrl.includes(targetBasename));
+    if (isReferencedInPopup) {
+      this.logger.warn(`Skipped deletion of ${objectKey}: Referenced by a Welcome Popup campaign.`);
+      return { deleted: false, reason: 'Image is currently referenced by a Welcome Popup campaign' };
+    }
+
+    // 4. Delete from Cloudflare R2
     if (this.isR2Configured && this.s3Client) {
       try {
         await this.s3Client.send(

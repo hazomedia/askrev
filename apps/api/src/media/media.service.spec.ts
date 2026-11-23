@@ -19,6 +19,14 @@ describe('MediaService', () => {
         findFirst: vi.fn(),
         findMany: vi.fn().mockResolvedValue([]),
       },
+      dashboardTopBanner: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      popupCampaign: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
     };
 
     mockJwtService = {

@@ -28,7 +28,7 @@ import { UserRole } from '@askrev/shared';
 
 @Controller('admin/banners')
 @UseGuards(JwtAuthGuard, RolesGuard, CsrfGuard)
-@Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS)
+@Roles(UserRole.SUPER_ADMIN)
 export class BannersAdminController {
   constructor(
     private readonly bannersService: BannersService,
