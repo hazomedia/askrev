@@ -75,11 +75,12 @@ function DashboardContent() {
   const [selectedRequestType, setSelectedRequestType] = useState<
     'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE' | null
   >(null);
-  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'GATEWAY' | 'SIMULATED'>('UPI');
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'GATEWAY'>('UPI');
   const [paymentUtr, setPaymentUtr] = useState('');
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [paymentConfig, setPaymentConfig] = useState<{
     isConfigured: boolean;
+    enabled?: boolean;
     merchantUpiVpa: string | null;
     merchantName: string;
     isVerified: boolean;
@@ -87,8 +88,10 @@ function DashboardContent() {
   } | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<{
     upi: {
-      isEnabled: boolean;
-      isConfigured: boolean;
+      enabled?: boolean;
+      isEnabled?: boolean;
+      isConfigured?: boolean;
+      isVerified?: boolean;
       merchantUpiVpa: string | null;
       merchantName: string;
       manualReviewRequired: boolean;
@@ -381,26 +384,23 @@ function DashboardContent() {
     setGatewayOrder(null);
 
     const hasGateways = !!(paymentMethods?.gateways && paymentMethods.gateways.length > 0);
-    const hasUpi = paymentMethods
-      ? paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured
-      : !!paymentConfig?.isConfigured;
 
     if (hasGateways) {
       setPaymentMethod('GATEWAY');
-    } else if (hasUpi) {
-      setPaymentMethod('UPI');
     } else {
-      setPaymentMethod('SIMULATED');
+      setPaymentMethod('UPI');
     }
     setPaymentModalOpen(true);
   };
 
   useEffect(() => {
+    const isUpiActive = Boolean(
+      (paymentMethods?.upi?.enabled && paymentMethods?.upi?.merchantUpiVpa) ||
+      (paymentMethods?.upi?.isEnabled && paymentMethods?.upi?.merchantUpiVpa) ||
+      (paymentConfig?.isConfigured && paymentConfig?.merchantUpiVpa)
+    );
     const upiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
     const upiName = paymentMethods?.upi?.merchantName || paymentConfig?.merchantName || 'ASKR EV Mobility';
-    const isUpiActive = paymentMethods
-      ? paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured
-      : !!paymentConfig?.isConfigured;
 
     if (isUpiActive && upiVpa && selectedRequestType) {
       const amount =
@@ -498,7 +498,7 @@ function DashboardContent() {
 
   const handleMembershipRequest = async (
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE',
-    mode: 'UPI' | 'GATEWAY' | 'SIMULATED' = 'SIMULATED',
+    mode: 'UPI' | 'GATEWAY' | 'SIMULATED' = 'UPI',
     refNumber?: string
   ) => {
     setUpgrading(true);
@@ -561,8 +561,6 @@ function DashboardContent() {
       } else {
         await handleInitiateGatewayPayment();
       }
-    } else {
-      await handleMembershipRequest(selectedRequestType, 'SIMULATED');
     }
   };
 
@@ -3247,7 +3245,7 @@ function DashboardContent() {
             {/* Payment Method Selector */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-[#253247]">Select Payment Mode</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {(paymentMethods?.gateways && paymentMethods.gateways.length > 0) && (
                   <button
                     type="button"
@@ -3269,52 +3267,36 @@ function DashboardContent() {
                   </button>
                 )}
 
-                {(paymentMethods ? paymentMethods.upi.isEnabled : paymentConfig?.isConfigured) && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('UPI')}
-                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                      paymentMethod === 'UPI'
-                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <QrCode className="w-4 h-4 text-[#165DAD]" />
-                      <div>
-                        <div className="font-semibold">UPI Transfer</div>
-                        <div className="text-[10px] text-slate-400">QR / Manual UTR</div>
-                      </div>
-                    </div>
-                    {paymentMethod === 'UPI' && <Check className="w-4 h-4 text-[#165DAD]" />}
-                  </button>
-                )}
-
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('SIMULATED')}
-                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${paymentMethod === 'SIMULATED'
-                    ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
+                  onClick={() => setPaymentMethod('UPI')}
+                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                    paymentMethod === 'UPI'
+                      ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#165DAD]" />
+                    <QrCode className="w-4 h-4 text-[#165DAD]" />
                     <div>
-                      <div className="font-semibold">Simulation</div>
-                      <div className="text-[10px] text-slate-400">Portal Test Mode</div>
+                      <div className="font-semibold">UPI Transfer</div>
+                      <div className="text-[10px] text-slate-400">QR / Manual UTR</div>
                     </div>
                   </div>
-                  {paymentMethod === 'SIMULATED' && <Check className="w-4 h-4 text-[#165DAD]" />}
+                  {paymentMethod === 'UPI' && <Check className="w-4 h-4 text-[#165DAD]" />}
                 </button>
               </div>
 
               {/* Notice if neither UPI nor Gateway is available */}
               {!(paymentMethods?.gateways && paymentMethods.gateways.length > 0) &&
-                !(paymentMethods ? (paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured) : paymentConfig?.isConfigured) && (
+                !(Boolean(
+                  (paymentMethods?.upi?.enabled && paymentMethods?.upi?.merchantUpiVpa) ||
+                  (paymentMethods?.upi?.isEnabled && paymentMethods?.upi?.merchantUpiVpa) ||
+                  (paymentConfig?.isConfigured && paymentConfig?.merchantUpiVpa)
+                )) && (
                   <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Online booking payments are currently undergoing maintenance. Please contact support or use portal simulation clearance.</span>
+                    <span>Online booking payments are currently undergoing maintenance. Please contact support.</span>
                   </div>
                 )}
             </div>
@@ -3452,7 +3434,11 @@ function DashboardContent() {
                 </div>
               </div>
             ) : paymentMethod === 'UPI' ? (
-              paymentConfig?.isConfigured && paymentConfig.merchantUpiVpa ? (
+              Boolean(
+                (paymentMethods?.upi?.enabled && paymentMethods?.upi?.merchantUpiVpa) ||
+                (paymentMethods?.upi?.isEnabled && paymentMethods?.upi?.merchantUpiVpa) ||
+                (paymentConfig?.isConfigured && paymentConfig?.merchantUpiVpa)
+              ) && (paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa) ? (
                 <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4">
                   <div className="flex flex-col sm:flex-row items-center gap-4">
                     <div className="w-32 h-32 bg-white p-2 rounded-xl border border-blue-200 shadow-xs flex items-center justify-center shrink-0">
@@ -3477,7 +3463,7 @@ function DashboardContent() {
                       </div>
                       <div className="flex items-center gap-1.5 justify-center sm:justify-start">
                         <code className="font-mono font-bold text-sm text-[#165DAD] bg-white px-2 py-0.5 rounded border border-blue-200">
-                          {paymentConfig.merchantUpiVpa}
+                          {paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa}
                         </code>
                         <button
                           type="button"
@@ -3489,7 +3475,7 @@ function DashboardContent() {
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-600">
-                        Payee: <strong>{paymentConfig.merchantName || 'ASKR EV Mobility'}</strong>
+                        Payee: <strong>{paymentMethods?.upi?.merchantName || paymentConfig?.merchantName || 'ASKR EV Mobility'}</strong>
                       </p>
                       <p className="text-[11px] text-slate-500">
                         Payable:{' '}
@@ -3541,18 +3527,11 @@ function DashboardContent() {
                     The official company UPI VPA is pending verification by administration. Live UPI QR payment instructions are temporarily withheld until verified.
                   </p>
                   <p className="text-[11px] text-amber-700">
-                    Please use <strong>Portal Simulation Clearance</strong> to test bookings or contact support.
+                    Please contact support for booking payment assistance.
                   </p>
                 </div>
               )
-            ) : (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
-                <span className="font-bold">Test & Demonstration Clearance</span>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Submits a simulated portal clearance request with SIMULATION_ONLY compliance safeguards. No real live financial debit or settlement occurs.
-                </p>
-              </div>
-            )}
+            ) : null}
 
             {/* Modal Actions */}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -3570,7 +3549,12 @@ function DashboardContent() {
                 disabled={
                   upgrading ||
                   isProcessingGateway ||
-                  (paymentMethod === 'UPI' && (!paymentConfig?.isConfigured || !paymentUtr.trim()))
+                  (paymentMethod === 'UPI' &&
+                    (!Boolean(
+                      (paymentMethods?.upi?.enabled && paymentMethods?.upi?.merchantUpiVpa) ||
+                      (paymentMethods?.upi?.isEnabled && paymentMethods?.upi?.merchantUpiVpa) ||
+                      (paymentConfig?.isConfigured && paymentConfig?.merchantUpiVpa)
+                    ) || !paymentUtr.trim()))
                 }
                 className="px-5 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
               >
