@@ -170,9 +170,45 @@ export class AuthService {
     };
   }
 
+  /**
+   * Determine whether Google Authenticator (TOTP) is mandatory for administrative accounts.
+   * Secure server-side flag: ADMIN_TOTP_REQUIRED.
+   * Defaults to TRUE (enabled) if missing, undefined, null, or invalid to prevent accidental security downgrades.
+   * Only returns FALSE if explicitly configured to 'false', '0', 'off', or 'disabled'.
+   */
+  public isAdminTotpRequired(): boolean {
+    const flag = process.env.ADMIN_TOTP_REQUIRED;
+    if (flag === undefined || flag === null || flag === '') {
+      return true;
+    }
+    const normalized = String(flag).trim().toLowerCase();
+    if (normalized === 'false' || normalized === '0' || normalized === 'off' || normalized === 'disabled') {
+      return false;
+    }
+    return true;
+  }
+
   async login(dto: LoginDto) {
+    const normalizedEmail = dto.email.toLowerCase().trim();
+
+    // Password-only security control: Enforce login rate limiting and lockout (max 5 failed attempts per 15m)
+    const loginRateKey = `auth-login:${normalizedEmail}`;
+    const loginRate = this.totpService.checkRateLimit(loginRateKey, 5, 15 * 60 * 1000);
+    if (!loginRate.allowed) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'AUTH_LOGIN_LOCKED',
+            entityType: 'User',
+            metadata: { email: normalizedEmail, reason: 'RATE_LIMIT_EXCEEDED' },
+          },
+        });
+      } catch { }
+      throw new BadRequestException('Too many failed login attempts. Account temporarily locked. Please try again after 15 minutes.');
+    }
+
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
+      where: { email: normalizedEmail },
       include: {
         wallet: true,
         sponsor: {
@@ -182,12 +218,13 @@ export class AuthService {
     });
 
     if (!user) {
+      this.totpService.recordFailedAttempt(loginRateKey, 15 * 60 * 1000);
       try {
         await this.prisma.auditLog.create({
           data: {
             action: 'AUTH_LOGIN_FAILED',
             entityType: 'User',
-            metadata: { email: dto.email.toLowerCase().trim(), reason: 'USER_NOT_FOUND' },
+            metadata: { email: normalizedEmail, reason: 'USER_NOT_FOUND' },
           },
         });
       } catch { }
@@ -196,18 +233,22 @@ export class AuthService {
 
     const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isMatch) {
+      this.totpService.recordFailedAttempt(loginRateKey, 15 * 60 * 1000);
       try {
         await this.prisma.auditLog.create({
           data: {
             action: 'AUTH_LOGIN_FAILED',
             entityType: 'User',
             entityId: user.id,
-            metadata: { email: dto.email.toLowerCase().trim(), reason: 'BAD_PASSWORD' },
+            metadata: { email: normalizedEmail, reason: 'BAD_PASSWORD' },
           },
         });
       } catch { }
       throw new UnauthorizedException('Invalid email or password');
     }
+
+    // Credentials verified successfully: reset failed login attempts
+    this.totpService.resetRateLimit(loginRateKey);
 
     const isPrivilegedStaff = [
       UserRole.SUPER_ADMIN,
@@ -215,7 +256,9 @@ export class AuthService {
       UserRole.FINANCE_MANAGER,
     ].includes(user.role as any);
 
-    if (isPrivilegedStaff) {
+    const adminTotpRequired = this.isAdminTotpRequired();
+
+    if (isPrivilegedStaff && adminTotpRequired) {
       if (!user.twoFactorEnabled) {
         // Safe bootstrap process for existing administrators without MFA
         const enrollmentPayload = {
@@ -251,8 +294,12 @@ export class AuthService {
       }
     }
 
-    // Mandatory Two-Factor Authentication Check for MFA-enabled accounts
-    if (user.twoFactorEnabled) {
+    // Two-Factor Authentication Check for MFA-enabled accounts:
+    // When ADMIN_TOTP_REQUIRED=false, administrative accounts bypass the MFA challenge on login.
+    // Non-admin members with twoFactorEnabled continue to have MFA strictly enforced.
+    const requireMfaForUser = user.twoFactorEnabled && (!isPrivilegedStaff || adminTotpRequired);
+
+    if (requireMfaForUser) {
       const mfaRateKey = `login-mfa:${user.id}`;
       const mfaRate = this.totpService.checkRateLimit(mfaRateKey, 5, 5 * 60 * 1000);
       if (!mfaRate.allowed) {
@@ -373,7 +420,7 @@ export class AuthService {
       UserRole.FINANCE_MANAGER,
     ].includes(user.role as any);
 
-    if (isPrivilegedStaff && !user.twoFactorEnabled) {
+    if (isPrivilegedStaff && this.isAdminTotpRequired() && !user.twoFactorEnabled) {
       throw new UnauthorizedException(
         'MFA_REQUIRED: Two-Factor Authentication is mandatory for administrative accounts. Please re-authenticate.'
       );
@@ -1308,6 +1355,7 @@ export class AuthService {
 
   public formatUserProfile(user: any) {
     const isSuperAdmin = user.role === UserRole.SUPER_ADMIN;
+    const adminTotpRequired = this.isAdminTotpRequired();
     return {
       id: user.id,
       memberId: user.memberId,
@@ -1322,8 +1370,9 @@ export class AuthService {
       isEmailVerified: user.isEmailVerified ?? false,
       emailVerifiedAt: user.emailVerifiedAt ?? null,
       twoFactorEnabled: user.twoFactorEnabled ?? false,
-      mfaEnforced: isSuperAdmin,
-      mfaSetupRequired: isSuperAdmin && !user.twoFactorEnabled,
+      mfaEnforced: isSuperAdmin && adminTotpRequired,
+      mfaSetupRequired: isSuperAdmin && adminTotpRequired && !user.twoFactorEnabled,
+      adminTotpRequired,
       sponsorMemberId: user.sponsor?.memberId ?? null,
       sponsorName: user.sponsor?.fullName ?? null,
       wallet: user.wallet

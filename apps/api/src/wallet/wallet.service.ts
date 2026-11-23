@@ -4,13 +4,13 @@ import { paiseToRupees, JournalAccount, UserRole } from '@askrev/shared';
 
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Get earnings wallet overview with all 4 authoritative balances
    */
   async getWalletOverview(userId: string) {
-    const [user, existingWallet] = await Promise.all([
+    const [user, existingWallet, ledgerLines, binaryMatchEvents, qualificationEvents] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -27,6 +27,39 @@ export class WalletService {
       this.prisma.walletAccount.findUnique({
         where: { userId },
       }),
+      this.prisma.journalLine
+        ? this.prisma.journalLine.findMany({
+            where: {
+              userId,
+              account: {
+                in: [
+                  JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                  '2000_MEMBER_EARNINGS_PAYABLE',
+                ],
+              },
+            },
+            include: {
+              journalEntry: {
+                select: {
+                  eventType: true,
+                  referenceId: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      this.prisma.binaryMatchEvent
+        ? this.prisma.binaryMatchEvent.findMany({
+            where: { userId },
+            select: { rewardPaise: true },
+          })
+        : Promise.resolve([]),
+      this.prisma.qualificationEvent
+        ? this.prisma.qualificationEvent.findMany({
+            where: { sponsorId: userId },
+            select: { walletCreditedPaise: true, holdReleasedPaise: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     let wallet = existingWallet;
@@ -36,15 +69,78 @@ export class WalletService {
       });
     }
 
-    const totalEarnedPaise = wallet.totalEarnedPaise || 0n;
-    const royalMatchPaise = user?.binaryPlacement?.totalRewardEarnedPaise || 0n;
-    const crownBonusPaise = totalEarnedPaise > royalMatchPaise ? totalEarnedPaise - royalMatchPaise : 0n;
+    // Direct Sponsor Income (EV Crown Bonus): sum actual Direct Sponsor Income ledger categories
+    const isDirectSponsorEvent = (eventType: string): boolean => {
+      const et = (eventType || '').toUpperCase();
+      return (
+        et === 'BASIC_SPONSOR_COMMISSION_RELEASED' ||
+        et === 'QUALIFIED_DIRECT_COMMISSION' ||
+        et === 'HOLD_RESERVE_RELEASE' ||
+        et === 'DIRECT_SPONSOR' ||
+        et === 'DIRECT_SPONSOR_COMMISSION' ||
+        et.includes('SPONSOR')
+      );
+    };
+
+    // Binary Matching Income (EV Royal Match): sum actual Binary Matching Income ledger categories
+    const isBinaryMatchEvent = (eventType: string): boolean => {
+      const et = (eventType || '').toUpperCase();
+      return (
+        et === 'BINARY_MATCHING_REWARD' ||
+        et === 'BINARY_MATCH' ||
+        et === 'BINARY_MATCHING' ||
+        et.includes('BINARY')
+      );
+    };
+
+    let ledgerCrownBonusPaise = 0n;
+    let ledgerRoyalMatchPaise = 0n;
+
+    for (const line of (ledgerLines as any[]) || []) {
+      const eventType = line.journalEntry?.eventType || '';
+      const credit = BigInt(line.creditPaise ? String(line.creditPaise) : '0');
+      const debit = BigInt(line.debitPaise ? String(line.debitPaise) : '0');
+      const netPaise = credit - debit;
+      if (isDirectSponsorEvent(eventType)) {
+        ledgerCrownBonusPaise += netPaise;
+      } else if (isBinaryMatchEvent(eventType)) {
+        ledgerRoyalMatchPaise += netPaise;
+      }
+    }
+
+    // Historical Reconciliation without modifying existing ledger records:
+    // If ledger has direct records, prioritize ledger records.
+    // If historical QualificationEvent or BinaryMatchEvent records exist without matching journal entries, reconcile them cleanly.
+    const qualEventsPaise = ((qualificationEvents as any[]) || []).reduce(
+      (sum: bigint, q: any) => {
+        const credited = BigInt(q.walletCreditedPaise ? String(q.walletCreditedPaise) : '0');
+        const hold = BigInt(q.holdReleasedPaise ? String(q.holdReleasedPaise) : '0');
+        return sum + credited + hold;
+      },
+      0n
+    );
+    const crownBonusPaise = ledgerCrownBonusPaise > qualEventsPaise ? ledgerCrownBonusPaise : qualEventsPaise;
+
+    const binaryEventsPaise = ((binaryMatchEvents as any[]) || []).reduce(
+      (sum: bigint, b: any) => {
+        const reward = BigInt(b.rewardPaise ? String(b.rewardPaise) : '0');
+        return sum + reward;
+      },
+      0n
+    );
+    const placementPaise = BigInt(user?.binaryPlacement?.totalRewardEarnedPaise ? String(user.binaryPlacement.totalRewardEarnedPaise) : '0');
+    const historicalBinaryPaise = binaryEventsPaise > placementPaise ? binaryEventsPaise : placementPaise;
+    const royalMatchPaise = ledgerRoyalMatchPaise > historicalBinaryPaise ? ledgerRoyalMatchPaise : historicalBinaryPaise;
+
+    const walletTotalEarned = BigInt(wallet.totalEarnedPaise ? String(wallet.totalEarnedPaise) : '0');
+    const computedTotalEarned = crownBonusPaise + royalMatchPaise;
+    const totalEarnedPaise = walletTotalEarned > computedTotalEarned ? walletTotalEarned : computedTotalEarned;
 
     return {
       availableEarningsINR: paiseToRupees(wallet.availableEarningsPaise),
       heldCommissionsINR: paiseToRupees(wallet.heldCommissionsPaise),
       pendingRecoveryINR: paiseToRupees(wallet.pendingRecoveryPaise),
-      totalEarnedINR: paiseToRupees(wallet.totalEarnedPaise),
+      totalEarnedINR: paiseToRupees(totalEarnedPaise),
       shoppingVoucherINR: paiseToRupees(wallet.shoppingVoucherBalancePaise),
       isEmailVerified: !!user?.isEmailVerified,
       breakdown: {
@@ -245,8 +341,8 @@ export class WalletService {
     return {
       reconciliationStatus:
         earningsDiscrepancyPaise === 0n &&
-        voucherDiscrepancyPaise === 0n &&
-        isPerMemberBalanced
+          voucherDiscrepancyPaise === 0n &&
+          isPerMemberBalanced
           ? 'RECONCILED_PERFECT'
           : 'DISCREPANCY_DETECTED',
       walletLiability: {

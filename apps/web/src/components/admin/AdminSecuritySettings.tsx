@@ -316,9 +316,15 @@ export function AdminSecuritySettings({ currentUser: initialUser, onUserUpdated 
           <div className="mt-4 p-3.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs flex items-start gap-2.5">
             <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <p className="font-bold">Production Super Admin Requirement</p>
+              <p className="font-bold">
+                {user?.adminTotpRequired === false
+                  ? 'Administrative Two-Factor Authentication (Optional Mode)'
+                  : 'Production Super Admin Requirement'}
+              </p>
               <p className="text-[11px] text-indigo-700">
-                To protect Bharat’s next-generation EV fleet controls, Super Admin accounts are required to configure Two-Factor Authentication (TOTP). Please complete enrollment below.
+                {user?.adminTotpRequired === false
+                  ? 'Google Authenticator (TOTP) is currently optional for administrative sign-in (ADMIN_TOTP_REQUIRED=false). You can test or activate TOTP enrollment below at any time.'
+                  : 'To protect Bharat’s next-generation EV fleet controls, Super Admin accounts are required to configure Two-Factor Authentication (TOTP). Please complete enrollment below.'}
               </p>
             </div>
           </div>
