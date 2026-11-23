@@ -45,6 +45,7 @@ import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog'
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
 import { AdminSecuritySettings } from '../../components/admin/AdminSecuritySettings';
 import { AdminPaymentSettings } from '../../components/admin/AdminPaymentSettings';
+import AskrLogo from '../../components/AskrLogo';
 
 type AdminTab =
   | 'overview'
@@ -656,9 +657,11 @@ export default function AdminPage() {
     return (
       <div className="min-h-screen bg-[#F7F9FC] flex items-center justify-center font-sans">
         <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm text-center max-w-sm w-full space-y-4">
-          <div className="w-10 h-10 rounded-lg bg-[#165DAD] text-white flex items-center justify-center font-bold text-sm mx-auto shadow-sm animate-pulse">
-            AE
-          </div>
+          <img
+            src="/brand/askrev-icon.webp"
+            alt="ASKR EV"
+            className="w-12 h-12 object-contain mx-auto shadow-sm"
+          />
           <div className="space-y-1">
             <h2 className="text-sm font-bold text-[#253247]">ASKR EV Operations Center</h2>
             <p className="text-xs text-slate-500">Verifying administrative security session...</p>
@@ -675,7 +678,7 @@ export default function AdminPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-2 h-16 min-w-0">
             {/* Left: Branding & Mobile Menu Toggle */}
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="md:hidden shrink-0 p-2 rounded-lg text-slate-500 hover:text-[#253247] hover:bg-slate-100"
@@ -684,15 +687,14 @@ export default function AdminPage() {
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
 
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 shrink-0 rounded-lg bg-[#165DAD] text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                  AE
-                </div>
-                <div className="min-w-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <AskrLogo href="/admin" size="sm" variant="responsive" />
+                <div className="hidden sm:block h-6 w-px bg-slate-200" />
+                <div className="hidden sm:block min-w-0">
                   <div className="font-bold text-xs sm:text-sm text-[#253247] tracking-tight truncate">
-                    ASKR EV Operations Center
+                    Operations Center
                   </div>
-                  <div className="hidden sm:block text-[10px] text-slate-500 font-medium truncate">
+                  <div className="text-[10px] text-slate-500 font-medium truncate">
                     Corporate Admin Platform
                   </div>
                 </div>

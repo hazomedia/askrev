@@ -3,86 +3,133 @@
 import React from 'react';
 import Link from 'next/link';
 
-interface AskrLogoProps {
+export interface AskrLogoProps {
   theme?: 'dark' | 'light';
-  size?: 'sm' | 'md' | 'lg';
-  showSubtitle?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  variant?: 'responsive' | 'full' | 'icon';
   href?: string;
   className?: string;
+  priority?: boolean;
+  alt?: string;
 }
 
+/**
+ * Official ASKR EV Branding Component
+ *
+ * Utilizes the authoritative official assets:
+ * - Full horizontal logo: /brand/askrev-full-logo.webp (2048x684, transparent)
+ * - Square icon: /brand/askrev-icon.webp (1254x1254, transparent)
+ *
+ * Enforces native aspect ratios (never stretched, cropped, or distorted).
+ * On responsive mode (default), renders the square icon on mobile (< sm)
+ * and the full horizontal logo on desktop (sm: and above).
+ */
 export default function AskrLogo({
   theme = 'light',
   size = 'md',
-  showSubtitle = true,
+  variant = 'responsive',
   href = '/',
   className = '',
+  priority = true,
+  alt = 'ASKR EV Mobility',
 }: AskrLogoProps) {
-  const isDark = theme === 'dark';
-
-  const sizeClasses = {
+  // Height configurations per size preset
+  const sizeConfig = {
     sm: {
-      badge: 'w-7 h-7 rounded-lg text-xs',
-      title: 'text-sm sm:text-base',
-      subtitle: 'text-[8px]',
-      gap: 'gap-2',
+      fullHeightClass: 'h-7 sm:h-8',
+      iconSizeClass: 'h-7 w-7',
+      containerClass: 'gap-2',
     },
     md: {
-      badge: 'w-9 h-9 rounded-xl text-sm',
-      title: 'text-base sm:text-lg',
-      subtitle: 'text-[9px]',
-      gap: 'gap-2.5',
+      fullHeightClass: 'h-8 sm:h-9',
+      iconSizeClass: 'h-8 w-8 sm:h-9 sm:w-9',
+      containerClass: 'gap-2.5',
     },
     lg: {
-      badge: 'w-11 h-11 rounded-2xl text-base',
-      title: 'text-xl sm:text-2xl',
-      subtitle: 'text-[10px]',
-      gap: 'gap-3',
+      fullHeightClass: 'h-10 sm:h-11',
+      iconSizeClass: 'h-9 w-9 sm:h-10 sm:w-10',
+      containerClass: 'gap-3',
+    },
+    xl: {
+      fullHeightClass: 'h-12 sm:h-14',
+      iconSizeClass: 'h-12 w-12 sm:h-14 sm:w-14',
+      containerClass: 'gap-3.5',
     },
   }[size];
 
-  const content = (
-    <div className={`flex items-center ${sizeClasses.gap} ${className}`}>
-      {/* Official ASKR EV Monogram Emblem */}
-      <div
-        className={`${sizeClasses.badge} bg-gradient-to-br from-[#0C2348] to-[#165DAD] border border-blue-400/30 flex items-center justify-center text-white font-black shadow-xs shrink-0 select-none relative overflow-hidden`}
-        aria-hidden="true"
-      >
-        <svg viewBox="0 0 40 40" className="w-5/6 h-5/6" fill="none">
-          <path d="M20 7L9 33H14.5L16.8 26.5H23.2L25.5 33H31L20 7H20ZM20 15L22.2 21.8H17.8L20 15Z" fill="#FFFFFF" />
-          <path d="M26 6L21 18H25L20 30L29 16H24.5L26 6Z" fill="#50D9FF" opacity="0.95" />
-        </svg>
-      </div>
-
-      <div className="flex flex-col leading-none justify-center">
-        <div
-          className={`${sizeClasses.title} font-black tracking-tight select-none flex items-center gap-1 ${
-            isDark ? 'text-white' : 'text-[#0C2348]'
-          }`}
-        >
-          <span>ASKR</span>
-          <span className="bg-gradient-to-r from-[#1D4ED8] to-[#0891D2] bg-clip-text text-transparent">EV</span>
-        </div>
-        {showSubtitle && (
-          <span
-            className={`${sizeClasses.subtitle} font-bold uppercase tracking-widest mt-0.5 select-none ${
-              isDark ? 'text-slate-400' : 'text-slate-500'
-            }`}
-          >
-            Electric Mobility
-          </span>
-        )}
-      </div>
-    </div>
+  const fullLogoElement = (
+    <picture className="inline-flex items-center shrink-0">
+      <source srcSet="/brand/askrev-full-logo.webp" type="image/webp" />
+      <source srcSet="/brand/askrev-full-logo.png" type="image/png" />
+      <img
+        src="/brand/askrev-full-logo.png"
+        alt={alt}
+        width={2048}
+        height={684}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        className={`${sizeConfig.fullHeightClass} w-auto max-w-[240px] sm:max-w-none object-contain select-none transition-opacity duration-200`}
+        style={{
+          aspectRatio: '2048 / 684',
+        }}
+      />
+    </picture>
   );
+
+  const iconElement = (
+    <picture className="inline-flex items-center shrink-0">
+      <source srcSet="/brand/askrev-icon.webp" type="image/webp" />
+      <source srcSet="/brand/askrev-icon.png" type="image/png" />
+      <img
+        src="/brand/askrev-icon.png"
+        alt="ASKR EV Icon"
+        width={1254}
+        height={1254}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        className={`${sizeConfig.iconSizeClass} object-contain select-none transition-opacity duration-200`}
+        style={{
+          aspectRatio: '1 / 1',
+        }}
+      />
+    </picture>
+  );
+
+  let renderContent: React.ReactNode;
+
+  if (variant === 'full') {
+    renderContent = fullLogoElement;
+  } else if (variant === 'icon') {
+    renderContent = iconElement;
+  } else {
+    // variant === 'responsive'
+    // On small mobile screens (< sm), render square icon so it fits without distortion.
+    // On sm screens and larger, render full horizontal logo.
+    renderContent = (
+      <>
+        <div className="sm:hidden flex items-center shrink-0">
+          {iconElement}
+        </div>
+        <div className="hidden sm:flex items-center shrink-0">
+          {fullLogoElement}
+        </div>
+      </>
+    );
+  }
+
+  const wrapperClass = `inline-flex items-center shrink-0 select-none ${className}`;
 
   if (href) {
     return (
-      <Link href={href} className="inline-flex items-center group transition-opacity hover:opacity-90" aria-label="ASKR EV">
-        {content}
+      <Link
+        href={href}
+        className={`${wrapperClass} group transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg`}
+        aria-label="ASKR EV Home"
+      >
+        {renderContent}
       </Link>
     );
   }
 
-  return content;
+  return <div className={wrapperClass}>{renderContent}</div>;
 }

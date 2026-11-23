@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Mail, Lock, KeyRound, AlertCircle, ShieldCheck, QrCode, CheckCircle2, Copy } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
+import AskrLogo from '../../../components/AskrLogo';
 import { fetchApi, setAuthSession } from '../../../lib/api';
 
 export default function LoginPage() {
@@ -149,6 +150,9 @@ export default function LoginPage() {
 
       <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full bg-white rounded-xl border border-slate-200 p-8 shadow-sm space-y-6">
+          <div className="flex justify-center">
+            <AskrLogo variant="full" size="md" href="/" />
+          </div>
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-[#253247]">Member Login</h1>
             <p className="text-xs text-slate-500">

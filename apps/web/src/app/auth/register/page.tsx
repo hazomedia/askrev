@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { User, Mail, Phone, Lock, Share2, AlertCircle, CheckCircle2, Loader2, UserCheck } from 'lucide-react';
 import Navbar from '../../../components/Navbar';
 import Footer from '../../../components/Footer';
+import AskrLogo from '../../../components/AskrLogo';
 import { fetchApi, setAuthSession } from '../../../lib/api';
 
 function RegisterForm() {
@@ -124,6 +125,10 @@ function RegisterForm() {
       <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         {registrationSuccess ? (
           <div className="max-w-lg w-full bg-white rounded-2xl border border-slate-200 p-8 shadow-sm text-center space-y-6">
+            <div className="flex justify-center">
+              <AskrLogo variant="full" size="md" href="/" />
+            </div>
+
             <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center border border-emerald-200 shadow-xs">
               <CheckCircle2 className="w-9 h-9" />
             </div>
@@ -190,8 +195,11 @@ function RegisterForm() {
           </div>
         ) : (
           <div className="max-w-lg w-full bg-white rounded-xl border border-slate-200 p-8 shadow-sm space-y-6">
-          <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-[#253247]">Register Member Account</h1>
+            <div className="flex justify-center">
+              <AskrLogo variant="full" size="md" href="/" />
+            </div>
+            <div className="text-center space-y-1">
+              <h1 className="text-2xl font-bold text-[#253247]">Register Member Account</h1>
             <p className="text-xs text-slate-500">
               Create your account to access customer services and EV reservations
             </p>

@@ -24,7 +24,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
           {/* Brand Info & Identity */}
           <div className="lg:col-span-2 space-y-4">
-            <AskrLogo theme="dark" size="md" href="/" />
+            <AskrLogo theme="dark" size="md" variant="full" href="/" />
             <p className="text-xs text-[#AAB7C8] leading-relaxed max-w-sm">
               ASKR EV is an electric mobility company delivering high-efficiency electric scooters, performance motorcycles, urban electric cycles, and all-terrain electric utility vehicles.
             </p>

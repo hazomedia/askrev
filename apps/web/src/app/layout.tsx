@@ -35,6 +35,14 @@ export const metadata: Metadata = {
     siteName: 'ASKR EV',
     locale: 'en_US',
     type: 'website',
+    images: [
+      {
+        url: '/brand/askrev-full-logo.png',
+        width: 2048,
+        height: 684,
+        alt: 'ASKR EV Mobility',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -42,7 +50,21 @@ export const metadata: Metadata = {
     description:
       'The Future Moves Electric. Next-generation electric bikes, cycles, and electric jeeps.',
     creator: '@askrev',
+    images: ['/brand/askrev-full-logo.png'],
   },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon-32.png', type: 'image/png', sizes: '32x32' },
+      { url: '/favicon-48.png', type: 'image/png', sizes: '48x48' },
+      { url: '/brand/askrev-icon.webp', type: 'image/webp' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+    shortcut: ['/favicon.ico'],
+  },
+  manifest: '/manifest.json',
   robots: {
     index: true,
     follow: true,
