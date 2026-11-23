@@ -16,7 +16,7 @@ function RegisterForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
-  const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
+  const [side, setSide] = useState<'LEFT' | 'RIGHT' | undefined>(undefined);
   const [sponsorMemberId, setSponsorMemberId] = useState('');
   const [sponsorInfo, setSponsorInfo] = useState<{ memberId: string; fullName: string } | null>(null);
   const [sponsorChecking, setSponsorChecking] = useState(false);
@@ -59,8 +59,12 @@ function RegisterForm() {
       lookupSponsor(clean);
     }
     const sideParam = searchParams.get('side')?.toUpperCase().trim();
-    if (sideParam === 'RIGHT' || sideParam === 'LEFT') {
-      setSide(sideParam as 'LEFT' | 'RIGHT');
+    if (sideParam === 'RIGHT') {
+      setSide('RIGHT');
+    } else if (sideParam === 'LEFT') {
+      setSide('LEFT');
+    } else {
+      setSide(undefined);
     }
   }, [searchParams]);
 
@@ -90,7 +94,7 @@ function RegisterForm() {
           password,
           phone: phone || undefined,
           sponsorMemberId: sponsorMemberId.trim().toUpperCase(),
-          side,
+          side: side || undefined,
         }),
       });
 
@@ -257,57 +261,6 @@ function RegisterForm() {
                   {sponsorError}
                 </p>
               )}
-            </div>
-
-            {/* Team Placement Leg Selector */}
-            <div>
-              <label className="block text-xs font-semibold text-[#253247] mb-1">
-                Team Placement Leg
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSide('LEFT')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    side === 'LEFT'
-                      ? 'bg-blue-50 border-[#165DAD] text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <span>Left Team</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSide('RIGHT')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    side === 'RIGHT'
-                      ? 'bg-blue-50 border-[#165DAD] text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <span>Right Team</span>
-                </button>
-              </div>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Binary tree placement will target your sponsor&apos;s <strong>{side === 'LEFT' ? 'Left Team' : 'Right Team'}</strong> upon Full Membership activation.
-              </p>
-            </div>
-
-            {/* Membership Activation Policy */}
-            <div className="p-3.5 rounded-lg border border-blue-200 bg-blue-50/50 text-left space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-[#165DAD] uppercase tracking-wider">
-                  Initial Account Tier: Free (₹0)
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-[#165DAD] border border-blue-200">
-                  Admin Approval Required for Paid Plans
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                All new registrations begin as Free accounts. After signing in, submit a simulated{' '}
-                <strong>Basic (₹3,000)</strong> or <strong>Full (₹33,000)</strong> activation request from your
-                Member Dashboard for administrative clearance.
-              </p>
             </div>
 
             <button

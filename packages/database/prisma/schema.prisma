@@ -92,6 +92,7 @@ model User {
   retailOrders            RetailOrderRecord[]
   retailQualifications    RetailQualificationEvent[]
   binaryMatchingOutbox    BinaryMatchingOutbox[]
+  paymentOrders           PaymentOrder[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -706,6 +707,128 @@ model RevokedToken {
   @@index([tokenHash])
   @@index([expiresAt])
 }
+
+model PaymentConfig {
+  id                   String    @id @default(uuid())
+  configKey            String    @unique @default("DEFAULT_PAYMENT_CONFIG")
+  upiEnabled           Boolean   @default(true)
+  merchantUpiVpa       String?
+  merchantName         String?   @default("ASKR EV Mobility")
+  isVerified           Boolean   @default(false)
+  verifiedAt           DateTime?
+  verifiedBy           String?
+  manualReviewRequired Boolean   @default(true)
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model PaymentGatewayConfig {
+  id                  String    @id @default(uuid())
+  provider            String    @unique // 'RAZORPAY', 'CASHFREE', 'PHONEPE'
+  isEnabled           Boolean   @default(false)
+  isSandbox           Boolean   @default(true)
+  merchantId          String?   // Key ID / Merchant ID
+  encryptedSecretKey  String?   // AES-256-GCM encrypted
+  encryptedWebhookKey String?   // AES-256-GCM encrypted
+  webhookUrl          String?
+  webhookVerifiedAt   DateTime?
+  status              String    @default("CONFIGURATION_ONLY") // 'ACTIVE', 'CONFIGURATION_ONLY', 'DISABLED'
+  lastTestedAt        DateTime?
+  lastTestStatus      String?   // 'SUCCESS', 'FAILED'
+  lastTestMessage     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([provider])
+  @@index([isEnabled])
+}
+
+model PaymentGatewayLog {
+  id           String   @id @default(uuid())
+  provider     String   // 'RAZORPAY', 'CASHFREE', 'PHONEPE', 'MANUAL_UPI'
+  event        String   // 'ORDER_CREATED', 'PAYMENT_SUCCESS', 'PAYMENT_FAILED', 'WEBHOOK_RECEIVED', 'SIGNATURE_VERIFIED', 'TEST_CONNECTION'
+  orderId      String?
+  paymentId    String?
+  referenceId  String?
+  amountPaise  BigInt?
+  status       String   // 'SUCCESS', 'FAILED', 'PENDING'
+  errorMessage String?
+  rawPayload   Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  @@index([provider])
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum PaymentOrderStatus {
+  CREATED
+  PROCESSING
+  VERIFIED
+  FAILED
+  CANCELLED
+  REFUNDED
+  INVESTIGATION_REQUIRED
+}
+
+model PaymentOrder {
+  id                  String             @id @default(uuid())
+  userId              String
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberId            String
+  provider            String             // 'PINELABS', 'RAZORPAY', etc.
+  requestType         MembershipRequestType
+  merchantReference   String             @unique // e.g. 'RCPT-PRO-ASKR-123456-789012'
+  providerOrderId     String?            @unique // Provider issued order ID
+  providerPaymentId   String?            // Provider payment ID
+  amountPaise         BigInt
+  currency            String             @default("INR")
+  status              PaymentOrderStatus @default(CREATED)
+  clientPayload       Json?
+  rawResponse         Json?
+  reconciledAt        DateTime?
+  verifiedAt          DateTime?
+  refundedAt          DateTime?
+  failedAt            DateTime?
+  failureReason       String?
+  membershipRequestId String?
+  attempts            Int                @default(0)
+  nextRetryAt         DateTime?
+  lockedBy            String?
+  lockedAt            DateTime?
+  leaseExpiresAt      DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+  @@index([providerOrderId])
+  @@index([merchantReference])
+  @@index([status, nextRetryAt])
+  @@index([status, leaseExpiresAt])
+}
+
+model ProcessedWebhookEvent {
+  id         String   @id @default(uuid())
+  eventId    String   @unique // Provider webhook-id or message ID
+  provider   String   // 'PINELABS', etc.
+  eventType  String   // 'order.processed', 'refund.processed', etc.
+  orderId    String?  // Linked provider orderId
+  paymentId  String?  // Linked paymentId
+  status     String   // 'PROCESSED', 'FAILED', 'IGNORED'
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([provider, eventId])
+  @@index([orderId])
+}
+
+
 
 
 

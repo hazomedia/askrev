@@ -36,11 +36,15 @@ import {
   ExternalLink,
   Package,
   Sliders,
+  QrCode,
+  AlertCircle,
+  CreditCard,
 } from 'lucide-react';
 import { fetchApi, getStoredUser, logoutSession, fetchCurrentUserProfile } from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
 import { AdminSecuritySettings } from '../../components/admin/AdminSecuritySettings';
+import { AdminPaymentSettings } from '../../components/admin/AdminPaymentSettings';
 
 type AdminTab =
   | 'overview'
@@ -54,6 +58,7 @@ type AdminTab =
   | 'bookings'
   | 'reconciliation'
   | 'audit'
+  | 'payment-settings'
   | 'security';
 
 export default function AdminPage() {
@@ -87,6 +92,15 @@ export default function AdminPage() {
   const [reviewMode, setReviewMode] = useState<'APPROVE' | 'REJECT' | null>(null);
   const [rejectNotes, setRejectNotes] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  // Payment Configuration State
+  const [adminPaymentConfig, setAdminPaymentConfig] = useState<any | null>(null);
+  const [editingPaymentConfig, setEditingPaymentConfig] = useState(false);
+  const [configUpiVpa, setConfigUpiVpa] = useState('');
+  const [configMerchantName, setConfigMerchantName] = useState('ASKR EV Mobility');
+  const [configIsVerified, setConfigIsVerified] = useState(false);
+  const [configNotes, setConfigNotes] = useState('');
+  const [isSavingPaymentConfig, setIsSavingPaymentConfig] = useState(false);
 
   // Binary Tab State
   const [binaryTreeMemberId, setBinaryTreeMemberId] = useState('ASKR-ADMIN-01');
@@ -155,8 +169,8 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (tabParam === 'security') {
-        setActiveTab('security');
+      if (tabParam === 'security' || tabParam === 'payment-settings') {
+        setActiveTab(tabParam as AdminTab);
       }
     }
     loadAllData();
@@ -170,6 +184,7 @@ export default function AdminPage() {
         fetchOverview(),
         fetchMembers(1),
         fetchMembershipRequests(),
+        fetchPaymentConfig(),
         fetchBinaryData('ASKR-ADMIN-01'),
         fetchWallets(),
         fetchLedger(),
@@ -190,8 +205,9 @@ export default function AdminPage() {
     try {
       if (activeTab === 'overview') await fetchOverview();
       else if (activeTab === 'members') await fetchMembers(membersPage);
-      else if (activeTab === 'approvals') await fetchMembershipRequests();
-      else if (activeTab === 'binary') await fetchBinaryData(binaryTreeMemberId);
+      else if (activeTab === 'approvals') {
+        await Promise.all([fetchMembershipRequests(), fetchPaymentConfig()]);
+      } else if (activeTab === 'binary') await fetchBinaryData(binaryTreeMemberId);
       else if (activeTab === 'finance') {
         await Promise.allSettled([fetchWallets(), fetchLedger()]);
       } else if (activeTab === 'vouchers') await fetchVouchers();
@@ -238,6 +254,46 @@ export default function AdminPage() {
       }
     } catch (err: any) {
       console.error('Failed to fetch members list:', err);
+    }
+  };
+
+  const fetchPaymentConfig = async () => {
+    try {
+      const data = await fetchApi<any>('/packages/admin/payment-config');
+      setAdminPaymentConfig(data);
+      if (data) {
+        setConfigUpiVpa(data.merchantUpiVpa || '');
+        setConfigMerchantName(data.merchantName || 'ASKR EV Mobility');
+        setConfigIsVerified(Boolean(data.isVerified));
+        setConfigNotes(data.notes || '');
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch admin payment config:', err);
+    }
+  };
+
+  const handleSavePaymentConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingPaymentConfig(true);
+    setError(null);
+    try {
+      const updated = await fetchApi<any>('/packages/admin/payment-config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          merchantUpiVpa: configUpiVpa.trim() || undefined,
+          merchantName: configMerchantName.trim() || 'ASKR EV Mobility',
+          isVerified: configIsVerified,
+          notes: configNotes.trim() || undefined,
+        }),
+      });
+      setAdminPaymentConfig(updated);
+      setEditingPaymentConfig(false);
+      setActionSuccess('Merchant UPI configuration updated successfully!');
+      setTimeout(() => setActionSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update payment config.');
+    } finally {
+      setIsSavingPaymentConfig(false);
     }
   };
 
@@ -592,6 +648,7 @@ export default function AdminPage() {
       badgeColor: 'bg-red-500 text-white',
     },
     { id: 'audit', label: 'Audit Trail', icon: FileText, count: auditTotal },
+    { id: 'payment-settings', label: 'Payment Settings', icon: CreditCard },
     { id: 'security', label: 'Settings → Security', icon: ShieldCheck },
   ];
 
@@ -1284,6 +1341,149 @@ export default function AdminPage() {
             {/* TAB 3: MEMBERSHIP APPROVALS */}
             {activeTab === 'approvals' && (
               <div className="space-y-4">
+                {/* Merchant UPI Configuration Card */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-[#165DAD]">
+                        <QrCode className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm text-[#253247]">Merchant UPI & VPA Configuration</h3>
+                          {adminPaymentConfig?.isVerified && adminPaymentConfig?.merchantUpiVpa ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              ACTIVE & VERIFIED
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              UNVERIFIED / SETUP IN PROGRESS
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Administer the official company UPI VPA. Members cannot view payment instructions or QR codes until verified.
+                        </p>
+                      </div>
+                    </div>
+                    {!editingPaymentConfig && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingPaymentConfig(true)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold self-start sm:self-auto transition-colors"
+                      >
+                        Edit VPA Settings
+                      </button>
+                    )}
+                  </div>
+
+                  {!editingPaymentConfig ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-slate-500 block text-[11px]">Merchant UPI VPA</span>
+                        <span className="font-mono font-bold text-[#165DAD] text-sm mt-0.5 block">
+                          {adminPaymentConfig?.merchantUpiVpa || 'Not Configured'}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-slate-500 block text-[11px]">Payee Business Name</span>
+                        <span className="font-bold text-[#253247] text-sm mt-0.5 block">
+                          {adminPaymentConfig?.merchantName || 'ASKR EV Mobility'}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-slate-500 block text-[11px]">Verification Status</span>
+                        <span className="font-bold text-sm mt-0.5 block">
+                          {adminPaymentConfig?.isVerified ? (
+                            <span className="text-emerald-700 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Verified for Member QR
+                            </span>
+                          ) : (
+                            <span className="text-amber-700 flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5" /> Hidden from Members
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSavePaymentConfig} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Merchant UPI VPA <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={configUpiVpa}
+                            onChange={(e) => setConfigUpiVpa(e.target.value.trim())}
+                            placeholder="e.g. askrev@icici or askrevmobility@hdfcbank"
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-[#165DAD] font-mono"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            Format: username@handle (standard Indian UPI VPA).
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Merchant Display / Business Name
+                          </label>
+                          <input
+                            type="text"
+                            value={configMerchantName}
+                            onChange={(e) => setConfigMerchantName(e.target.value)}
+                            placeholder="ASKR EV Mobility Private Limited"
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-[#165DAD]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="configVerifiedCheck"
+                          checked={configIsVerified}
+                          onChange={(e) => setConfigIsVerified(e.target.checked)}
+                          className="rounded border-slate-300 text-[#165DAD] focus:ring-[#165DAD]"
+                        />
+                        <label htmlFor="configVerifiedCheck" className="text-xs font-semibold text-slate-800 cursor-pointer">
+                          Mark VPA as Verified & Authorize Member QR Display
+                        </label>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">Internal Admin Notes / Bank Reference</label>
+                        <input
+                          type="text"
+                          value={configNotes}
+                          onChange={(e) => setConfigNotes(e.target.value)}
+                          placeholder="e.g. Primary merchant collection account verified with ICICI Bank branch"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-[#165DAD]"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setEditingPaymentConfig(false)}
+                          disabled={isSavingPaymentConfig}
+                          className="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSavingPaymentConfig}
+                          className="px-4 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-semibold flex items-center gap-1.5 shadow-xs"
+                        >
+                          {isSavingPaymentConfig ? 'Saving...' : 'Save Configuration'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
                 {/* Status Tabs */}
                 <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2">
@@ -1330,6 +1530,7 @@ export default function AdminPage() {
                           <th className="py-3 px-4">Member</th>
                           <th className="py-3 px-4">Request Type</th>
                           <th className="py-3 px-4">Fee (Simulated)</th>
+                          <th className="py-3 px-4">Payment / UTR</th>
                           <th className="py-3 px-4">Submitted At</th>
                           <th className="py-3 px-4">Status</th>
                           <th className="py-3 px-4 text-center">Action</th>
@@ -1355,6 +1556,14 @@ export default function AdminPage() {
                               </td>
                               <td className="py-3 px-4 font-bold text-[#165DAD]">
                                 ₹{req.feeINR?.toLocaleString('en-IN') ?? 0}
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="font-mono font-bold text-slate-800 text-[11px]">
+                                  {req.paymentReference || 'N/A'}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-medium">
+                                  {req.paymentMode || 'SIMULATED'}
+                                </div>
                               </td>
                               <td className="py-3 px-4 text-slate-500">
                                 {new Date(req.createdAt).toLocaleDateString('en-IN')}
@@ -1404,7 +1613,7 @@ export default function AdminPage() {
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={7} className="py-8 text-center text-slate-400">
+                            <td colSpan={8} className="py-8 text-center text-slate-400">
                               No membership requests found for this filter.
                             </td>
                           </tr>
@@ -2689,6 +2898,12 @@ export default function AdminPage() {
                 />
               </div>
             )}
+
+            {activeTab === 'payment-settings' && (
+              <div className="space-y-6">
+                <AdminPaymentSettings currentUser={currentUser} />
+              </div>
+            )}
           </main>
         </div>
       </div>
@@ -2955,16 +3170,27 @@ export default function AdminPage() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Payment Reference:</span>
-                <span className="font-mono text-slate-700">
-                  {selectedRequestToReview.paymentReference}
+                <span className="text-slate-500">Payment Mode:</span>
+                <span className="font-bold text-slate-800">
+                  {selectedRequestToReview.paymentMode || 'SIMULATED'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Payment Reference / UTR:</span>
+                <span className="font-mono font-bold text-[#165DAD]">
+                  {selectedRequestToReview.paymentReference || 'N/A'}
                 </span>
               </div>
             </div>
 
             {reviewMode === 'APPROVE' ? (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
-                Approving this request will atomically upgrade the member package, issue any qualified shopping vouchers, and execute double-entry sponsor commission settlements.
+              <div className="space-y-2">
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                  <strong>Reconciliation Advisory:</strong> Confirm that payment reference <strong>{selectedRequestToReview.paymentReference}</strong> strictly matches verified incoming bank / PSP merchant credits before proceeding.
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
+                  Approving this request will atomically upgrade the member package, issue qualified shopping vouchers, and execute double-entry sponsor commission settlements.
+                </div>
               </div>
             ) : (
               <div className="space-y-1.5">

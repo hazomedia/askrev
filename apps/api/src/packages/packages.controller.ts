@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PackagesService } from './packages.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -9,6 +9,7 @@ import {
   CreateMembershipRequestDto,
   QueryMembershipRequestsDto,
   ReviewMembershipRequestDto,
+  UpdatePaymentConfigDto,
 } from './dto/membership-request.dto';
 
 @Controller('packages')
@@ -75,5 +76,32 @@ export class PackagesController {
     @Body() dto: ReviewMembershipRequestDto
   ) {
     return this.packagesService.rejectMembershipRequest(id, admin.id, dto);
+  }
+
+  // =========================================================================
+  // MERCHANT PAYMENT CONFIGURATION ENDPOINTS
+  // =========================================================================
+
+  @UseGuards(JwtAuthGuard)
+  @Get('payment-config')
+  async getPaymentConfig() {
+    return this.packagesService.getPaymentConfig();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.FINANCE_MANAGER)
+  @Get('admin/payment-config')
+  async getAdminPaymentConfig() {
+    return this.packagesService.getAdminPaymentConfig();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.FINANCE_MANAGER)
+  @Put('admin/payment-config')
+  async updateAdminPaymentConfig(
+    @CurrentUser() admin: any,
+    @Body() dto: UpdatePaymentConfigDto
+  ) {
+    return this.packagesService.updateAdminPaymentConfig(admin.id, dto);
   }
 }

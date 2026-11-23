@@ -34,7 +34,13 @@ import {
   Receipt,
   CheckCircle2,
   Lock,
+  QrCode,
+  Home,
+  CreditCard,
+  Building2,
+  Globe,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { fetchApi, getStoredUser, logoutSession } from '../../lib/api';
 
 type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'calculator' | 'bookings' | 'profile';
@@ -59,11 +65,50 @@ function DashboardContent() {
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const [copiedLeft, setCopiedLeft] = useState(false);
   const [copiedRight, setCopiedRight] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [selectedRequestType, setSelectedRequestType] = useState<
+    'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE' | null
+  >(null);
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'GATEWAY' | 'SIMULATED'>('UPI');
+  const [paymentUtr, setPaymentUtr] = useState('');
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [paymentConfig, setPaymentConfig] = useState<{
+    isConfigured: boolean;
+    merchantUpiVpa: string | null;
+    merchantName: string;
+    isVerified: boolean;
+    pricing?: { BASIC_ACTIVATION: number; FULL_ACTIVATION: number; BASIC_TO_FULL_UPGRADE: number };
+  } | null>(null);
+  const [paymentMethods, setPaymentMethods] = useState<{
+    upi: {
+      isEnabled: boolean;
+      isConfigured: boolean;
+      merchantUpiVpa: string | null;
+      merchantName: string;
+      manualReviewRequired: boolean;
+    };
+    gateways: Array<{
+      provider: string;
+      isSandbox: boolean;
+      name?: string;
+      displayName?: string;
+    }>;
+    pricing: {
+      BASIC_ACTIVATION: number;
+      FULL_ACTIVATION: number;
+      BASIC_TO_FULL_UPGRADE: number;
+    };
+  } | null>(null);
+  const [selectedGatewayProvider, setSelectedGatewayProvider] = useState<string>('PINELABS');
+  const [isProcessingGateway, setIsProcessingGateway] = useState(false);
+  const [gatewayOrder, setGatewayOrder] = useState<any | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -214,6 +259,8 @@ function DashboardContent() {
         walletTxData,
         voucherTxData,
         requestsData,
+        paymentConfigData,
+        paymentMethodsData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -225,6 +272,8 @@ function DashboardContent() {
         fetchApi<any>('/wallet/transactions').catch(() => []),
         fetchApi<any>('/vouchers/transactions').catch(() => []),
         fetchApi<any>('/packages/my-requests').catch(() => []),
+        fetchApi<any>('/packages/payment-config').catch(() => null),
+        fetchApi<any>('/payments/methods').catch(() => null),
       ]);
 
       setUser(profileData);
@@ -241,6 +290,13 @@ function DashboardContent() {
       setWalletTransactions(walletTxData);
       setVoucherTransactions(voucherTxData);
       setMembershipRequests(Array.isArray(requestsData) ? requestsData : []);
+      setPaymentConfig(paymentConfigData);
+      if (paymentMethodsData) {
+        setPaymentMethods(paymentMethodsData);
+        if (paymentMethodsData.gateways && paymentMethodsData.gateways.length > 0) {
+          setSelectedGatewayProvider(paymentMethodsData.gateways[0].provider);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
@@ -317,27 +373,196 @@ function DashboardContent() {
     }
   };
 
-  const handleMembershipRequest = async (
+  const openBookingPaymentModal = (
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE'
+  ) => {
+    setSelectedRequestType(requestType);
+    setPaymentUtr('');
+    setGatewayOrder(null);
+
+    const hasGateways = !!(paymentMethods?.gateways && paymentMethods.gateways.length > 0);
+    const hasUpi = paymentMethods
+      ? paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured
+      : !!paymentConfig?.isConfigured;
+
+    if (hasGateways) {
+      setPaymentMethod('GATEWAY');
+    } else if (hasUpi) {
+      setPaymentMethod('UPI');
+    } else {
+      setPaymentMethod('SIMULATED');
+    }
+    setPaymentModalOpen(true);
+  };
+
+  useEffect(() => {
+    const upiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
+    const upiName = paymentMethods?.upi?.merchantName || paymentConfig?.merchantName || 'ASKR EV Mobility';
+    const isUpiActive = paymentMethods
+      ? paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured
+      : !!paymentConfig?.isConfigured;
+
+    if (isUpiActive && upiVpa && selectedRequestType) {
+      const amount =
+        selectedRequestType === 'BASIC_ACTIVATION'
+          ? 3000
+          : selectedRequestType === 'FULL_ACTIVATION'
+            ? 33000
+            : 30000;
+      const note = `ASKREV-${selectedRequestType}-${user?.memberId || 'MEMBER'}`;
+      const upiUri = `upi://pay?pa=${upiVpa}&pn=${encodeURIComponent(
+        upiName
+      )}&am=${amount}.00&cu=INR&tn=${encodeURIComponent(note)}`;
+
+      QRCode.toDataURL(upiUri, { width: 220, margin: 1 })
+        .then((url) => setQrCodeDataUrl(url))
+        .catch((err) => {
+          console.error('Failed to generate UPI QR code:', err);
+          setQrCodeDataUrl(null);
+        });
+    } else {
+      setQrCodeDataUrl(null);
+    }
+  }, [paymentConfig, paymentMethods, selectedRequestType, user?.memberId]);
+
+  const handleCopyUpi = () => {
+    const upiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
+    if (upiVpa) {
+      navigator.clipboard.writeText(upiVpa);
+      setCopiedUpi(true);
+      setTimeout(() => setCopiedUpi(false), 2000);
+    }
+  };
+
+  const handleInitiateGatewayPayment = async () => {
+    if (!selectedRequestType) return;
+    setIsProcessingGateway(true);
+    setError(null);
+    try {
+      const amountPaise =
+        selectedRequestType === 'BASIC_ACTIVATION'
+          ? 300000
+          : selectedRequestType === 'FULL_ACTIVATION'
+          ? 3300000
+          : 3000000;
+
+      const orderRes = await fetchApi<any>('/payments/create-order', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: selectedGatewayProvider,
+          amountPaise,
+          requestType: selectedRequestType,
+        }),
+      });
+
+      const orderData = orderRes?.order;
+      setGatewayOrder(orderData);
+
+      // If Pine Labs or gateway provides a hosted checkout redirect URL, open it
+      if (orderData?.clientPayload?.redirectUrl && typeof window !== 'undefined') {
+        window.open(orderData.clientPayload.redirectUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      // Check if Razorpay Checkout script is loaded on window
+      if (selectedGatewayProvider === 'RAZORPAY' && typeof window !== 'undefined' && (window as any).Razorpay && orderData?.keyId) {
+        const options = {
+          key: orderData.keyId,
+          amount: orderData.amountPaise,
+          currency: orderData.currency || 'INR',
+          name: 'ASKR EV Mobility',
+          description: `Booking - ${selectedRequestType}`,
+          order_id: orderData.orderId,
+          handler: async function (response: any) {
+            await handleMembershipRequest(
+              selectedRequestType,
+              'GATEWAY',
+              response.razorpay_payment_id || response.razorpay_order_id || orderData.orderId
+            );
+          },
+          prefill: {
+            name: user?.fullName,
+            email: user?.email,
+            contact: user?.phone,
+          },
+          theme: { color: '#165DAD' },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to create payment gateway order');
+    } finally {
+      setIsProcessingGateway(false);
+    }
+  };
+
+  const handleMembershipRequest = async (
+    requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE',
+    mode: 'UPI' | 'GATEWAY' | 'SIMULATED' = 'SIMULATED',
+    refNumber?: string
   ) => {
     setUpgrading(true);
     setUpgradeSuccess(null);
     setError(null);
     try {
+      const activeUpiVpa = paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa;
       const res: any = await fetchApi('/packages/request', {
         method: 'POST',
         body: JSON.stringify({
           requestType,
-          paymentMode: 'SIMULATED_PORTAL',
-          metadata: { compliance: 'SIMULATION_ONLY', source: 'member_dashboard' },
+          paymentMode: mode === 'UPI' ? 'UPI' : mode === 'GATEWAY' ? 'PAYMENT_GATEWAY' : 'SIMULATED_PORTAL',
+          paymentReference:
+            mode === 'UPI'
+              ? refNumber?.trim().toUpperCase() || 'UPI-REF'
+              : mode === 'GATEWAY'
+              ? refNumber?.trim() || gatewayOrder?.orderId || 'GW-REF'
+              : 'SIMULATED-CLEARANCE',
+          metadata: {
+            compliance: 'SIMULATION_ONLY',
+            source: 'member_dashboard_booking',
+            ...(mode === 'UPI' && activeUpiVpa ? { merchantUpiVpa: activeUpiVpa } : {}),
+            ...(mode === 'GATEWAY'
+              ? {
+                  provider: selectedGatewayProvider,
+                  orderId: gatewayOrder?.orderId || refNumber,
+                  amountPaise: gatewayOrder?.amountPaise,
+                }
+              : {}),
+          },
         }),
       });
-      setUpgradeSuccess(res.message || 'Membership request submitted for administrative approval.');
+      setUpgradeSuccess(res.message || 'EV booking request submitted for administrative clearance.');
+      setPaymentModalOpen(false);
       await loadData();
     } catch (err: any) {
-      setError(err.message || 'Membership request submission failed');
+      setError(err.message || 'Booking request submission failed');
     } finally {
       setUpgrading(false);
+    }
+  };
+
+  const handleConfirmPaymentRequest = async () => {
+    if (!selectedRequestType) return;
+    if (paymentMethod === 'UPI') {
+      const trimmedUtr = paymentUtr.trim().toUpperCase();
+      const utrRegex = /^([0-9]{12}|[A-Z0-9]{12,22})$/;
+      if (!trimmedUtr) {
+        setError('Please provide the UPI UTR / Transaction reference number.');
+        return;
+      }
+      if (!utrRegex.test(trimmedUtr)) {
+        setError('Invalid UTR format. Expected 12-digit numeric or 12-22 alphanumeric standard banking reference.');
+        return;
+      }
+      await handleMembershipRequest(selectedRequestType, 'UPI', trimmedUtr);
+    } else if (paymentMethod === 'GATEWAY') {
+      if (gatewayOrder?.orderId) {
+        await handleMembershipRequest(selectedRequestType, 'GATEWAY', gatewayOrder.orderId);
+      } else {
+        await handleInitiateGatewayPayment();
+      }
+    } else {
+      await handleMembershipRequest(selectedRequestType, 'SIMULATED');
     }
   };
 
@@ -440,9 +665,21 @@ function DashboardContent() {
     }
   };
 
+  const getTierDisplayName = (pkg?: string) => {
+    switch (pkg) {
+      case 'FULL':
+        return 'EV ULTRA';
+      case 'BASIC':
+        return 'EV PRO';
+      case 'FREE':
+      default:
+        return 'EV GO';
+    }
+  };
+
   const navItems: { id: TabType; label: string; icon: any; count?: number }[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'membership', label: 'My Membership', icon: Sparkles },
+    { id: 'membership', label: 'EV Booking Tiers', icon: Sparkles },
     { id: 'team', label: 'My Team', icon: Users, count: directTeam?.directs?.length },
     { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
     { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
@@ -483,8 +720,8 @@ function DashboardContent() {
               <span className="text-slate-300 hidden sm:inline">/</span>
 
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-xs sm:text-sm text-[#253247]">Member Portal</span>
-                <span className="text-slate-300">/</span>
+                <span className="font-semibold text-xs sm:text-sm text-[#253247] hidden sm:inline">Member Portal</span>
+                <span className="text-slate-300 hidden sm:inline">/</span>
                 <span className="font-mono text-xs font-bold text-[#165DAD] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 whitespace-nowrap">
                   {user.memberId}
                 </span>
@@ -509,11 +746,11 @@ function DashboardContent() {
               )}
 
               <span
-                className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getPackageBadge(
+                className={`text-xs font-semibold px-2.5 py-1 rounded-full border hidden sm:inline-flex ${getPackageBadge(
                   user.currentPackage
                 )}`}
               >
-                {user.currentPackage} Plan
+                {getTierDisplayName(user.currentPackage)}
               </span>
 
               {user.isFullQualified && (
@@ -539,14 +776,10 @@ function DashboardContent() {
       </header>
 
       {/* Main Container with Sidebar + Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
         <div className="flex flex-col md:flex-row gap-6">
           {/* Desktop Left Sidebar Navigation */}
-          <aside
-            className={`md:w-60 shrink-0 md:block ${
-              mobileMenuOpen ? 'block' : 'hidden'
-            } bg-white rounded-xl border border-slate-200 p-3 shadow-sm h-fit space-y-1`}
-          >
+          <aside className="hidden md:block md:w-60 shrink-0 bg-white rounded-xl border border-slate-200 p-3 shadow-sm h-fit space-y-1">
             <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
               Portal Menu
             </div>
@@ -556,15 +789,11 @@ function DashboardContent() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 text-[#165DAD] font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
-                  }`}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
+                    ? 'bg-blue-50 text-[#165DAD] font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
+                    }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <Icon className={`w-4 h-4 ${isActive ? 'text-[#165DAD]' : 'text-slate-400'}`} />
@@ -572,11 +801,10 @@ function DashboardContent() {
                   </div>
                   {item.count !== undefined && item.count > 0 && (
                     <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                        isActive
-                          ? 'bg-[#165DAD] text-white'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive
+                        ? 'bg-[#165DAD] text-white'
+                        : 'bg-slate-100 text-slate-500'
+                        }`}
                     >
                       {item.count}
                     </span>
@@ -600,6 +828,94 @@ function DashboardContent() {
               </a>
             </div>
           </aside>
+
+          {/* Mobile Overlay Drawer */}
+          {mobileMenuOpen && (
+            <div className="fixed inset-0 z-50 md:hidden flex">
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                onClick={() => setMobileMenuOpen(false)}
+              />
+              <div className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl p-4 flex flex-col z-10 overflow-y-auto">
+                <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-[#165DAD] flex items-center justify-center text-white font-black text-sm">
+                      A
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm text-[#253247]">ASKR EV</div>
+                      <div className="font-mono text-[10px] text-slate-500">{user.memberId}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                    aria-label="Close menu"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-1 flex-1 py-2">
+                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Navigation
+                  </div>
+                  {navItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
+                          ? 'bg-blue-50 text-[#165DAD] font-semibold'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-[#253247]'
+                          }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon className={`w-4 h-4 ${isActive ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+                          <span>{item.label}</span>
+                        </div>
+                        {item.count !== undefined && item.count > 0 && (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive
+                              ? 'bg-[#165DAD] text-white'
+                              : 'bg-slate-100 text-slate-500'
+                              }`}
+                          >
+                            {item.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 px-2 space-y-2">
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setShowShareModal(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#165DAD] text-white text-xs font-semibold"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share Referral Links</span>
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Main Content Area */}
           <main className="flex-1 min-w-0 space-y-6">
@@ -682,7 +998,7 @@ function DashboardContent() {
                     Includes Member Name, Member ID, Sponsor, Copy Link & WhatsApp Share
                     ========================================================================= */}
                 <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-sm">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     {/* Welcome Details */}
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -696,132 +1012,30 @@ function DashboardContent() {
                         <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                           ID: {user.memberId}
                         </span>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        Sponsor:{' '}
-                        <span className="font-medium text-[#253247]">
-                          {user.sponsorName
-                            ? `${user.sponsorName} (${user.sponsorMemberId})`
-                            : 'Direct Platform Enrollment'}
+                        <span
+                          className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${getPackageBadge(
+                            user.currentPackage
+                          )}`}
+                        >
+                          {getTierDisplayName(user.currentPackage)}
                         </span>
-                      </p>
-                    </div>
-
-                    {/* Referral Link Box - Dual-Leg Side Selection & Multi-Share */}
-                    <div className="bg-[#F7F9FC] border border-slate-200 rounded-lg p-3 sm:p-3.5 max-w-xl w-full space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-[#253247] flex items-center gap-1.5">
-                          <Share2 className="w-3.5 h-3.5 text-[#165DAD]" />
-                          <span>Direct Sponsor Referral Links</span>
-                        </span>
-                        <span className="text-[11px] text-[#15803D] font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          Active Links
-                        </span>
-                      </div>
-
-                      {/* Left Team Referral Link */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-700 flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full bg-[#165DAD]"></span>
-                            <span>Left Team Link (?side=LEFT)</span>
-                          </span>
-                          <span className="text-slate-400 text-[10px]">Places member into Left subtree</span>
-                        </div>
-                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
-                          <div className="bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-0 select-all">
-                            {getReferralLink('LEFT')}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => handleCopyLink('LEFT')}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1 min-h-[32px]"
-                              title="Copy Left referral link"
-                            >
-                              {copiedLeft ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                              <span>{copiedLeft ? 'Copied' : 'Copy'}</span>
-                            </button>
-                            <a
-                              href={getWhatsAppShareUrl('LEFT')}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-medium transition-colors flex items-center gap-1 min-h-[32px]"
-                              title="Share Left link via WhatsApp"
-                            >
-                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
-                              </svg>
-                            </a>
-                            <button
-                              onClick={() => handleShareLink('LEFT')}
-                              className="px-2 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors min-h-[32px]"
-                              title="Share Left link via device"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right Team Referral Link */}
-                      <div className="space-y-1 pt-1 border-t border-slate-200/60">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-700 flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                            <span>Right Team Link (?side=RIGHT)</span>
-                          </span>
-                          <span className="text-slate-400 text-[10px]">Places member into Right subtree</span>
-                        </div>
-                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
-                          <div className="bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-mono text-slate-600 truncate flex-1 min-w-0 select-all">
-                            {getReferralLink('RIGHT')}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              onClick={() => handleCopyLink('RIGHT')}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1 min-h-[32px]"
-                              title="Copy Right referral link"
-                            >
-                              {copiedRight ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                              <span>{copiedRight ? 'Copied' : 'Copy'}</span>
-                            </button>
-                            <a
-                              href={getWhatsAppShareUrl('RIGHT')}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-medium transition-colors flex items-center gap-1 min-h-[32px]"
-                              title="Share Right link via WhatsApp"
-                            >
-                              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
-                              </svg>
-                            </a>
-                            <button
-                              onClick={() => handleShareLink('RIGHT')}
-                              className="px-2 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs transition-colors min-h-[32px]"
-                              title="Share Right link via device"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Binary Placement Status Bar */}
-                      <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500">Binary Tree Status:</span>
-                        {binaryTree?.parentId && binaryTree?.leg ? (
-                          <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>Placed on {binaryTree.leg} Leg</span>
-                          </span>
-                        ) : (
-                          <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex items-center gap-1">
-                            <Sparkles className="w-3 h-3 text-[#165DAD]" />
-                            <span>Placement Pending Full Activation (Intended: {user.intendedBinarySide || 'LEFT'})</span>
+                        {user.isFullQualified && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-[#15803D] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            <Check className="w-3 h-3" />
+                            <span>Qualified</span>
                           </span>
                         )}
                       </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setShowShareModal(true)}
+                        className="px-3.5 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Share Links</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -889,28 +1103,23 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* =========================================================================
-                    TASK 5 — COMPACT MEMBERSHIP UPGRADE BANNER
-                    - For BASIC: ₹30,000 upgrade includes ₹30,000 voucher entitlement
-                    - For FREE: Membership activation options notice
-                    - For FULL: Hidden completely
-                    ========================================================================= */}
+                {/* Upgrade Path for EV PRO (BASIC) */}
                 {user.currentPackage === 'BASIC' && !user.isFullQualified && (
                   <div className="bg-blue-50/70 rounded-xl border border-blue-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-[#165DAD]">
                         <Sparkles className="w-3.5 h-3.5 text-[#165DAD]" />
-                        <span>Full Membership Upgrade</span>
+                        <span>EV Booking Upgrade</span>
                       </div>
                       <h3 className="text-base font-bold text-[#253247]">
-                        Upgrade to Full Membership (₹30,000)
+                        Upgrade to EV ULTRA (₹30,000)
                       </h3>
                       <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                        Full Membership total package value is ₹33,000. Having already completed the ₹3,000 basic platform fee, upgrading for ₹30,000 entitles you to a <strong>₹30,000 vehicle shopping voucher credit</strong> (subject to approved terms) and full eligibility for binary matching rewards.
+                        You booked EV PRO (₹3,000). Complete your next payment of ₹30,000 to upgrade to EV ULTRA (₹33,000 full plan) and receive a <strong>₹30,000 vehicle shopping voucher credit</strong> (redeemable on EV bookings) and full eligibility for binary matching rewards.
                       </p>
                     </div>
                     <button
-                      onClick={() => handleMembershipRequest('BASIC_TO_FULL_UPGRADE')}
+                      onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
                       disabled={upgrading || membershipRequests.some((r) => r.status === 'PENDING')}
                       className="shrink-0 px-5 py-2.5 rounded-lg font-semibold text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-1.5 shadow-2xs"
                     >
@@ -919,36 +1128,9 @@ function DashboardContent() {
                         {membershipRequests.some((r) => r.status === 'PENDING')
                           ? 'Upgrade Pending Admin Review'
                           : upgrading
-                          ? 'Submitting...'
-                          : 'Request Upgrade (₹30,000)'}
+                            ? 'Submitting...'
+                            : 'Upgrade to EV ULTRA (₹30,000)'}
                       </span>
-                    </button>
-                  </div>
-                )}
-
-                {user.currentPackage === 'FREE' && (
-                  <div className="bg-amber-50/70 rounded-xl border border-amber-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Membership Activation Available</span>
-                      </div>
-                      <h3 className="text-base font-bold text-[#253247]">
-                        Activate Your ASKR EV Membership
-                      </h3>
-                      <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                        Free accounts can activate Basic Membership (₹3,000 platform fee) to qualify for direct referral rewards, or Full Membership (₹33,000 with a ₹30,000 vehicle shopping voucher entitlement).
-                      </p>
-                      <p className="text-[11px] text-amber-700 font-medium">
-                        * Membership activation requires verified payment and authorized supervisory clearance.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('membership')}
-                      className="shrink-0 px-5 py-2.5 rounded-lg font-semibold text-xs text-white bg-[#165DAD] hover:bg-[#12498a] transition-colors min-h-[44px] flex items-center justify-center gap-1.5 shadow-2xs"
-                    >
-                      <span>Review Membership Plans</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -961,19 +1143,18 @@ function DashboardContent() {
                         <GitBranch className="w-4 h-4 text-[#165DAD]" />
                         <h3 className="text-sm font-bold text-[#253247]">Binary Tree & Matching Summary</h3>
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            binaryTree?.node?.isPlaced
-                              ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                              : user?.role === 'SUPER_ADMIN'
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${binaryTree?.node?.isPlaced
+                            ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                            : user?.role === 'SUPER_ADMIN'
                               ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                               : 'bg-amber-50 text-amber-800 border-amber-200'
-                          }`}
+                            }`}
                         >
                           {binaryTree?.node?.isPlaced
                             ? `Placed (${binaryTree.node.parent?.leg} under ${binaryTree.node.parent?.memberId})`
                             : user?.role === 'SUPER_ADMIN'
-                            ? 'Company Root'
-                            : 'Not Yet Placed'}
+                              ? 'Company Root'
+                              : 'Not Yet Placed'}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
@@ -1062,7 +1243,7 @@ function DashboardContent() {
                                     d.currentPackage
                                   )}`}
                                 >
-                                  {d.currentPackage}
+                                  {getTierDisplayName(d.currentPackage)}
                                 </span>
                                 {d.isFullQualified && (
                                   <span className="ml-1.5 text-[10px] text-[#15803D] font-medium inline-flex items-center gap-0.5">
@@ -1089,7 +1270,7 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* TAB 2: MY MEMBERSHIP */}
+            {/* TAB 2: MY MEMBERSHIP / EV BOOKING TIERS */}
             {activeTab === 'membership' && (
               <div className="space-y-6">
                 {/* Current Package Overview */}
@@ -1097,10 +1278,10 @@ function DashboardContent() {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                        Current Membership Plan
+                        Current EV Booking Tier
                       </span>
                       <h3 className="text-xl font-bold text-[#253247] mt-1">
-                        {user.currentPackage} Membership
+                        {getTierDisplayName(user.currentPackage)} Plan
                       </h3>
                     </div>
                     <span
@@ -1108,25 +1289,25 @@ function DashboardContent() {
                         user.currentPackage
                       )}`}
                     >
-                      Status: {user.isFullQualified ? 'Full Qualified' : 'Active'}
+                      Status: {user.isFullQualified ? 'EV ULTRA Qualified' : user.currentPackage === 'BASIC' ? 'EV PRO Active' : 'EV GO Registered'}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-100 text-xs">
                     <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <span className="text-slate-500">Direct Sponsor Income:</span>
+                      <span className="text-slate-500">Direct Booking Referral Reward:</span>
                       <div className="text-sm font-bold text-[#253247] mt-1">
-                        {user.currentPackage === 'FREE' ? 'Not Eligible' : 'Eligible'}
+                        {user.currentPackage === 'FREE' ? 'Not Eligible (Requires EV PRO)' : 'Eligible (₹1,000 / ₹10,000)'}
                       </div>
                     </div>
                     <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <span className="text-slate-500">Binary Matching Income:</span>
+                      <span className="text-slate-500">Binary Matching Rewards:</span>
                       <div className="text-sm font-bold text-[#253247] mt-1">
-                        {user.isFullQualified ? 'Eligible (1:1 • ₹3,000/match)' : 'Requires Full Qualification'}
+                        {user.isFullQualified ? 'Eligible (1:1 • ₹3,000/match)' : 'Requires EV ULTRA Qualification'}
                       </div>
                     </div>
                     <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200">
-                      <span className="text-slate-500">Shopping Voucher Credit:</span>
+                      <span className="text-slate-500">Vehicle Shopping Voucher Credit:</span>
                       <div className="text-sm font-bold text-[#15803D] mt-1">
                         ₹{user.wallet?.shoppingVoucherINR?.toLocaleString('en-IN') ?? 0}
                       </div>
@@ -1137,7 +1318,7 @@ function DashboardContent() {
                 {/* Activation / Upgrade Actions & Request History */}
                 {membershipRequests.length > 0 && (
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
-                    <h3 className="text-sm font-bold text-[#253247]">Recent Membership Request Status</h3>
+                    <h3 className="text-sm font-bold text-[#253247]">Recent EV Booking Request Status</h3>
                     <div className="space-y-2">
                       {membershipRequests.slice(0, 3).map((req: any) => (
                         <div
@@ -1146,11 +1327,22 @@ function DashboardContent() {
                         >
                           <div>
                             <span className="font-bold text-[#253247]">
-                              {req.requestType.replace(/_/g, ' ')}
+                              {req.requestType === 'BASIC_ACTIVATION'
+                                ? 'EV PRO Booking (₹3,000)'
+                                : req.requestType === 'FULL_ACTIVATION'
+                                  ? 'EV ULTRA Booking (₹33,000)'
+                                  : 'EV ULTRA Upgrade (₹30,000)'}
                             </span>
-                            <span className="text-slate-500 ml-2 font-mono">
-                              (₹{(req.feeINR ?? 0).toLocaleString('en-IN')})
-                            </span>
+                            {req.paymentMode && (
+                              <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 ml-2">
+                                {req.paymentMode}
+                              </span>
+                            )}
+                            {req.paymentReference && (
+                              <span className="text-slate-500 ml-2 font-mono text-[11px]">
+                                Ref: {req.paymentReference}
+                              </span>
+                            )}
                             {req.adminNotes && (
                               <div className="text-[11px] text-slate-500 mt-0.5">
                                 Admin Note: {req.adminNotes}
@@ -1159,13 +1351,12 @@ function DashboardContent() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span
-                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                                req.status === 'APPROVED'
-                                  ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                                  : req.status === 'REJECTED'
+                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${req.status === 'APPROVED'
+                                ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                : req.status === 'REJECTED'
                                   ? 'bg-red-50 text-red-700 border-red-200'
                                   : 'bg-amber-50 text-amber-800 border-amber-200'
-                              }`}
+                                }`}
                             >
                               {req.status}
                             </span>
@@ -1183,34 +1374,34 @@ function DashboardContent() {
                   <div className="space-y-4">
                     <div>
                       <h3 className="text-base font-bold text-[#253247]">
-                        Submit Simulated Membership Activation Request
+                        Submit EV Booking Tier Request
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Select a plan below to submit an activation request for administrative clearance.
+                        Choose a tier below to submit your booking reservation and payment details for administrative clearance.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Basic Activation */}
+                      {/* Basic Activation -> EV PRO */}
                       <div className="bg-white rounded-xl border border-emerald-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
                         <div>
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-[#15803D] uppercase tracking-wide">
-                              Option 1 • Starter Paid
+                              Option 1 • Starter Booking
                             </span>
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
                               Admin Review Required
                             </span>
                           </div>
-                          <h4 className="text-base font-bold text-[#253247] mt-1">Basic Membership</h4>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">EV PRO Booking</h4>
                           <div className="text-2xl font-bold text-[#253247] mt-2">₹3,000</div>
                           <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                            Enables Direct Sponsor commission eligibility (₹1,000 per Basic direct; ₹10,000 after Full Qualification). Upgradeable later for the ₹30,000 difference.
+                            Enables Direct Sponsor booking rewards (₹1,000 per EV PRO direct; ₹10,000 after EV ULTRA qualification). Upgradeable anytime for the ₹30,000 difference.
                           </p>
                         </div>
 
                         <button
-                          onClick={() => handleMembershipRequest('BASIC_ACTIVATION')}
+                          onClick={() => openBookingPaymentModal('BASIC_ACTIVATION')}
                           disabled={upgrading || membershipRequests.some((r) => r.status === 'PENDING')}
                           className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#15803D] hover:bg-emerald-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
                         >
@@ -1219,13 +1410,13 @@ function DashboardContent() {
                             {membershipRequests.some((r) => r.status === 'PENDING')
                               ? 'Request Pending Admin Review'
                               : upgrading
-                              ? 'Submitting Request...'
-                              : 'Request Basic Activation (₹3,000)'}
+                                ? 'Submitting Request...'
+                                : 'Book EV PRO (₹3,000)'}
                           </span>
                         </button>
                       </div>
 
-                      {/* Full Activation */}
+                      {/* Full Activation -> EV ULTRA */}
                       <div className="bg-white rounded-xl border border-blue-200 p-6 shadow-sm flex flex-col justify-between space-y-4">
                         <div>
                           <div className="flex items-center justify-between">
@@ -1236,15 +1427,15 @@ function DashboardContent() {
                               Admin Review Required
                             </span>
                           </div>
-                          <h4 className="text-base font-bold text-[#253247] mt-1">Full Membership</h4>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">EV ULTRA Booking</h4>
                           <div className="text-2xl font-bold text-[#253247] mt-2">₹33,000</div>
                           <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                            Includes ₹3,000 platform fee + <strong>₹30,000 EV Shopping Voucher</strong> liability and unlocks full Binary Matching (1:1 ratio, ₹3,000/match) upon approval.
+                            Includes ₹3,000 platform fee + <strong>₹30,000 EV Shopping Voucher</strong> credit and unlocks full Binary Matching rewards (1:1 ratio, ₹3,000/match) upon approval.
                           </p>
                         </div>
 
                         <button
-                          onClick={() => handleMembershipRequest('FULL_ACTIVATION')}
+                          onClick={() => openBookingPaymentModal('FULL_ACTIVATION')}
                           disabled={upgrading || membershipRequests.some((r) => r.status === 'PENDING')}
                           className="w-full min-h-[44px] py-2.5 rounded-lg font-medium text-xs text-white bg-[#165DAD] hover:bg-[#12498a] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
                         >
@@ -1253,8 +1444,8 @@ function DashboardContent() {
                             {membershipRequests.some((r) => r.status === 'PENDING')
                               ? 'Request Pending Admin Review'
                               : upgrading
-                              ? 'Submitting Request...'
-                              : 'Request Full Activation (₹33,000)'}
+                                ? 'Submitting Request...'
+                                : 'Book EV ULTRA (₹33,000)'}
                           </span>
                         </button>
                       </div>
@@ -1263,9 +1454,9 @@ function DashboardContent() {
                 ) : (
                   <div className="space-y-4">
                     <div>
-                      <h3 className="text-base font-bold text-[#253247]">Full Qualification Methods</h3>
+                      <h3 className="text-base font-bold text-[#253247]">EV ULTRA Qualification Methods</h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Choose between a direct upgrade request (subject to admin approval) or qualifying retail shopping.
+                        Choose between a direct upgrade request (subject to admin approval) or qualifying vehicle retail shopping.
                       </p>
                     </div>
 
@@ -1281,15 +1472,15 @@ function DashboardContent() {
                               {user.isFullQualified ? 'Completed' : 'Admin Review Required'}
                             </span>
                           </div>
-                          <h4 className="text-base font-bold text-[#253247] mt-1">Direct Upgrade to Full Plan</h4>
+                          <h4 className="text-base font-bold text-[#253247] mt-1">Upgrade to EV ULTRA (₹30,000)</h4>
                           <div className="text-2xl font-bold text-[#253247] mt-2">₹30,000</div>
                           <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                            Submit a ₹30,000 upgrade request to receive a <strong>₹30,000 Shopping Voucher credit</strong> and full commission qualification upon admin approval.
+                            You have booked EV PRO (₹3,000). Complete your next payment of ₹30,000 to upgrade to EV ULTRA (₹33,000 total plan). You receive a <strong>₹30,000 vehicle shopping voucher credit</strong> and full binary matching rewards upon clearance.
                           </p>
                         </div>
 
                         <button
-                          onClick={() => handleMembershipRequest('BASIC_TO_FULL_UPGRADE')}
+                          onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
                           disabled={
                             upgrading ||
                             user.isFullQualified ||
@@ -1300,12 +1491,12 @@ function DashboardContent() {
                           <Sparkles className="w-3.5 h-3.5" />
                           <span>
                             {user.isFullQualified
-                              ? 'Already Full Qualified'
+                              ? 'Already EV ULTRA Qualified'
                               : membershipRequests.some((r) => r.status === 'PENDING')
-                              ? 'Upgrade Pending Admin Review'
-                              : upgrading
-                              ? 'Submitting Request...'
-                              : 'Request Upgrade with ₹30,000'}
+                                ? 'Upgrade Pending Admin Review'
+                                : upgrading
+                                  ? 'Submitting Request...'
+                                  : 'Upgrade to EV ULTRA (₹30,000)'}
                           </span>
                         </button>
                       </div>
@@ -1326,7 +1517,7 @@ function DashboardContent() {
                           </h4>
                           <div className="text-2xl font-bold text-slate-500 mt-2">₹60,000</div>
                           <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                            Achieve ₹60,000 of verified qualifying retail shopping on ASKR EV bikes and approved merchant merchandise.
+                            Achieve ₹60,000 of verified qualifying retail shopping on ASKR EV vehicles and approved merchant merchandise.
                           </p>
                           <div className="mt-3 p-3 rounded-lg bg-[#F7F9FC] border border-slate-200 text-[11px] text-slate-500 leading-relaxed">
                             The ₹60,000 shopping qualification rules, voucher entitlement, and terms remain marked pending business approval.
@@ -1408,7 +1599,7 @@ function DashboardContent() {
                                     d.currentPackage
                                   )}`}
                                 >
-                                  {d.currentPackage}
+                                  {getTierDisplayName(d.currentPackage)}
                                 </span>
                               </td>
                               <td className="py-3 px-4">
@@ -1519,19 +1710,18 @@ function DashboardContent() {
                       </p>
                     </div>
                     <span
-                      className={`self-start text-xs font-semibold px-3 py-1 rounded-full border ${
-                        binaryTree?.node?.isPlaced
-                          ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                          : user?.role === 'SUPER_ADMIN'
+                      className={`self-start text-xs font-semibold px-3 py-1 rounded-full border ${binaryTree?.node?.isPlaced
+                        ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                        : user?.role === 'SUPER_ADMIN'
                           ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                           : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}
+                        }`}
                     >
                       {binaryTree?.node?.isPlaced
                         ? `Placed (${binaryTree.node.parent?.leg} Leg)`
                         : user?.role === 'SUPER_ADMIN'
-                        ? 'Company Binary Root'
-                        : 'Pending Admin Placement'}
+                          ? 'Company Binary Root'
+                          : 'Pending Admin Placement'}
                     </span>
                   </div>
 
@@ -1543,8 +1733,8 @@ function DashboardContent() {
                         {binaryTree?.node?.isPlaced
                           ? 'Placed in Binary Tree'
                           : user?.role === 'SUPER_ADMIN'
-                          ? 'Root Node (Top of Tree)'
-                          : 'Not Yet Placed in Binary Tree'}
+                            ? 'Root Node (Top of Tree)'
+                            : 'Not Yet Placed in Binary Tree'}
                       </div>
                       <div className="text-[11px] text-slate-500 mt-0.5">
                         Leg: <span className="font-semibold text-[#165DAD]">{binaryTree?.node?.parent?.leg || (user?.role === 'SUPER_ADMIN' ? 'Root' : 'Unassigned')}</span>
@@ -1557,15 +1747,15 @@ function DashboardContent() {
                         {binaryTree?.node?.parent
                           ? binaryTree.node.parent.fullName
                           : user?.role === 'SUPER_ADMIN'
-                          ? 'None (Company Root)'
-                          : 'Awaiting Placement'}
+                            ? 'None (Company Root)'
+                            : 'Awaiting Placement'}
                       </div>
                       <div className="text-[11px] font-mono text-[#165DAD] mt-0.5">
                         {binaryTree?.node?.parent
                           ? binaryTree.node.parent.memberId
                           : user?.role === 'SUPER_ADMIN'
-                          ? 'Top-level origin node'
-                          : 'No parent assigned yet'}
+                            ? 'Top-level origin node'
+                            : 'No parent assigned yet'}
                       </div>
                     </div>
 
@@ -1641,7 +1831,7 @@ function DashboardContent() {
                       ₹{(binaryTree?.node?.totalRewardEarnedINR ?? 0).toLocaleString('en-IN')}
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
-                      {user.isFullQualified ? 'Full Qualified for Matching' : 'Full Membership required to settle'}
+                      {user.isFullQualified ? 'EV ULTRA Qualified for Matching' : 'EV ULTRA required to settle'}
                     </div>
                   </div>
                 </div>
@@ -1658,9 +1848,8 @@ function DashboardContent() {
                             <button
                               type="button"
                               onClick={() => handleInspectBinarySubtree(crumb.memberId, crumb.fullName, idx === 0)}
-                              className={`font-medium hover:underline ${
-                                idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
-                              }`}
+                              className={`font-medium hover:underline ${idx === binaryBreadcrumb.length - 1 ? 'text-[#165DAD] font-bold' : 'text-slate-600'
+                                }`}
                             >
                               {crumb.fullName} ({crumb.memberId})
                             </button>
@@ -1698,7 +1887,7 @@ function DashboardContent() {
                               {inspectedBinaryTree.node.user.memberId === user.memberId ? 'You (Root)' : 'Subtree Node'}
                             </span>
                             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white text-[#253247] border border-blue-200">
-                              {inspectedBinaryTree.node.user.currentPackage}
+                              {getTierDisplayName(inspectedBinaryTree.node.user.currentPackage)}
                             </span>
                           </div>
                           <div className="font-bold text-sm text-[#253247] mt-2">
@@ -1708,7 +1897,7 @@ function DashboardContent() {
                             {inspectedBinaryTree.node.user.memberId}
                           </div>
                           <div className="text-[11px] text-slate-600 mt-1">
-                            {inspectedBinaryTree.node.user.isFullQualified ? 'Full Qualified' : 'Basic (Not Qualified)'}
+                            {inspectedBinaryTree.node.user.isFullQualified ? 'EV ULTRA Qualified' : 'EV PRO (Qualification Pending)'}
                           </div>
                           <div className="mt-2.5 pt-2.5 border-t border-blue-200/70 grid grid-cols-2 gap-2 text-[11px]">
                             <div>
@@ -1745,12 +1934,12 @@ function DashboardContent() {
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="font-bold text-xs text-[#253247]">{child.fullName}</span>
                                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${badge}`}>
-                                      {child.currentPackage}
+                                      {getTierDisplayName(child.currentPackage)}
                                     </span>
                                   </div>
                                   <div className={`text-xs font-mono font-bold ${accent}`}>{child.memberId}</div>
                                   <div className="text-[11px] text-slate-500">
-                                    {child.isFullQualified ? 'Full Qualified' : 'Basic (Qualification Pending)'}
+                                    {child.isFullQualified ? 'EV ULTRA Qualified' : 'EV PRO (Qualification Pending)'}
                                   </div>
                                   <div className="pt-2 mt-1 border-t border-slate-100 flex items-center justify-between text-[11px]">
                                     <span>L: {child.leftCount} ({child.leftVolumeUnits}u)</span>
@@ -1782,7 +1971,7 @@ function DashboardContent() {
                                         <div className="font-bold text-[11px] text-[#253247] truncate">{subChild.fullName}</div>
                                         <div className="text-[10px] font-mono text-[#165DAD]">{subChild.memberId}</div>
                                         <div className="text-[9px] text-slate-500 mt-0.5">
-                                          {subChild.currentPackage} • {subChild.isFullQualified ? 'Qualified' : 'Basic'}
+                                          {getTierDisplayName(subChild.currentPackage)} • {subChild.isFullQualified ? 'Qualified' : 'Pending'}
                                         </div>
                                       </button>
                                     ) : (
@@ -2110,13 +2299,12 @@ function DashboardContent() {
                               <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">{v.issuedReason}</td>
                               <td className="py-3 px-4">
                                 <span
-                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                                    v.status === 'ACTIVE'
-                                      ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                                      : v.status === 'PARTIALLY_REDEEMED'
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${v.status === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                    : v.status === 'PARTIALLY_REDEEMED'
                                       ? 'bg-blue-50 text-[#165DAD] border-blue-200'
                                       : 'bg-slate-100 text-slate-500 border-slate-200'
-                                  }`}
+                                    }`}
                                 >
                                   {v.status}
                                 </span>
@@ -2131,7 +2319,7 @@ function DashboardContent() {
                         ) : (
                           <tr>
                             <td colSpan={7} className="py-8 text-center text-slate-400">
-                              No shopping vouchers found. Upgrade to Full Membership or qualify directs to receive ₹30,000 vouchers.
+                              No shopping vouchers found. Upgrade to EV ULTRA or qualify directs to receive ₹30,000 vouchers.
                             </td>
                           </tr>
                         )}
@@ -2171,13 +2359,12 @@ function DashboardContent() {
                               </td>
                               <td className="py-3 px-4 font-semibold">
                                 <span
-                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                                    vt.transactionType === 'REDEMPTION'
-                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                      : vt.transactionType === 'REVERSAL'
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${vt.transactionType === 'REDEMPTION'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : vt.transactionType === 'REVERSAL'
                                       ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
                                       : 'bg-blue-50 text-[#165DAD] border-blue-200'
-                                  }`}
+                                    }`}
                                 >
                                   {vt.transactionType}
                                 </span>
@@ -2268,11 +2455,10 @@ function DashboardContent() {
                                 </td>
                                 <td className="py-3 px-4">
                                   <span
-                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                                      isCancelled
-                                        ? 'bg-red-50 text-[#DC2626] border-red-200'
-                                        : 'bg-emerald-50 text-[#15803D] border-emerald-200'
-                                    }`}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${isCancelled
+                                      ? 'bg-red-50 text-[#DC2626] border-red-200'
+                                      : 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                      }`}
                                   >
                                     {b.bookingStatus}
                                   </span>
@@ -2448,10 +2634,10 @@ function DashboardContent() {
                           <ShieldCheck className="w-4 h-4" />
                           <span>
                             {user.isFullQualified
-                              ? 'Full Qualified (Simulated)'
+                              ? 'EV ULTRA Qualified (Simulated)'
                               : user.currentPackage === 'BASIC'
-                              ? 'Basic Activated (Simulated)'
-                              : 'Free Starter Account'}
+                                ? 'EV PRO Activated (Simulated)'
+                                : 'EV GO Starter Account'}
                           </span>
                         </div>
                       </div>
@@ -2844,6 +3030,566 @@ function DashboardContent() {
           </main>
         </div>
       </div>
+
+      {/* =========================================================================
+          MOBILE BOTTOM NAVIGATION BAR
+          Fixed 5-item bar: Home, Earnings, Wallet, Booking / Products, Share
+          ========================================================================= */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg flex items-center justify-around py-2 px-1"
+      >
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'overview' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          <Home className={`w-5 h-5 mb-0.5 ${activeTab === 'overview' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Home</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('binary')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          <GitBranch className={`w-5 h-5 mb-0.5 ${activeTab === 'binary' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Earnings</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('wallets')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          <Wallet className={`w-5 h-5 mb-0.5 ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Wallet</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('bookings')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
+        >
+          <Bike className={`w-5 h-5 mb-0.5 ${activeTab === 'bookings' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Booking / Products</span>
+        </button>
+
+        <button
+          onClick={() => setShowShareModal(true)}
+          className="flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold text-slate-500 hover:text-[#165DAD] transition-colors"
+        >
+          <Share2 className="w-5 h-5 mb-0.5 text-slate-400" />
+          <span>Share</span>
+        </button>
+      </nav>
+
+      {/* =========================================================================
+          COMPACT SHARE MODAL / SHEET
+          Separate Left & Right team actions: Copy, WhatsApp, Share without raw URLs
+          ========================================================================= */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+            onClick={() => setShowShareModal(false)}
+          />
+          <div className="relative w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 z-10 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#165DAD] flex items-center justify-center">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#253247]">Share Sponsor Referral Links</h3>
+                  <p className="text-[11px] text-slate-400">Invite new members directly to Left or Right team</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Left Team Section */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-[#253247] flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#165DAD]" />
+                  <span>Left Team Link</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">Automatic Left subtree placement</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <button
+                  onClick={() => handleCopyLink('LEFT')}
+                  className="py-2 px-3 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {copiedLeft ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLeft ? 'Copied' : 'Copy'}</span>
+                </button>
+                <a
+                  href={getWhatsAppShareUrl('LEFT')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                  </svg>
+                  <span>WhatsApp</span>
+                </a>
+                <button
+                  onClick={() => handleShareLink('LEFT')}
+                  className="py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Share</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Right Team Section */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-[#253247] flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
+                  <span>Right Team Link</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">Automatic Right subtree placement</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <button
+                  onClick={() => handleCopyLink('RIGHT')}
+                  className="py-2 px-3 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {copiedRight ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedRight ? 'Copied' : 'Copy'}</span>
+                </button>
+                <a
+                  href={getWhatsAppShareUrl('RIGHT')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                  </svg>
+                  <span>WhatsApp</span>
+                </a>
+                <button
+                  onClick={() => handleShareLink('RIGHT')}
+                  className="py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Share</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          UPI BOOKING & PAYMENT CLEARANCE MODAL
+          Direct UPI QR / VPA + UTR entry connected to administrative clearance
+          ========================================================================= */}
+      {paymentModalOpen && selectedRequestType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => !upgrading && setPaymentModalOpen(false)}
+          />
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 z-10 space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#165DAD] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                  EV Booking Payment
+                </span>
+                <h3 className="text-base font-bold text-[#253247] mt-1">
+                  {selectedRequestType === 'BASIC_ACTIVATION'
+                    ? 'Book EV PRO Tier (₹3,000)'
+                    : selectedRequestType === 'FULL_ACTIVATION'
+                      ? 'Book EV ULTRA Tier (₹33,000)'
+                      : 'Upgrade to EV ULTRA Tier (₹30,000)'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setPaymentModalOpen(false)}
+                disabled={upgrading}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Booking Details Summary */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between font-semibold">
+                <span className="text-slate-600">Booking Amount Payable:</span>
+                <span className="text-base font-bold text-[#165DAD]">
+                  {selectedRequestType === 'BASIC_ACTIVATION'
+                    ? '₹3,000'
+                    : selectedRequestType === 'FULL_ACTIVATION'
+                      ? '₹33,000'
+                      : '₹30,000'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                {selectedRequestType === 'BASIC_ACTIVATION'
+                  ? 'Starter EV booking tier. Qualifies for direct referral rewards (₹1,000) and keeps remaining ₹30,000 upgrade path open.'
+                  : 'Includes ₹30,000 vehicle shopping voucher credit towards bike reservations and fully qualifies for 1:1 binary matching (₹3,000/pair).'}
+              </p>
+            </div>
+
+            {/* Payment Method Selector */}
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-[#253247]">Select Payment Mode</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                {(paymentMethods?.gateways && paymentMethods.gateways.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('GATEWAY')}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      paymentMethod === 'GATEWAY'
+                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-[#165DAD]" />
+                      <div>
+                        <div className="font-semibold">Online Gateway</div>
+                        <div className="text-[10px] text-slate-400">Razorpay / Cards / UPI</div>
+                      </div>
+                    </div>
+                    {paymentMethod === 'GATEWAY' && <Check className="w-4 h-4 text-[#165DAD]" />}
+                  </button>
+                )}
+
+                {(paymentMethods ? paymentMethods.upi.isEnabled : paymentConfig?.isConfigured) && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('UPI')}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      paymentMethod === 'UPI'
+                        ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-4 h-4 text-[#165DAD]" />
+                      <div>
+                        <div className="font-semibold">UPI Transfer</div>
+                        <div className="text-[10px] text-slate-400">QR / Manual UTR</div>
+                      </div>
+                    </div>
+                    {paymentMethod === 'UPI' && <Check className="w-4 h-4 text-[#165DAD]" />}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('SIMULATED')}
+                  className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${paymentMethod === 'SIMULATED'
+                    ? 'border-[#165DAD] bg-blue-50/50 text-[#165DAD] font-semibold ring-1 ring-[#165DAD]'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#165DAD]" />
+                    <div>
+                      <div className="font-semibold">Simulation</div>
+                      <div className="text-[10px] text-slate-400">Portal Test Mode</div>
+                    </div>
+                  </div>
+                  {paymentMethod === 'SIMULATED' && <Check className="w-4 h-4 text-[#165DAD]" />}
+                </button>
+              </div>
+
+              {/* Notice if neither UPI nor Gateway is available */}
+              {!(paymentMethods?.gateways && paymentMethods.gateways.length > 0) &&
+                !(paymentMethods ? (paymentMethods.upi.isEnabled && paymentMethods.upi.isConfigured) : paymentConfig?.isConfigured) && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Online booking payments are currently undergoing maintenance. Please contact support or use portal simulation clearance.</span>
+                  </div>
+                )}
+            </div>
+
+            {/* Payment Method Details */}
+            {paymentMethod === 'GATEWAY' ? (
+              <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4 text-xs">
+                {/* Gateway Provider Selection (if multiple enabled) */}
+                {paymentMethods?.gateways && paymentMethods.gateways.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Select Online Gateway Provider
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {paymentMethods.gateways.map((gw) => {
+                        const isSelected = selectedGatewayProvider === gw.provider;
+                        const isPrimary = gw.provider === 'PINELABS';
+                        return (
+                          <button
+                            key={gw.provider}
+                            type="button"
+                            onClick={() => {
+                              setSelectedGatewayProvider(gw.provider);
+                              setGatewayOrder(null);
+                            }}
+                            className={`p-2.5 rounded-lg border text-left transition-all ${
+                              isSelected
+                                ? 'border-[#165DAD] bg-white ring-1 ring-[#165DAD] shadow-xs'
+                                : 'border-slate-200 bg-white/70 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[#253247]">{gw.displayName || gw.name || gw.provider}</span>
+                              {isPrimary && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-[#165DAD]">
+                                  PRIMARY
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              {gw.isSandbox ? 'Sandbox Mode' : 'Live Production'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-[#165DAD]" />
+                    <span className="font-bold text-[#253247]">
+                      {selectedGatewayProvider === 'PINELABS'
+                        ? 'Pine Labs (Plural) Payment Gateway'
+                        : selectedGatewayProvider === 'RAZORPAY'
+                        ? 'Razorpay Secure Checkout'
+                        : 'Online Payment Gateway'}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-[#165DAD] border border-blue-200">
+                    {paymentMethods?.gateways?.find((g) => g.provider === selectedGatewayProvider)?.isSandbox
+                      ? 'Sandbox Mode'
+                      : 'Production'}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-white rounded-lg border border-blue-100 space-y-1.5">
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span>Payable Amount:</span>
+                    <strong className="text-base font-bold text-[#165DAD]">
+                      {selectedRequestType === 'BASIC_ACTIVATION'
+                        ? '₹3,000'
+                        : selectedRequestType === 'FULL_ACTIVATION'
+                        ? '₹33,000'
+                        : '₹30,000'}
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {selectedGatewayProvider === 'PINELABS'
+                      ? 'Official Primary Gateway: Instant processing via UPI, Credit/Debit Cards, NetBanking, and Wallets on Pine Labs Plural.'
+                      : 'Seamless online payment via Cards, UPI, NetBanking, and Wallets.'}
+                  </p>
+                </div>
+
+                {gatewayOrder ? (
+                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-emerald-800 text-xs">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      <span>Order Created Successfully</span>
+                    </div>
+                    <div className="text-[11px] text-emerald-700 font-mono">
+                      Order Reference: <strong>{gatewayOrder.orderId}</strong>
+                    </div>
+                    {gatewayOrder.clientPayload?.redirectUrl && (
+                      <div className="pt-1">
+                        <a
+                          href={gatewayOrder.clientPayload.redirectUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#165DAD] underline hover:text-[#12498a]"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open Pine Labs Hosted Payment Page</span>
+                        </a>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-emerald-600">
+                      After completing payment on the gateway page, click below to confirm your booking for audit reconciliation.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleInitiateGatewayPayment}
+                    disabled={isProcessingGateway}
+                    className="w-full py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>
+                      {isProcessingGateway
+                        ? 'Connecting to Gateway...'
+                        : selectedGatewayProvider === 'PINELABS'
+                        ? 'Pay Online via Pine Labs (Primary)'
+                        : 'Pay Online via Gateway'}
+                    </span>
+                  </button>
+                )}
+
+                <div className="p-2.5 rounded-lg bg-slate-100/80 border border-slate-200 text-[10px] text-slate-500 space-y-0.5">
+                  <span className="font-bold text-slate-600">Compliance & Security Notice:</span>
+                  <p>
+                    All gateway payments are processed with server-side HMAC-SHA256 signature validation and isolated from MLM binary matching calculations per SIMULATION_ONLY rules.
+                  </p>
+                </div>
+              </div>
+            ) : paymentMethod === 'UPI' ? (
+              paymentConfig?.isConfigured && paymentConfig.merchantUpiVpa ? (
+                <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <div className="w-32 h-32 bg-white p-2 rounded-xl border border-blue-200 shadow-xs flex items-center justify-center shrink-0">
+                      {qrCodeDataUrl ? (
+                        <img
+                          src={qrCodeDataUrl}
+                          alt="Scan UPI QR Code to Pay"
+                          className="w-28 h-28 object-contain"
+                        />
+                      ) : (
+                        <div className="w-28 h-28 flex items-center justify-center text-slate-400">
+                          <QrCode className="w-20 h-20 animate-pulse text-blue-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5 text-center sm:text-left text-xs flex-1">
+                      <div className="flex items-center gap-1.5 justify-center sm:justify-start">
+                        <span className="font-bold text-[#253247]">Verified Company UPI ID</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Verified
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 justify-center sm:justify-start">
+                        <code className="font-mono font-bold text-sm text-[#165DAD] bg-white px-2 py-0.5 rounded border border-blue-200">
+                          {paymentConfig.merchantUpiVpa}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={handleCopyUpi}
+                          className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
+                          title="Copy UPI ID"
+                        >
+                          {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-600">
+                        Payee: <strong>{paymentConfig.merchantName || 'ASKR EV Mobility'}</strong>
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Payable:{' '}
+                        <strong className="text-[#165DAD]">
+                          {selectedRequestType === 'BASIC_ACTIVATION'
+                            ? '₹3,000'
+                            : selectedRequestType === 'FULL_ACTIVATION'
+                              ? '₹33,000'
+                              : '₹30,000'}
+                        </strong>
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        Scan using Google Pay, PhonePe, Paytm, BHIM, or any banking app.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#253247] mb-1">
+                      Enter UPI Reference / UTR Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={paymentUtr}
+                      onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
+                      placeholder="e.g. 432109876543 (12-digit UTR)"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Enter the 12-digit numeric or 12-22 alphanumeric UTR from your bank transaction receipt.
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 space-y-0.5">
+                    <span className="font-bold">Verification Notice:</span>
+                    <p className="text-[10px] text-amber-700 leading-relaxed">
+                      Payment requests remain PENDING until authorized administrator verification against actual bank/PSP records. Submitting a UTR number is for audit reconciliation and does not guarantee activation until verified.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-xs text-amber-800">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Merchant UPI Payment Setup in Progress</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    The official company UPI VPA is pending verification by administration. Live UPI QR payment instructions are temporarily withheld until verified.
+                  </p>
+                  <p className="text-[11px] text-amber-700">
+                    Please use <strong>Portal Simulation Clearance</strong> to test bookings or contact support.
+                  </p>
+                </div>
+              )
+            ) : (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+                <span className="font-bold">Test & Demonstration Clearance</span>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Submits a simulated portal clearance request with SIMULATION_ONLY compliance safeguards. No real live financial debit or settlement occurs.
+                </p>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(false)}
+                disabled={upgrading || isProcessingGateway}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPaymentRequest}
+                disabled={
+                  upgrading ||
+                  isProcessingGateway ||
+                  (paymentMethod === 'UPI' && (!paymentConfig?.isConfigured || !paymentUtr.trim()))
+                }
+                className="px-5 py-2 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
+              >
+                {paymentMethod === 'GATEWAY' && !gatewayOrder ? (
+                  <>
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>{isProcessingGateway ? 'Initializing Gateway...' : 'Initiate Online Payment'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{upgrading ? 'Submitting Request...' : 'Submit Booking Request'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

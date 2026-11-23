@@ -88,6 +88,9 @@ describe('AuthService & TotpService Security Enhancements', () => {
       auditLog: {
         create: vi.fn().mockResolvedValue({ id: 'audit-log-1' }),
       },
+      binaryPlacement: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn().mockImplementation((promises) =>
         Array.isArray(promises) ? Promise.all(promises) : promises(mockPrisma)
       ),
@@ -389,6 +392,98 @@ describe('AuthService & TotpService Security Enhancements', () => {
           data: expect.objectContaining({
             sponsorId: mockUser.id,
             email: 'applicant@askrevdrive.com',
+          }),
+        })
+      );
+    });
+
+    it('should persist explicit LEFT or RIGHT leg from referral registration', async () => {
+      mockPrisma.user.findUnique.mockImplementation(({ where }) => {
+        if (where.memberId === mockUser.memberId) return Promise.resolve(mockUser);
+        return Promise.resolve(null);
+      });
+
+      // Explicit RIGHT leg
+      await authService.register({
+        email: 'applicant-right@askrevdrive.com',
+        password: 'ValidMemberPassword@2026',
+        fullName: 'Right Leg Member',
+        sponsorMemberId: mockUser.memberId,
+        side: 'RIGHT',
+      });
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            intendedBinarySide: 'RIGHT',
+          }),
+        })
+      );
+
+      // Explicit LEFT leg
+      await authService.register({
+        email: 'applicant-left@askrevdrive.com',
+        password: 'ValidMemberPassword@2026',
+        fullName: 'Left Leg Member',
+        sponsorMemberId: mockUser.memberId,
+        side: 'LEFT',
+      });
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            intendedBinarySide: 'LEFT',
+          }),
+        })
+      );
+    });
+
+    it('should auto-balance to weaker leg when placement leg is omitted', async () => {
+      mockPrisma.user.findUnique.mockImplementation(({ where }) => {
+        if (where.memberId === mockUser.memberId) return Promise.resolve(mockUser);
+        return Promise.resolve(null);
+      });
+
+      // Sponsor has right volume weaker (e.g. left: 60000 paise, right: 30000 paise)
+      mockPrisma.binaryPlacement.findUnique.mockResolvedValueOnce({
+        leftVolumePaise: 60000n,
+        rightVolumePaise: 30000n,
+        leftCount: 2,
+        rightCount: 1,
+      });
+
+      await authService.register({
+        email: 'applicant-auto-right@askrevdrive.com',
+        password: 'ValidMemberPassword@2026',
+        fullName: 'Auto Weaker Member',
+        sponsorMemberId: mockUser.memberId,
+      });
+
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            intendedBinarySide: 'RIGHT',
+          }),
+        })
+      );
+
+      // Sponsor has left volume weaker (e.g. left: 10000 paise, right: 50000 paise)
+      mockPrisma.binaryPlacement.findUnique.mockResolvedValueOnce({
+        leftVolumePaise: 10000n,
+        rightVolumePaise: 50000n,
+        leftCount: 1,
+        rightCount: 3,
+      });
+
+      await authService.register({
+        email: 'applicant-auto-left@askrevdrive.com',
+        password: 'ValidMemberPassword@2026',
+        fullName: 'Auto Left Member',
+        sponsorMemberId: mockUser.memberId,
+      });
+
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            intendedBinarySide: 'LEFT',
           }),
         })
       );
