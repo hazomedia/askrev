@@ -40,7 +40,15 @@ export default function LoginPage() {
         router.push('/admin');
       }
     } else {
-      router.push('/dashboard');
+      const redirectParam =
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('redirect')
+          : null;
+      if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')) {
+        router.push(redirectParam);
+      } else {
+        router.push('/dashboard');
+      }
     }
   };
 

@@ -1,4 +1,10 @@
-import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../common/encryption.service';
 import { paiseToRupees, JournalAccount, UserRole } from '@askrev/shared';
@@ -417,12 +423,31 @@ export class WalletService {
         if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
           throw new BadRequestException('Invalid IFSC code format (e.g. HDFC0001234).');
         }
+        // Fail closed: No plaintext fallback allowed
+        if (!this.encryptionService) {
+          throw new ServiceUnavailableException(
+            'Secure encryption service is unavailable. Payout credential processing failed closed.'
+          );
+        }
+
+        let encryptedAccountNumber: string;
+        try {
+          encryptedAccountNumber = this.encryptionService.encrypt(cleanAcc);
+          if (!encryptedAccountNumber || encryptedAccountNumber === cleanAcc) {
+            throw new Error('Encryption returned invalid or unencrypted result');
+          }
+        } catch {
+          throw new ServiceUnavailableException(
+            'Secure encryption service failed. Payout credential processing failed closed.'
+          );
+        }
+
         destinationMasked = `Bank: ${dto.bankName.trim()} (A/C: ••••${cleanAcc.slice(-4)}, IFSC: ${cleanIfsc})`;
         encryptedPayoutDetails = {
           type: 'BANK_ACCOUNT',
           accountHolderName: dto.accountHolderName.trim(),
           bankName: dto.bankName.trim(),
-          encryptedAccountNumber: this.encryptionService?.encrypt(cleanAcc) || cleanAcc,
+          encryptedAccountNumber,
           maskedAccountNumber: `••••${cleanAcc.slice(-4)}`,
           ifscCode: cleanIfsc,
         };
@@ -434,16 +459,79 @@ export class WalletService {
         if (!/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(cleanUpi)) {
           throw new BadRequestException('Invalid UPI ID format (e.g. member@okhdfcbank).');
         }
+
+        // Fail closed: No plaintext fallback allowed
+        if (!this.encryptionService) {
+          throw new ServiceUnavailableException(
+            'Secure encryption service is unavailable. Payout credential processing failed closed.'
+          );
+        }
+
+        let encryptedUpiId: string;
+        try {
+          encryptedUpiId = this.encryptionService.encrypt(cleanUpi);
+          if (!encryptedUpiId || encryptedUpiId === cleanUpi) {
+            throw new Error('Encryption returned invalid or unencrypted result');
+          }
+        } catch {
+          throw new ServiceUnavailableException(
+            'Secure encryption service failed. Payout credential processing failed closed.'
+          );
+        }
+
         const parts = cleanUpi.split('@');
         const maskedUpiHandle = parts[0].length > 3 ? `${parts[0].slice(0, 2)}•••${parts[0].slice(-1)}@${parts[1]}` : `•••@${parts[1]}`;
         destinationMasked = `UPI: ${maskedUpiHandle} (${dto.accountHolderName.trim()})`;
         encryptedPayoutDetails = {
           type: 'UPI',
           accountHolderName: dto.accountHolderName.trim(),
-          encryptedUpiId: this.encryptionService?.encrypt(cleanUpi) || cleanUpi,
+          encryptedUpiId,
           maskedUpiId: maskedUpiHandle,
         };
       }
+    }
+
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+
+    // Strictly enforce disabled live payouts
+    if (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY') {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            actorId: userId,
+            action: 'WITHDRAWAL_VALIDATION_SIMULATION_BLOCKED',
+            entityType: 'User',
+            entityId: userId,
+            metadata: {
+              destinationType: dto?.destinationType || 'UNSPECIFIED',
+              destinationMasked: destinationMasked || undefined,
+              complianceMode,
+              livePayoutsEnabled: false,
+              stored: false,
+            },
+          },
+        });
+      } catch { }
+
+      return {
+        success: false,
+        restricted: true,
+        livePayoutsEnabled: false,
+        complianceMode,
+        minWithdrawalINR: 1000,
+        availableBalanceINR: paiseToRupees(user.wallet?.availableEarningsPaise || 0n),
+        destinationMasked: destinationMasked || undefined,
+        message:
+          'Withdrawals are restricted in compliance simulation mode. Payout destination details were validated, but no live payout request or credentials were submitted or stored.',
+      };
+    }
+
+    // If live payouts were enabled:
+    const availablePaise = user.wallet?.availableEarningsPaise || 0n;
+    const minPaise = 100000n; // ₹1,000
+    if (availablePaise < minPaise) {
+      throw new BadRequestException('Minimum withdrawal threshold is ₹1,000.');
     }
 
     try {
@@ -456,37 +544,12 @@ export class WalletService {
           metadata: {
             destinationType: dto?.destinationType || 'UNSPECIFIED',
             destinationMasked: destinationMasked || undefined,
-            complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
-            livePayoutsEnabled: process.env.ENABLE_LIVE_PAYOUTS === 'true',
+            complianceMode,
+            livePayoutsEnabled: true,
           },
         },
       });
     } catch { }
-
-    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
-    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
-
-    // Strictly enforce disabled live payouts
-    if (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY') {
-      return {
-        success: false,
-        restricted: true,
-        livePayoutsEnabled: false,
-        complianceMode,
-        minWithdrawalINR: 1000,
-        availableBalanceINR: paiseToRupees(user.wallet?.availableEarningsPaise || 0n),
-        destinationMasked: destinationMasked || undefined,
-        message:
-          'Withdrawals are restricted in compliance simulation mode. Payout destination details are securely validated and registered for future clearance upon authorized live payout activation.',
-      };
-    }
-
-    // If live payouts were enabled:
-    const availablePaise = user.wallet?.availableEarningsPaise || 0n;
-    const minPaise = 100000n; // ₹1,000
-    if (availablePaise < minPaise) {
-      throw new BadRequestException('Minimum withdrawal threshold is ₹1,000.');
-    }
 
     return {
       success: true,

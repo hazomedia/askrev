@@ -64,7 +64,6 @@ export const metadata: Metadata = {
     ],
     shortcut: ['/favicon.ico'],
   },
-  manifest: '/manifest.json',
   robots: {
     index: true,
     follow: true,
