@@ -61,7 +61,7 @@ function RegisterForm() {
       setSponsorMemberId(clean);
       lookupSponsor(clean);
     }
-    const sideParam = searchParams.get('side')?.toUpperCase().trim();
+    const sideParam = (searchParams.get('side') || searchParams.get('position'))?.toUpperCase().trim();
     if (sideParam === 'RIGHT') {
       setSide('RIGHT');
     } else if (sideParam === 'LEFT') {

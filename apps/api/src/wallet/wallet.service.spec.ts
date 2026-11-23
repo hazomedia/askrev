@@ -24,6 +24,9 @@ describe('WalletService', () => {
       qualificationEvent: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({}),
+      },
     };
     service = new WalletService(mockPrisma);
   });
@@ -260,6 +263,70 @@ describe('WalletService', () => {
       await expect(service.requestWithdrawal('non-existent')).rejects.toThrow(
         NotFoundException
       );
+    });
+
+    it('validates bank account matching confirmation and IFSC format', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-verified',
+        email: 'verified@askrev.com',
+        isEmailVerified: true,
+        wallet: { availableEarningsPaise: 500000n },
+      });
+
+      // Mismatched confirmation
+      await expect(
+        service.requestWithdrawal('user-verified', {
+          destinationType: 'BANK_ACCOUNT' as any,
+          accountHolderName: 'Test Holder',
+          bankName: 'HDFC Bank',
+          accountNumber: '123456789012',
+          confirmAccountNumber: '123456789099',
+          ifscCode: 'HDFC0001234',
+        })
+      ).rejects.toThrow('Account number and confirmation account number do not match.');
+
+      // Invalid IFSC
+      await expect(
+        service.requestWithdrawal('user-verified', {
+          destinationType: 'BANK_ACCOUNT' as any,
+          accountHolderName: 'Test Holder',
+          bankName: 'HDFC Bank',
+          accountNumber: '123456789012',
+          confirmAccountNumber: '123456789012',
+          ifscCode: 'INVALID_IFSC',
+        })
+      ).rejects.toThrow('Invalid IFSC code format');
+    });
+
+    it('validates UPI ID format and returns masked destination safely in simulation mode', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-verified',
+        email: 'verified@askrev.com',
+        isEmailVerified: true,
+        wallet: { availableEarningsPaise: 500000n },
+      });
+      mockPrisma.auditLog.create.mockResolvedValue({});
+
+      // Invalid UPI
+      await expect(
+        service.requestWithdrawal('user-verified', {
+          destinationType: 'UPI' as any,
+          accountHolderName: 'Test Holder',
+          upiId: 'not_an_upi_id',
+        })
+      ).rejects.toThrow('Invalid UPI ID format');
+
+      // Valid UPI
+      const result = await service.requestWithdrawal('user-verified', {
+        destinationType: 'UPI' as any,
+        accountHolderName: 'Test Holder',
+        upiId: 'testmember@okhdfcbank',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.restricted).toBe(true);
+      expect(result.destinationMasked).toContain('UPI:');
+      expect(result.destinationMasked).toContain('@okhdfcbank');
     });
   });
 });

@@ -21,13 +21,15 @@ export interface AskrLogoProps {
  * - Square icon: /brand/askrev-icon.webp (1254x1254, transparent)
  *
  * Enforces native aspect ratios (never stretched, cropped, or distorted).
- * On responsive mode (default), renders the square icon on mobile (< sm)
- * and the full horizontal logo on desktop (sm: and above).
+ * In accordance with Requirement 17:
+ * The full horizontal logo is rendered on BOTH desktop and mobile headers.
+ * On mobile, it scales cleanly between 150px–180px wide with object-contain.
+ * The square icon is reserved strictly for favicon, app icons, and explicit variant="icon".
  */
 export default function AskrLogo({
   theme = 'light',
   size = 'md',
-  variant = 'responsive',
+  variant = 'full',
   href = '/',
   className = '',
   priority = true,
@@ -36,22 +38,26 @@ export default function AskrLogo({
   // Height configurations per size preset
   const sizeConfig = {
     sm: {
-      fullHeightClass: 'h-7 sm:h-8',
+      fullHeightClass: 'h-6 sm:h-7 md:h-8',
+      fullWidthClass: 'max-w-[140px] xs:max-w-[160px] sm:max-w-[180px] md:max-w-[210px]',
       iconSizeClass: 'h-7 w-7',
       containerClass: 'gap-2',
     },
     md: {
-      fullHeightClass: 'h-8 sm:h-9',
+      fullHeightClass: 'h-7 sm:h-8 md:h-9',
+      fullWidthClass: 'max-w-[155px] xs:max-w-[175px] sm:max-w-[200px] md:max-w-[240px]',
       iconSizeClass: 'h-8 w-8 sm:h-9 sm:w-9',
       containerClass: 'gap-2.5',
     },
     lg: {
-      fullHeightClass: 'h-10 sm:h-11',
+      fullHeightClass: 'h-8 sm:h-10 md:h-11',
+      fullWidthClass: 'max-w-[180px] xs:max-w-[210px] sm:max-w-[240px] md:max-w-[280px]',
       iconSizeClass: 'h-9 w-9 sm:h-10 sm:w-10',
       containerClass: 'gap-3',
     },
     xl: {
-      fullHeightClass: 'h-12 sm:h-14',
+      fullHeightClass: 'h-10 sm:h-12 md:h-14',
+      fullWidthClass: 'max-w-[220px] xs:max-w-[260px] sm:max-w-[300px] md:max-w-[360px]',
       iconSizeClass: 'h-12 w-12 sm:h-14 sm:w-14',
       containerClass: 'gap-3.5',
     },
@@ -62,13 +68,13 @@ export default function AskrLogo({
       <source srcSet="/brand/askrev-full-logo.webp" type="image/webp" />
       <source srcSet="/brand/askrev-full-logo.png" type="image/png" />
       <img
-        src="/brand/askrev-full-logo.png"
+        src="/brand/askrev-full-logo.webp"
         alt={alt}
         width={2048}
         height={684}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
-        className={`${sizeConfig.fullHeightClass} w-auto max-w-[240px] sm:max-w-none object-contain select-none transition-opacity duration-200`}
+        className={`${sizeConfig.fullHeightClass} ${sizeConfig.fullWidthClass} w-auto object-contain select-none transition-opacity duration-200`}
         style={{
           aspectRatio: '2048 / 684',
         }}
@@ -81,7 +87,7 @@ export default function AskrLogo({
       <source srcSet="/brand/askrev-icon.webp" type="image/webp" />
       <source srcSet="/brand/askrev-icon.png" type="image/png" />
       <img
-        src="/brand/askrev-icon.png"
+        src="/brand/askrev-icon.webp"
         alt="ASKR EV Icon"
         width={1254}
         height={1254}
@@ -97,24 +103,11 @@ export default function AskrLogo({
 
   let renderContent: React.ReactNode;
 
-  if (variant === 'full') {
-    renderContent = fullLogoElement;
-  } else if (variant === 'icon') {
+  if (variant === 'icon') {
     renderContent = iconElement;
   } else {
-    // variant === 'responsive'
-    // On small mobile screens (< sm), render square icon so it fits without distortion.
-    // On sm screens and larger, render full horizontal logo.
-    renderContent = (
-      <>
-        <div className="sm:hidden flex items-center shrink-0">
-          {iconElement}
-        </div>
-        <div className="hidden sm:flex items-center shrink-0">
-          {fullLogoElement}
-        </div>
-      </>
-    );
+    // Both 'full' and 'responsive' render the official full horizontal logo on desktop & mobile
+    renderContent = fullLogoElement;
   }
 
   const wrapperClass = `inline-flex items-center shrink-0 select-none ${className}`;

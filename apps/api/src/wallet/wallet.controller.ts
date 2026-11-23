@@ -1,10 +1,11 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@askrev/shared';
+import { RequestWithdrawalDto } from './dto/withdrawal.dto';
 
 @Controller('wallet')
 @UseGuards(JwtAuthGuard)
@@ -27,8 +28,8 @@ export class WalletController {
   }
 
   @Post('request-withdrawal')
-  async requestWithdrawal(@CurrentUser() user: any) {
-    return this.walletService.requestWithdrawal(user.id);
+  async requestWithdrawal(@CurrentUser() user: any, @Body() dto?: RequestWithdrawalDto) {
+    return this.walletService.requestWithdrawal(user.id, dto);
   }
 
   @Get('admin/reconciliation')

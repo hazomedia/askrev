@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   ChevronLeft,
@@ -202,6 +203,7 @@ export default function HomeShowroom({
   initialHeroSlides,
   initialProducts,
 }: HomeShowroomProps) {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [selectedCategoryTab, setSelectedCategoryTab] = useState<
@@ -513,6 +515,12 @@ export default function HomeShowroom({
   };
 
   const handleOpenBooking = (vehicle: any) => {
+    const user = getStoredUser();
+    if (!user) {
+      const redirectTarget = vehicle?.slug ? `/book?product=${encodeURIComponent(vehicle.slug)}` : '/book';
+      router.push(`/auth/login?redirect=${encodeURIComponent(redirectTarget)}`);
+      return;
+    }
     setBookingVehicle(vehicle);
     setBookingModalOpen(true);
   };
