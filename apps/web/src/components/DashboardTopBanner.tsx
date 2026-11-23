@@ -69,11 +69,6 @@ export default function DashboardTopBanner({
     return [];
   }, [slides, banner]);
 
-  // If Admin disabled or unpublished all slides, hide the entire slider
-  if (effectiveSlides.length === 0) {
-    return null;
-  }
-
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const touchStartXRef = useRef<number | null>(null);
@@ -83,10 +78,12 @@ export default function DashboardTopBanner({
   const totalSlides = effectiveSlides.length;
 
   const goToNext = useCallback(() => {
+    if (totalSlides === 0) return;
     setCurrentIndex((prev) => (prev + 1) % totalSlides);
   }, [totalSlides]);
 
   const goToPrev = useCallback(() => {
+    if (totalSlides === 0) return;
     setCurrentIndex((prev) => (prev - 1 + totalSlides) % totalSlides);
   }, [totalSlides]);
 
@@ -96,6 +93,10 @@ export default function DashboardTopBanner({
 
   // Safe index clamp if slides change dynamically
   useEffect(() => {
+    if (totalSlides === 0) {
+      if (currentIndex !== 0) setCurrentIndex(0);
+      return;
+    }
     if (currentIndex >= totalSlides) {
       setCurrentIndex(0);
     }
@@ -147,6 +148,11 @@ export default function DashboardTopBanner({
     touchStartXRef.current = null;
     touchEndXRef.current = null;
   };
+
+  // If Admin disabled or unpublished all slides (or empty), hide the entire slider after calling all hooks
+  if (totalSlides === 0) {
+    return null;
+  }
 
   return (
     <div
