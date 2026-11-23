@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, Matches } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsInt, Min, Max, Matches } from 'class-validator';
 
 export class UpdateTopBannerDto {
   @IsString()
@@ -7,7 +7,15 @@ export class UpdateTopBannerDto {
 
   @IsString()
   @IsOptional()
+  subtitle?: string;
+
+  @IsString()
+  @IsOptional()
   badgeText?: string;
+
+  @IsString()
+  @IsOptional()
+  buttonText?: string;
 
   @IsString()
   desktopImageUrl: string;
@@ -18,7 +26,7 @@ export class UpdateTopBannerDto {
 
   @IsString()
   @IsOptional()
-  @Matches(/^\/[a-zA-Z0-9_\-\/?#=&%]*$/, {
+  @Matches(/^(\/[a-zA-Z0-9_\-\/?#=&%]*|#.*|)$/, {
     message: 'Destination link must be a safe relative internal route starting with /',
   })
   linkUrl?: string;
@@ -30,4 +38,10 @@ export class UpdateTopBannerDto {
   @IsBoolean()
   @IsOptional()
   isEnabled?: boolean;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1000)
+  @Max(30000)
+  autoplayInterval?: number;
 }

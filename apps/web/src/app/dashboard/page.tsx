@@ -82,6 +82,7 @@ function DashboardContent() {
 
   // Top Banner & Welcome Popup States
   const [topBanner, setTopBanner] = useState<any>(null);
+  const [slides, setSlides] = useState<any[]>([]);
   const [popupCampaign, setPopupCampaign] = useState<any>(null);
   const [welcomePopupOpen, setWelcomePopupOpen] = useState(false);
 
@@ -320,7 +321,7 @@ function DashboardContent() {
       'serviceWorker' in navigator &&
       (window.location.protocol === 'https:' || window.location.hostname === 'localhost')
     ) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => { });
     }
 
     // If already running in standalone mode, do not register install prompts
@@ -370,7 +371,7 @@ function DashboardContent() {
         if (outcome === 'accepted') {
           setShowInstallBanner(false);
         }
-      } catch {}
+      } catch { }
       setDeferredPrompt(null);
     } else {
       setShowInstallGuideModal(true);
@@ -381,7 +382,7 @@ function DashboardContent() {
     setShowInstallBanner(false);
     try {
       sessionStorage.setItem('askrev_pwa_dismissed', 'true');
-    } catch {}
+    } catch { }
   };
 
   const loadData = async () => {
@@ -414,7 +415,7 @@ function DashboardContent() {
         fetchApi<any>('/packages/my-requests').catch(() => []),
         fetchApi<any>('/packages/payment-config').catch(() => null),
         fetchApi<any>('/payments/methods').catch(() => null),
-        fetchActiveBanners().catch(() => ({ topBanner: null, popupCampaign: null })),
+        fetchActiveBanners().catch(() => ({ topBanner: null, slides: [], popupCampaign: null })),
       ]);
 
       setUser(profileData);
@@ -440,6 +441,9 @@ function DashboardContent() {
       }
 
       // Handle Dashboard Banners and Welcome Popup
+      if (bannersData?.slides && Array.isArray(bannersData.slides) && bannersData.slides.length > 0) {
+        setSlides(bannersData.slides);
+      }
       if (bannersData?.topBanner) {
         setTopBanner(bannersData.topBanner);
       }
@@ -448,16 +452,30 @@ function DashboardContent() {
         setPopupCampaign(campaign);
 
         // Check client-side dismissal cache for frequency controls
-        const dismissedKey = 'askrev_popup_dismissed_' + campaign.id;
-        const localDismissed = typeof window !== 'undefined' ? localStorage.getItem(dismissedKey) : null;
-        const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-
         let shouldDisplay = true;
-        if (localDismissed) {
-          if (campaign.frequency === 'ONCE_PER_CAMPAIGN') {
+
+        if (campaign.frequency === 'EVERY_VISIT') {
+          // EVERY_VISIT: show on fresh website opening, PWA launch, and fresh login.
+          // Closing dismisses only within the current session.
+          const sessionDismissed =
+            typeof window !== 'undefined'
+              ? sessionStorage.getItem('askrev_popup_session_dismissed_' + campaign.id)
+              : null;
+          if (sessionDismissed) {
             shouldDisplay = false;
-          } else if (campaign.frequency === 'ONCE_DAILY' && localDismissed === todayIST) {
-            shouldDisplay = false;
+          }
+        } else {
+          // Standard dismissal persistence for ONCE_PER_CAMPAIGN or ONCE_DAILY
+          const dismissedKey = 'askrev_popup_dismissed_' + campaign.id;
+          const localDismissed = typeof window !== 'undefined' ? localStorage.getItem(dismissedKey) : null;
+          const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+          if (localDismissed) {
+            if (campaign.frequency === 'ONCE_PER_CAMPAIGN') {
+              shouldDisplay = false;
+            } else if (campaign.frequency === 'ONCE_DAILY' && localDismissed === todayIST) {
+              shouldDisplay = false;
+            }
           }
         }
 
@@ -475,9 +493,14 @@ function DashboardContent() {
   const handleDismissWelcomePopup = async () => {
     if (!popupCampaign) return;
     setWelcomePopupOpen(false);
-    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
     if (typeof window !== 'undefined') {
-      localStorage.setItem('askrev_popup_dismissed_' + popupCampaign.id, todayIST);
+      if (popupCampaign.frequency === 'EVERY_VISIT') {
+        sessionStorage.setItem('askrev_popup_session_dismissed_' + popupCampaign.id, 'true');
+      } else {
+        const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        localStorage.setItem('askrev_popup_dismissed_' + popupCampaign.id, todayIST);
+      }
     }
     try {
       await dismissPopupCampaign(popupCampaign.id);
@@ -1079,14 +1102,14 @@ function DashboardContent() {
 
           {/* Desktop Header: Clean left-aligned layout */}
           <div className="hidden md:flex items-center justify-between h-16">
-            {/* Left: ASKR EV Logo + Member Dashboard crumb */}
+            {/* Left: ASKR EV Logo + Sales Executive crumb */}
             <div className="flex items-center gap-3 sm:gap-4">
-              <AskrLogo href="/dashboard" size="sm" />
+              <AskrLogo href="/dashboard" size="md" />
 
               <span className="text-slate-300">/</span>
 
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-xs sm:text-sm text-[#253247]">Member Dashboard</span>
+                <span className="font-semibold text-xs sm:text-sm text-[#253247]">Sales Executive</span>
               </div>
             </div>
 
@@ -1352,8 +1375,8 @@ function DashboardContent() {
             {/* TAB 1: OVERVIEW */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Responsive Dashboard Top Promotional Banner */}
-                <DashboardTopBanner banner={topBanner} />
+                {/* Responsive Dashboard Top Promotional Multi-Slide Carousel */}
+                <DashboardTopBanner slides={slides} banner={topBanner} />
 
                 {/* Dashboard-Only PWA Installation Banner (Mobile Only, Hidden if already installed) */}
                 {!isStandalone && showInstallBanner && (
@@ -1396,25 +1419,24 @@ function DashboardContent() {
                 )}
 
                 {/* =========================================================================
-                    SECTION 4 — COMPACT PREMIUM WELCOME BACK CARD
+                    SECTION 4 — SALES EXECUTIVE IDENTITY CARD
                     ========================================================================= */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    {/* Welcome Context */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
-                        <span>Welcome back,</span>
-                        <span className="font-bold text-[#0C2348] text-sm">{user.fullName}</span>
+                    {/* Sales Executive Identity */}
+                    <div className="space-y-1.5">
+                      <div className="text-xs uppercase tracking-wider font-bold text-slate-400">
+                        Sales Executive
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <h1 className="text-lg sm:text-xl font-black text-[#0C2348] tracking-tight">
-                          Member Dashboard
-                        </h1>
-                        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="text-xl sm:text-2xl font-black text-[#0C2348] tracking-tight">
+                          {user.fullName}
+                        </span>
+                        <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 border border-slate-300">
                           ID: {user.memberId}
                         </span>
                         <span
-                          className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${getPackageBadge(
+                          className={`text-xs font-semibold px-3 py-1 rounded-full border shadow-2xs ${getPackageBadge(
                             user.currentPackage
                           )}`}
                         >
@@ -1423,14 +1445,9 @@ function DashboardContent() {
                       </div>
                     </div>
 
-                    {/* Prominent Book EV Button */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {user.isFullQualified || user.currentPackage === 'FULL' ? (
-                        <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[#15803D] text-xs font-bold flex items-center gap-1.5 shadow-2xs">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Qualified EV ULTRA Member</span>
-                        </div>
-                      ) : (
+                    {/* Book EV / Upgrade Button (shown if not full qualified) */}
+                    {!user.isFullQualified && user.currentPackage !== 'FULL' && (
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => {
                             setSelectedRequestType(
@@ -1445,8 +1462,8 @@ function DashboardContent() {
                           <Bike className="w-4 h-4" />
                           <span>{user.currentPackage === 'BASIC' ? 'Upgrade to ULTRA' : 'Book EV'}</span>
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

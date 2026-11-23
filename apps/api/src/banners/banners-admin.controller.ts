@@ -17,6 +17,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { BannersService } from './banners.service';
 import { StorageService } from '../products/storage.service';
 import { UpdateTopBannerDto } from './dto/update-top-banner.dto';
+import { CreateSlideDto } from './dto/create-slide.dto';
+import { UpdateSlideDto } from './dto/update-slide.dto';
+import { ReorderSlidesDto } from './dto/reorder-slides.dto';
 import { CreatePopupCampaignDto } from './dto/create-popup-campaign.dto';
 import { UpdatePopupCampaignDto } from './dto/update-popup-campaign.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -36,7 +39,7 @@ export class BannersAdminController {
   ) {}
 
   // ---------------------------------------------------------------------------
-  // Top Banner Management
+  // Top Banner & Carousel Slides Management (Super Admin only)
   // ---------------------------------------------------------------------------
   @Get('top')
   async getTopBanner() {
@@ -46,6 +49,46 @@ export class BannersAdminController {
   @Put('top')
   async updateTopBanner(@Body() dto: UpdateTopBannerDto) {
     return this.bannersService.updateTopBanner(dto);
+  }
+
+  @Get('slides')
+  async getSlides() {
+    return this.bannersService.getAdminSlides();
+  }
+
+  @Get('slides/:id')
+  async getSlideById(@Param('id') id: string) {
+    return this.bannersService.getAdminSlideById(id);
+  }
+
+  @Post('slides')
+  async createSlide(@Body() dto: CreateSlideDto) {
+    return this.bannersService.createSlide(dto);
+  }
+
+  @Patch('slides/:id')
+  async updateSlide(@Param('id') id: string, @Body() dto: UpdateSlideDto) {
+    return this.bannersService.updateSlide(id, dto);
+  }
+
+  @Delete('slides/:id')
+  async deleteSlide(@Param('id') id: string) {
+    return this.bannersService.deleteSlide(id);
+  }
+
+  @Post('slides/:id/publish')
+  async publishSlide(@Param('id') id: string) {
+    return this.bannersService.publishSlide(id);
+  }
+
+  @Post('slides/:id/disable')
+  async disableSlide(@Param('id') id: string) {
+    return this.bannersService.disableSlide(id);
+  }
+
+  @Post('slides/reorder')
+  async reorderSlides(@Body() dto: ReorderSlidesDto) {
+    return this.bannersService.reorderSlides(dto.slideIds);
   }
 
   // ---------------------------------------------------------------------------

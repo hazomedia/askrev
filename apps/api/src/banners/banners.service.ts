@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateTopBannerDto } from './dto/update-top-banner.dto';
+import { CreateSlideDto } from './dto/create-slide.dto';
+import { UpdateSlideDto } from './dto/update-slide.dto';
 import { CreatePopupCampaignDto } from './dto/create-popup-campaign.dto';
 import { UpdatePopupCampaignDto } from './dto/update-popup-campaign.dto';
 import { BannerStatus, PopupFrequency } from '@prisma/client';
@@ -32,6 +34,27 @@ export interface CampaignWithComputedStatus {
   dismissalCount?: number;
 }
 
+export interface SlideWithComputedStatus {
+  id: string;
+  title: string | null;
+  subtitle: string | null;
+  badgeText: string | null;
+  buttonText: string | null;
+  desktopImageUrl: string;
+  mobileImageUrl: string | null;
+  linkUrl: string | null;
+  altText: string | null;
+  displayOrder: number;
+  status: BannerStatus;
+  isEnabled: boolean;
+  computedStatus: 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'DISABLED';
+  startDate: Date | null;
+  endDate: Date | null;
+  autoplayInterval: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 @Injectable()
 export class BannersService implements OnModuleInit {
   private readonly logger = new Logger(BannersService.name);
@@ -53,20 +76,25 @@ export class BannersService implements OnModuleInit {
         await this.prisma.dashboardTopBanner.create({
           data: {
             title: 'ASKR EV Urban Mobility Fleet',
+            subtitle: 'Smart • Connected • Sustainable',
             badgeText: 'ELECTRIC MOBILITY',
+            buttonText: 'EXPLORE FLEET',
             desktopImageUrl:
               '/uploads/hero/desktop/urban-fleet-hero---harsil-leo-_1795105582720_1e863ffb12443fbf.webp',
             mobileImageUrl:
               '/uploads/hero/desktop/urban-fleet-hero---harsil-leo-_1795105582720_1e863ffb12443fbf.webp',
             linkUrl: '/dashboard',
             altText: 'ASKR EV Electric Mobility',
+            displayOrder: 0,
+            status: BannerStatus.PUBLISHED,
             isEnabled: true,
+            autoplayInterval: 5000,
           },
         });
         this.logger.log('Seeded default Dashboard Top Banner.');
       }
 
-      // 2. Ensure default Welcome Popup Campaign exists (Requirement 6)
+      // 2. Ensure default Welcome Popup Campaign exists with EVERY_VISIT frequency
       const existingWelcome = await this.prisma.popupCampaign.findFirst({
         where: { name: 'ASKR EV Welcome' },
       });
@@ -83,11 +111,17 @@ export class BannersService implements OnModuleInit {
             buttonLink: '/dashboard',
             footerText: 'SMART MOBILITY • CONNECTED FUTURE',
             imageUrl: '/brand/askrev-full-logo.webp',
-            frequency: PopupFrequency.ONCE_PER_CAMPAIGN,
+            frequency: PopupFrequency.EVERY_VISIT,
             status: BannerStatus.PUBLISHED,
           },
         });
-        this.logger.log('Seeded initial ASKR EV Welcome Popup Campaign.');
+        this.logger.log('Seeded initial ASKR EV Welcome Popup Campaign (EVERY_VISIT).');
+      } else if (existingWelcome.frequency !== PopupFrequency.EVERY_VISIT) {
+        await this.prisma.popupCampaign.update({
+          where: { id: existingWelcome.id },
+          data: { frequency: PopupFrequency.EVERY_VISIT },
+        });
+        this.logger.log('Updated existing ASKR EV Welcome Popup Campaign frequency to EVERY_VISIT.');
       }
     } catch (err: any) {
       this.logger.warn(`Banner defaults check notice: ${err.message}`);
@@ -127,29 +161,65 @@ export class BannersService implements OnModuleInit {
     return 'ACTIVE';
   }
 
+  /**
+   * Computes human-readable operational status for a carousel slide
+   */
+  computeSlideStatus(slide: {
+    status: BannerStatus;
+    isEnabled: boolean;
+    startDate: Date | null;
+    endDate: Date | null;
+  }): 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'DISABLED' {
+    if (!slide.isEnabled || slide.status === BannerStatus.DISABLED) return 'DISABLED';
+    if (slide.status === BannerStatus.DRAFT) return 'DRAFT';
+    if (slide.status === BannerStatus.ARCHIVED) return 'DISABLED';
+
+    const now = new Date();
+    if (slide.startDate && slide.startDate > now) {
+      return 'SCHEDULED';
+    }
+    if (slide.endDate && slide.endDate < now) {
+      return 'EXPIRED';
+    }
+    return 'ACTIVE';
+  }
+
   // ===========================================================================
   // MEMBER-FACING DASHBOARD METHODS
   // ===========================================================================
 
   /**
    * Fetch active banners for authenticated member:
-   * 1. Active Dashboard Top Banner (if enabled)
+   * 1. Active Dashboard Top Banner & active slides (if enabled)
    * 2. Eligible Active Welcome Popup (respecting schedule, frequency, and dismissal)
    */
   async getActiveBanners(userId?: string) {
-    const topBanner = await this.prisma.dashboardTopBanner.findFirst({
-      where: { isEnabled: true },
-      orderBy: { updatedAt: 'desc' },
+    const now = new Date();
+
+    // Query published and enabled slides
+    const allPublishedSlides = await this.prisma.dashboardTopBanner.findMany({
+      where: {
+        isEnabled: true,
+        status: BannerStatus.PUBLISHED,
+      },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
     });
+
+    const activeSlides = allPublishedSlides.filter((slide) => {
+      if (slide.startDate && slide.startDate > now) return false;
+      if (slide.endDate && slide.endDate < now) return false;
+      return true;
+    });
+
+    const topBanner = activeSlides[0] || null;
 
     if (!userId) {
       return {
-        topBanner: topBanner || null,
+        topBanner,
+        slides: activeSlides,
         popupCampaign: null,
       };
     }
-
-    const now = new Date();
 
     // Query published campaigns
     const publishedCampaigns = await this.prisma.popupCampaign.findMany({
@@ -168,7 +238,8 @@ export class BannersService implements OnModuleInit {
 
     if (activeCampaigns.length === 0) {
       return {
-        topBanner: topBanner || null,
+        topBanner,
+        slides: activeSlides,
         popupCampaign: null,
       };
     }
@@ -218,7 +289,8 @@ export class BannersService implements OnModuleInit {
     }
 
     return {
-      topBanner: topBanner || null,
+      topBanner,
+      slides: activeSlides,
       popupCampaign: eligibleCampaign,
     };
   }
@@ -307,13 +379,17 @@ export class BannersService implements OnModuleInit {
         where: { id: existing.id },
         data: {
           title: dto.title !== undefined ? dto.title : existing.title,
+          subtitle: dto.subtitle !== undefined ? dto.subtitle : existing.subtitle,
           badgeText: dto.badgeText !== undefined ? dto.badgeText : existing.badgeText,
+          buttonText: dto.buttonText !== undefined ? dto.buttonText : existing.buttonText,
           desktopImageUrl: dto.desktopImageUrl || existing.desktopImageUrl,
           mobileImageUrl:
             dto.mobileImageUrl !== undefined ? dto.mobileImageUrl : existing.mobileImageUrl,
           linkUrl: dto.linkUrl !== undefined ? dto.linkUrl : existing.linkUrl,
           altText: dto.altText !== undefined ? dto.altText : existing.altText,
           isEnabled: dto.isEnabled !== undefined ? dto.isEnabled : existing.isEnabled,
+          autoplayInterval:
+            dto.autoplayInterval !== undefined ? dto.autoplayInterval : existing.autoplayInterval,
         },
       });
     }
@@ -321,14 +397,266 @@ export class BannersService implements OnModuleInit {
     return this.prisma.dashboardTopBanner.create({
       data: {
         title: dto.title,
+        subtitle: dto.subtitle,
         badgeText: dto.badgeText,
+        buttonText: dto.buttonText,
         desktopImageUrl: dto.desktopImageUrl,
         mobileImageUrl: dto.mobileImageUrl,
         linkUrl: dto.linkUrl,
         altText: dto.altText,
         isEnabled: dto.isEnabled ?? true,
+        autoplayInterval: dto.autoplayInterval ?? 5000,
       },
     });
+  }
+
+  // ===========================================================================
+  // CAROUSEL SLIDES MANAGEMENT (SUPER ADMIN)
+  // ===========================================================================
+
+  /**
+   * Get all carousel slides for Admin, ordered by displayOrder asc, createdAt asc
+   */
+  async getAdminSlides(): Promise<SlideWithComputedStatus[]> {
+    const slides = await this.prisma.dashboardTopBanner.findMany({
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return slides.map((s) => ({
+      ...s,
+      computedStatus: this.computeSlideStatus(s),
+    }));
+  }
+
+  /**
+   * Get single slide by ID
+   */
+  async getAdminSlideById(id: string): Promise<SlideWithComputedStatus> {
+    const slide = await this.prisma.dashboardTopBanner.findUnique({
+      where: { id },
+    });
+    if (!slide) {
+      throw new NotFoundException(`Slide with ID "${id}" was not found.`);
+    }
+    return {
+      ...slide,
+      computedStatus: this.computeSlideStatus(slide),
+    };
+  }
+
+  /**
+   * Create a new slide
+   */
+  async createSlide(dto: CreateSlideDto): Promise<SlideWithComputedStatus> {
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    if (dto.startDate) {
+      startDate = new Date(dto.startDate);
+      if (isNaN(startDate.getTime())) {
+        throw new BadRequestException('Invalid start date format.');
+      }
+    }
+
+    if (dto.endDate) {
+      endDate = new Date(dto.endDate);
+      if (isNaN(endDate.getTime())) {
+        throw new BadRequestException('Invalid end date format.');
+      }
+      if (startDate && endDate <= startDate) {
+        throw new BadRequestException('End date must be after start date.');
+      }
+    }
+
+    let displayOrder = dto.displayOrder;
+    if (displayOrder === undefined || displayOrder === null) {
+      const highest = await this.prisma.dashboardTopBanner.findFirst({
+        orderBy: { displayOrder: 'desc' },
+        select: { displayOrder: true },
+      });
+      displayOrder = (highest?.displayOrder ?? -1) + 1;
+    }
+
+    const slide = await this.prisma.dashboardTopBanner.create({
+      data: {
+        title: dto.title?.trim() || null,
+        subtitle: dto.subtitle?.trim() || null,
+        badgeText: dto.badgeText?.trim() || null,
+        buttonText: dto.buttonText?.trim() || null,
+        desktopImageUrl: dto.desktopImageUrl.trim(),
+        mobileImageUrl: dto.mobileImageUrl?.trim() || null,
+        linkUrl: dto.linkUrl?.trim() || null,
+        altText: dto.altText?.trim() || null,
+        displayOrder,
+        status: dto.status || BannerStatus.PUBLISHED,
+        isEnabled: dto.isEnabled ?? true,
+        startDate,
+        endDate,
+        autoplayInterval: dto.autoplayInterval ?? 5000,
+      },
+    });
+
+    return {
+      ...slide,
+      computedStatus: this.computeSlideStatus(slide),
+    };
+  }
+
+  /**
+   * Update an existing slide
+   */
+  async updateSlide(id: string, dto: UpdateSlideDto): Promise<SlideWithComputedStatus> {
+    const existing = await this.prisma.dashboardTopBanner.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Slide with ID "${id}" was not found.`);
+    }
+
+    let startDate: Date | null | undefined = undefined;
+    let endDate: Date | null | undefined = undefined;
+
+    if (dto.startDate !== undefined) {
+      if (dto.startDate === null || dto.startDate === '') {
+        startDate = null;
+      } else {
+        startDate = new Date(dto.startDate);
+        if (isNaN(startDate.getTime())) {
+          throw new BadRequestException('Invalid start date format.');
+        }
+      }
+    }
+
+    if (dto.endDate !== undefined) {
+      if (dto.endDate === null || dto.endDate === '') {
+        endDate = null;
+      } else {
+        endDate = new Date(dto.endDate);
+        if (isNaN(endDate.getTime())) {
+          throw new BadRequestException('Invalid end date format.');
+        }
+      }
+    }
+
+    const effectiveStart = startDate !== undefined ? startDate : existing.startDate;
+    const effectiveEnd = endDate !== undefined ? endDate : existing.endDate;
+
+    if (effectiveStart && effectiveEnd && effectiveEnd <= effectiveStart) {
+      throw new BadRequestException('End date must be after start date.');
+    }
+
+    const updated = await this.prisma.dashboardTopBanner.update({
+      where: { id },
+      data: {
+        title: dto.title !== undefined ? dto.title?.trim() || null : existing.title,
+        subtitle: dto.subtitle !== undefined ? dto.subtitle?.trim() || null : existing.subtitle,
+        badgeText: dto.badgeText !== undefined ? dto.badgeText?.trim() || null : existing.badgeText,
+        buttonText: dto.buttonText !== undefined ? dto.buttonText?.trim() || null : existing.buttonText,
+        desktopImageUrl: dto.desktopImageUrl !== undefined ? dto.desktopImageUrl.trim() : existing.desktopImageUrl,
+        mobileImageUrl: dto.mobileImageUrl !== undefined ? dto.mobileImageUrl?.trim() || null : existing.mobileImageUrl,
+        linkUrl: dto.linkUrl !== undefined ? dto.linkUrl?.trim() || null : existing.linkUrl,
+        altText: dto.altText !== undefined ? dto.altText?.trim() || null : existing.altText,
+        displayOrder: dto.displayOrder !== undefined ? dto.displayOrder : existing.displayOrder,
+        status: dto.status !== undefined ? dto.status : existing.status,
+        isEnabled: dto.isEnabled !== undefined ? dto.isEnabled : existing.isEnabled,
+        startDate: startDate !== undefined ? startDate : existing.startDate,
+        endDate: endDate !== undefined ? endDate : existing.endDate,
+        autoplayInterval: dto.autoplayInterval !== undefined ? dto.autoplayInterval : existing.autoplayInterval,
+      },
+    });
+
+    return {
+      ...updated,
+      computedStatus: this.computeSlideStatus(updated),
+    };
+  }
+
+  /**
+   * Delete a slide
+   */
+  async deleteSlide(id: string) {
+    const existing = await this.prisma.dashboardTopBanner.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Slide with ID "${id}" was not found.`);
+    }
+
+    await this.prisma.dashboardTopBanner.delete({
+      where: { id },
+    });
+
+    return { success: true, message: `Slide "${existing.title || id}" deleted successfully.` };
+  }
+
+  /**
+   * Publish a slide
+   */
+  async publishSlide(id: string): Promise<SlideWithComputedStatus> {
+    const existing = await this.prisma.dashboardTopBanner.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Slide with ID "${id}" was not found.`);
+    }
+
+    const updated = await this.prisma.dashboardTopBanner.update({
+      where: { id },
+      data: {
+        status: BannerStatus.PUBLISHED,
+        isEnabled: true,
+      },
+    });
+
+    return {
+      ...updated,
+      computedStatus: this.computeSlideStatus(updated),
+    };
+  }
+
+  /**
+   * Disable a slide
+   */
+  async disableSlide(id: string): Promise<SlideWithComputedStatus> {
+    const existing = await this.prisma.dashboardTopBanner.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Slide with ID "${id}" was not found.`);
+    }
+
+    const updated = await this.prisma.dashboardTopBanner.update({
+      where: { id },
+      data: {
+        status: BannerStatus.DISABLED,
+        isEnabled: false,
+      },
+    });
+
+    return {
+      ...updated,
+      computedStatus: this.computeSlideStatus(updated),
+    };
+  }
+
+  /**
+   * Reorder slides in bulk
+   */
+  async reorderSlides(slideIds: string[]): Promise<SlideWithComputedStatus[]> {
+    if (!slideIds || slideIds.length === 0) {
+      throw new BadRequestException('slideIds array is required.');
+    }
+
+    await this.prisma.$transaction(
+      slideIds.map((id, index) =>
+        this.prisma.dashboardTopBanner.update({
+          where: { id },
+          data: { displayOrder: index },
+        }),
+      ),
+    );
+
+    return this.getAdminSlides();
   }
 
   /**

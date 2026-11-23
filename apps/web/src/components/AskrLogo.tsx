@@ -18,13 +18,12 @@ export interface AskrLogoProps {
  * Official ASKR EV Branding Component
  *
  * Utilizes the authoritative official assets:
- * - Full horizontal logo: /brand/askrev-full-logo.webp (2048x684, transparent)
+ * - Full horizontal glossy eco logo: /brand/askrev-glossy-eco-logo.webp (2123x673, transparent)
  * - Square icon: /brand/askrev-icon.webp (1254x1254, transparent)
  *
  * Enforces native aspect ratios (never stretched, cropped, or distorted).
- * In accordance with Requirement 17:
  * The full horizontal logo is rendered on BOTH desktop and mobile headers.
- * On mobile, it scales cleanly between 150px–180px wide with object-contain.
+ * On mobile, it scales cleanly between 160px–240px wide with object-contain.
  * The square icon is reserved strictly for favicon, app icons, and explicit variant="icon".
  */
 export default function AskrLogo({
@@ -40,26 +39,26 @@ export default function AskrLogo({
   // Height configurations per size preset
   const sizeConfig = {
     sm: {
-      fullHeightClass: 'h-6 sm:h-7 md:h-8',
-      fullWidthClass: 'max-w-[140px] xs:max-w-[160px] sm:max-w-[180px] md:max-w-[210px]',
+      fullHeightClass: 'h-7 sm:h-8 md:h-9',
+      fullWidthClass: 'max-w-[150px] xs:max-w-[170px] sm:max-w-[190px] md:max-w-[220px]',
       iconSizeClass: 'h-7 w-7',
       containerClass: 'gap-2',
     },
     md: {
-      fullHeightClass: 'h-7 sm:h-8 md:h-9',
-      fullWidthClass: 'max-w-[155px] xs:max-w-[175px] sm:max-w-[200px] md:max-w-[240px]',
+      fullHeightClass: 'h-8 sm:h-9 md:h-10',
+      fullWidthClass: 'max-w-[180px] xs:max-w-[200px] sm:max-w-[230px] md:max-w-[260px]',
       iconSizeClass: 'h-8 w-8 sm:h-9 sm:w-9',
       containerClass: 'gap-2.5',
     },
     lg: {
-      fullHeightClass: 'h-8 sm:h-10 md:h-11',
-      fullWidthClass: 'max-w-[180px] xs:max-w-[210px] sm:max-w-[240px] md:max-w-[280px]',
+      fullHeightClass: 'h-10 sm:h-11 md:h-12',
+      fullWidthClass: 'max-w-[210px] xs:max-w-[240px] sm:max-w-[270px] md:max-w-[320px]',
       iconSizeClass: 'h-9 w-9 sm:h-10 sm:w-10',
       containerClass: 'gap-3',
     },
     xl: {
-      fullHeightClass: 'h-10 sm:h-12 md:h-14',
-      fullWidthClass: 'max-w-[220px] xs:max-w-[260px] sm:max-w-[300px] md:max-w-[360px]',
+      fullHeightClass: 'h-12 sm:h-14 md:h-16',
+      fullWidthClass: 'max-w-[260px] xs:max-w-[300px] sm:max-w-[350px] md:max-w-[420px]',
       iconSizeClass: 'h-12 w-12 sm:h-14 sm:w-14',
       containerClass: 'gap-3.5',
     },
@@ -67,18 +66,18 @@ export default function AskrLogo({
 
   const fullLogoElement = (
     <picture className="inline-flex items-center shrink-0">
-      <source srcSet="/brand/askrev-full-logo.webp" type="image/webp" />
-      <source srcSet="/brand/askrev-full-logo.png" type="image/png" />
+      <source srcSet="/brand/askrev-glossy-eco-logo.webp" type="image/webp" />
+      <source srcSet="/brand/askrev-glossy-eco-logo.png" type="image/png" />
       <img
-        src="/brand/askrev-full-logo.webp"
+        src="/brand/askrev-glossy-eco-logo.webp"
         alt={alt}
-        width={2048}
-        height={684}
+        width={2123}
+        height={673}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
         className={`${imgClassName || `${sizeConfig.fullHeightClass} ${sizeConfig.fullWidthClass}`} w-auto object-contain select-none transition-opacity duration-200`}
         style={{
-          aspectRatio: '2048 / 684',
+          aspectRatio: '2123 / 673',
         }}
       />
     </picture>

@@ -74,6 +74,16 @@ export function setAuthSession(
   localStorage.removeItem('askrev_access_token');
   localStorage.removeItem('askrev_refresh_token');
   sessionStorage.removeItem('askrev_admin_access_token');
+
+  // Clear any prior session popup dismissals on fresh login
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('askrev_popup_session_dismissed_')) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {}
 }
 
 export function clearAuthSession() {
@@ -86,6 +96,16 @@ export function clearAuthSession() {
   sessionStorage.removeItem('askrev_admin_preview');
   sessionStorage.removeItem('askrev_csrf_token');
   inMemoryCsrfToken = null;
+
+  // Clear any temporary session popup dismissal flags on logout
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('askrev_popup_session_dismissed_')) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {}
 }
 
 export const clearAuth = clearAuthSession;
@@ -698,9 +718,10 @@ export async function restoreProductApi(id: string): Promise<{ success: boolean;
 
 export async function fetchActiveBanners(): Promise<{
   topBanner: any | null;
+  slides: any[];
   popupCampaign: any | null;
 }> {
-  return fetchApi<{ topBanner: any | null; popupCampaign: any | null }>('/banners/active');
+  return fetchApi<{ topBanner: any | null; slides: any[]; popupCampaign: any | null }>('/banners/active');
 }
 
 export async function dismissPopupCampaign(campaignId: string): Promise<any> {
@@ -786,6 +807,53 @@ export async function adminDisablePopupCampaign(id: string): Promise<any> {
 export async function adminDeletePopupCampaign(id: string): Promise<any> {
   return fetchApi<any>(`/admin/banners/popups/${id}`, {
     method: 'DELETE',
+  });
+}
+
+export async function adminFetchSlides(): Promise<any[]> {
+  return fetchApi<any[]>('/admin/banners/slides');
+}
+
+export async function adminFetchSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/slides/${id}`);
+}
+
+export async function adminCreateSlide(dto: any): Promise<any> {
+  return fetchApi<any>('/admin/banners/slides', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function adminUpdateSlide(id: string, dto: any): Promise<any> {
+  return fetchApi<any>(`/admin/banners/slides/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function adminPublishSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/slides/${id}/publish`, {
+    method: 'POST',
+  });
+}
+
+export async function adminDisableSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/slides/${id}/disable`, {
+    method: 'POST',
+  });
+}
+
+export async function adminDeleteSlide(id: string): Promise<any> {
+  return fetchApi<any>(`/admin/banners/slides/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function adminReorderSlides(slideIds: string[]): Promise<any[]> {
+  return fetchApi<any[]>('/admin/banners/slides/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ slideIds }),
   });
 }
 

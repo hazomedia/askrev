@@ -9,11 +9,15 @@ describe('BannersService', () => {
 
   beforeEach(() => {
     prismaMock = {
+      $transaction: vi.fn((ops) => Promise.all(ops)),
       dashboardTopBanner: {
         count: vi.fn(),
         create: vi.fn(),
         findFirst: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn(),
         update: vi.fn(),
+        delete: vi.fn(),
       },
       popupCampaign: {
         findFirst: vi.fn(),
@@ -47,20 +51,34 @@ describe('BannersService', () => {
           data: expect.objectContaining({
             name: 'ASKR EV Welcome',
             heading: 'WELCOME TO ASKR EV',
+            frequency: PopupFrequency.EVERY_VISIT,
             status: BannerStatus.PUBLISHED,
           }),
         })
       );
     });
 
-    it('should be idempotent and not recreate if already existing', async () => {
+    it('should be idempotent and update existing welcome campaign to EVERY_VISIT if needed', async () => {
       prismaMock.dashboardTopBanner.count.mockResolvedValue(1);
-      prismaMock.popupCampaign.findFirst.mockResolvedValue({ id: 'existing-welcome' });
+      prismaMock.popupCampaign.findFirst.mockResolvedValue({
+        id: 'existing-welcome',
+        frequency: PopupFrequency.ONCE_PER_CAMPAIGN,
+      });
+      prismaMock.popupCampaign.update.mockResolvedValue({
+        id: 'existing-welcome',
+        frequency: PopupFrequency.EVERY_VISIT,
+      });
 
       await service.seedDefaults();
 
       expect(prismaMock.dashboardTopBanner.create).not.toHaveBeenCalled();
       expect(prismaMock.popupCampaign.create).not.toHaveBeenCalled();
+      expect(prismaMock.popupCampaign.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'existing-welcome' },
+          data: { frequency: PopupFrequency.EVERY_VISIT },
+        })
+      );
     });
   });
 
@@ -117,11 +135,17 @@ describe('BannersService', () => {
 
   describe('getActiveBanners', () => {
     it('should return top banner and active popup campaign for eligible user', async () => {
-      prismaMock.dashboardTopBanner.findFirst.mockResolvedValue({
-        id: 'top-1',
-        desktopImageUrl: '/test.webp',
-        isEnabled: true,
-      });
+      prismaMock.dashboardTopBanner.findMany.mockResolvedValue([
+        {
+          id: 'top-1',
+          desktopImageUrl: '/test.webp',
+          isEnabled: true,
+          status: BannerStatus.PUBLISHED,
+          startDate: null,
+          endDate: null,
+          displayOrder: 0,
+        },
+      ]);
 
       prismaMock.popupCampaign.findMany.mockResolvedValue([
         {
@@ -258,6 +282,53 @@ describe('BannersService', () => {
       expect(result.name).toBe('Festive Launch');
       expect(result.heading).toBe('FESTIVE OFFERS');
       expect(result.computedStatus).toBe('DRAFT');
+    });
+  });
+
+  describe('Carousel Slides Management', () => {
+    it('should create a slide with computed status and default displayOrder', async () => {
+      prismaMock.dashboardTopBanner.findFirst.mockResolvedValue({ displayOrder: 2 });
+      prismaMock.dashboardTopBanner.create.mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: 'slide-new', ...data, createdAt: new Date(), updatedAt: new Date() })
+      );
+
+      const result = await service.createSlide({
+        title: 'New EV Model',
+        desktopImageUrl: 'https://cdn.example.com/slide.webp',
+      });
+
+      expect(result.id).toBe('slide-new');
+      expect(result.displayOrder).toBe(3);
+      expect(result.computedStatus).toBe('ACTIVE');
+      expect(prismaMock.dashboardTopBanner.create).toHaveBeenCalled();
+    });
+
+    it('should reorder slides in a database transaction', async () => {
+      prismaMock.dashboardTopBanner.update.mockResolvedValue({ id: 's1' });
+      prismaMock.dashboardTopBanner.findMany.mockResolvedValue([
+        {
+          id: 's2',
+          displayOrder: 0,
+          status: BannerStatus.PUBLISHED,
+          isEnabled: true,
+          startDate: null,
+          endDate: null,
+        },
+        {
+          id: 's1',
+          displayOrder: 1,
+          status: BannerStatus.PUBLISHED,
+          isEnabled: true,
+          startDate: null,
+          endDate: null,
+        },
+      ]);
+
+      const result = await service.reorderSlides(['s2', 's1']);
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('s2');
+      expect(result[1].id).toBe('s1');
     });
   });
 });
