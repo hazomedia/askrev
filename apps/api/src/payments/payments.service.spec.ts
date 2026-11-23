@@ -54,7 +54,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
         findUnique: vi.fn(),
       },
       paymentOrder: {
-        create: vi.fn().mockResolvedValue({ id: 'po-1', amountPaise: 300000n, currency: 'INR' }),
+        create: vi.fn().mockResolvedValue({ id: 'po-1', amountPaise: 300000n, currency: 'INR', status: 'CREATED' }),
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         update: vi.fn().mockResolvedValue({ id: 'po-1' }),
@@ -69,6 +69,8 @@ describe('Payment Settings & Gateway Integration Suite', () => {
         create: vi.fn().mockResolvedValue({ id: 'mr-1', status: 'PENDING' }),
         update: vi.fn().mockResolvedValue({ id: 'mr-1', status: 'PENDING' }),
       },
+      $transaction: vi.fn().mockImplementation((cb) => (typeof cb === 'function' ? cb(mockPrisma) : Promise.all(cb))),
+      $queryRaw: vi.fn().mockResolvedValue([{ acquired: true }]),
     };
 
     paymentsService = new PaymentsService(mockPrisma, encryptionService, registry);
@@ -308,6 +310,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       const orderPayload = JSON.stringify({
         event: 'order.processed',
         order_id: 'plural_ord_verify_test_01',
+        payment_id: 'plural_pay_verify_test_01',
         merchant_order_reference: 'RCPT-PRO-001',
         order_amount: { value: 300000, currency: 'INR' },
         status: 'PROCESSED',
@@ -318,7 +321,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       const signedContent = `${webhookId}.${webhookTimestamp}.${orderPayload}`;
       const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
 
-      mockPrisma.paymentOrder.findFirst.mockResolvedValue({
+      const mockOrder = {
         id: 'po-sep-01',
         providerOrderId: 'plural_ord_verify_test_01',
         merchantReference: 'RCPT-PRO-001',
@@ -326,7 +329,9 @@ describe('Payment Settings & Gateway Integration Suite', () => {
         currency: 'INR',
         status: 'PROCESSING',
         membershipRequestId: 'mr-sep-01',
-      });
+      };
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue(mockOrder);
+      mockPrisma.paymentOrder.findUnique.mockResolvedValue(mockOrder);
 
       const res = await paymentsService.handleGatewayWebhook(
         'PINELABS',
@@ -383,6 +388,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       const orderPayload = JSON.stringify({
         event: 'order.processed',
         order_id: 'plural_ord_mismatch_01',
+        payment_id: 'plural_pay_mismatch_01',
         merchant_order_reference: 'RCPT-PRO-002',
         order_amount: { value: 150000, currency: 'INR' },
         status: 'PROCESSED',
@@ -393,14 +399,16 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       const signedContent = `${webhookId}.${webhookTimestamp}.${orderPayload}`;
       const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
 
-      mockPrisma.paymentOrder.findFirst.mockResolvedValue({
+      const mockMismatchOrder = {
         id: 'po-mismatch-01',
         providerOrderId: 'plural_ord_mismatch_01',
         merchantReference: 'RCPT-PRO-002',
         amountPaise: 300000n, // Expected ₹3,000
         currency: 'INR',
         status: 'PROCESSING',
-      });
+      };
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue(mockMismatchOrder);
+      mockPrisma.paymentOrder.findUnique.mockResolvedValue(mockMismatchOrder);
 
       const res = await paymentsService.handleGatewayWebhook(
         'PINELABS',
@@ -414,7 +422,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       );
 
       expect(res.status).toBe('FAILED');
-      expect(res.error).toBe('Amount mismatch');
+      expect(res.error).toContain('Amount mismatch');
 
       // Verify order was marked FAILED
       expect(mockPrisma.paymentOrder.update).toHaveBeenCalledWith(
@@ -423,6 +431,193 @@ describe('Payment Settings & Gateway Integration Suite', () => {
           data: expect.objectContaining({
             status: 'FAILED',
             failureReason: expect.stringContaining('Amount mismatch'),
+          }),
+        })
+      );
+    });
+
+    it('should reject payment verification when mandatory verification fields are missing without assuming defaults', async () => {
+      const webhookSecret = 'test_webhook_sec_missing';
+      const encryptedSecret = encryptionService.encrypt(webhookSecret);
+
+      mockPrisma.paymentGatewayConfig.findUnique.mockResolvedValue({
+        id: 'cfg-pine',
+        provider: 'PINELABS',
+        encryptedWebhookKey: encryptedSecret,
+        webhookVerifiedAt: new Date(),
+      });
+      mockPrisma.processedWebhookEvent.findUnique.mockResolvedValue(null);
+
+      // Webhook missing currency and payment_id
+      const badPayload = JSON.stringify({
+        event: 'order.processed',
+        order_id: 'plural_ord_missing_01',
+        merchant_order_reference: 'RCPT-PRO-003',
+        status: 'PROCESSED',
+      });
+
+      const webhookId = 'msg_test_missing_01';
+      const webhookTimestamp = new Date().toISOString();
+      const signedContent = `${webhookId}.${webhookTimestamp}.${badPayload}`;
+      const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
+
+      const mockMissingOrder = {
+        id: 'po-missing-01',
+        providerOrderId: 'plural_ord_missing_01',
+        merchantReference: 'RCPT-PRO-003',
+        amountPaise: 300000n,
+        currency: 'INR',
+        status: 'PROCESSING',
+      };
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue(mockMissingOrder);
+      mockPrisma.paymentOrder.findUnique.mockResolvedValue(mockMissingOrder);
+
+      const res = await paymentsService.handleGatewayWebhook(
+        'PINELABS',
+        badPayload,
+        validSig,
+        {
+          'webhook-id': webhookId,
+          'webhook-timestamp': webhookTimestamp,
+        },
+        '127.0.0.1'
+      );
+
+      expect(res.status).toBe('FAILED');
+      expect(res.error).toContain('missing mandatory provider verification fields');
+    });
+
+    it('should preserve terminal VERIFIED state and ignore delayed FAILED events', async () => {
+      const webhookSecret = 'test_webhook_sec_terminal';
+      const encryptedSecret = encryptionService.encrypt(webhookSecret);
+
+      mockPrisma.paymentGatewayConfig.findUnique.mockResolvedValue({
+        id: 'cfg-pine',
+        provider: 'PINELABS',
+        encryptedWebhookKey: encryptedSecret,
+        webhookVerifiedAt: new Date(),
+      });
+      mockPrisma.processedWebhookEvent.findUnique.mockResolvedValue(null);
+
+      // Out-of-order delayed failure webhook for an already VERIFIED order
+      const failedPayload = JSON.stringify({
+        event: 'order.failed',
+        order_id: 'plural_ord_term_01',
+        payment_id: 'plural_pay_failed_01',
+        merchant_order_reference: 'RCPT-PRO-TERM-01',
+        status: 'FAILED',
+      });
+
+      const webhookId = 'msg_test_term_01';
+      const webhookTimestamp = new Date().toISOString();
+      const signedContent = `${webhookId}.${webhookTimestamp}.${failedPayload}`;
+      const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
+
+      const alreadyVerifiedOrder = {
+        id: 'po-term-01',
+        providerOrderId: 'plural_ord_term_01',
+        merchantReference: 'RCPT-PRO-TERM-01',
+        amountPaise: 300000n,
+        currency: 'INR',
+        status: 'VERIFIED',
+      };
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue(alreadyVerifiedOrder);
+      mockPrisma.paymentOrder.findUnique.mockResolvedValue(alreadyVerifiedOrder);
+
+      const res = await paymentsService.handleGatewayWebhook(
+        'PINELABS',
+        failedPayload,
+        validSig,
+        {
+          'webhook-id': webhookId,
+          'webhook-timestamp': webhookTimestamp,
+        },
+        '127.0.0.1'
+      );
+
+      expect(res.status).toBe('VERIFIED');
+      expect((res as any).ignored).toBe(true);
+      expect((res as any).reason).toContain('Terminal state VERIFIED preserved');
+    });
+
+    it('should preserve terminal REFUNDED state and ignore conflicting events', async () => {
+      const webhookSecret = 'test_webhook_sec_refund';
+      const encryptedSecret = encryptionService.encrypt(webhookSecret);
+
+      mockPrisma.paymentGatewayConfig.findUnique.mockResolvedValue({
+        id: 'cfg-pine',
+        provider: 'PINELABS',
+        encryptedWebhookKey: encryptedSecret,
+        webhookVerifiedAt: new Date(),
+      });
+      mockPrisma.processedWebhookEvent.findUnique.mockResolvedValue(null);
+
+      const delayedPayload = JSON.stringify({
+        event: 'order.processed',
+        order_id: 'plural_ord_refund_01',
+        payment_id: 'plural_pay_refund_01',
+        merchant_order_reference: 'RCPT-PRO-REFUND-01',
+        order_amount: { value: 300000, currency: 'INR' },
+        status: 'PROCESSED',
+      });
+
+      const webhookId = 'msg_test_refund_01';
+      const webhookTimestamp = new Date().toISOString();
+      const signedContent = `${webhookId}.${webhookTimestamp}.${delayedPayload}`;
+      const validSig = crypto.createHmac('sha256', webhookSecret).update(signedContent).digest('base64');
+
+      const alreadyRefundedOrder = {
+        id: 'po-refund-01',
+        providerOrderId: 'plural_ord_refund_01',
+        merchantReference: 'RCPT-PRO-REFUND-01',
+        amountPaise: 300000n,
+        currency: 'INR',
+        status: 'REFUNDED',
+      };
+      mockPrisma.paymentOrder.findFirst.mockResolvedValue(alreadyRefundedOrder);
+      mockPrisma.paymentOrder.findUnique.mockResolvedValue(alreadyRefundedOrder);
+
+      const res = await paymentsService.handleGatewayWebhook(
+        'PINELABS',
+        delayedPayload,
+        validSig,
+        {
+          'webhook-id': webhookId,
+          'webhook-timestamp': webhookTimestamp,
+        },
+        '127.0.0.1'
+      );
+
+      expect(res.status).toBe('REFUNDED');
+      expect((res as any).ignored).toBe(true);
+      expect((res as any).reason).toContain('Terminal state REFUNDED is immutable');
+    });
+
+    it('should execute bounded reconciliation poller and mark max attempts exceeded as FAILED', async () => {
+      // Order with 5 previous attempts
+      const exhaustedOrder = {
+        id: 'po-exhausted-01',
+        provider: 'PINELABS',
+        providerOrderId: 'plural_ord_ex_01',
+        amountPaise: 300000n,
+        currency: 'INR',
+        status: 'PROCESSING',
+        attempts: 5,
+        createdAt: new Date(Date.now() - 60000),
+      };
+
+      mockPrisma.paymentOrder.findMany.mockResolvedValue([exhaustedOrder]);
+
+      const res = await paymentsService.reconcilePendingPaymentOrders('TEST_POLLER');
+
+      expect(res.acquired).toBe(true);
+      expect(res.failedCount).toBe(1);
+      expect(mockPrisma.paymentOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'po-exhausted-01' },
+          data: expect.objectContaining({
+            status: 'FAILED',
+            failureReason: expect.stringContaining('exceeded maximum 5 retry attempts'),
           }),
         })
       );

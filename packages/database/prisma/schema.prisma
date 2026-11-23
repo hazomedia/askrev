@@ -795,6 +795,8 @@ model PaymentOrder {
   failedAt            DateTime?
   failureReason       String?
   membershipRequestId String?
+  attempts            Int                @default(0)
+  nextRetryAt         DateTime?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -803,6 +805,7 @@ model PaymentOrder {
   @@index([status])
   @@index([providerOrderId])
   @@index([merchantReference])
+  @@index([status, nextRetryAt])
 }
 
 model ProcessedWebhookEvent {

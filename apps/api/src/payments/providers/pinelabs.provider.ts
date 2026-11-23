@@ -274,7 +274,7 @@ export class PineLabsGatewayProvider implements PaymentGatewayProvider {
         payload.order_amount?.currency ||
         payload.data?.order_amount?.currency ||
         payload.currency ||
-        'INR';
+        undefined;
 
       const rawStatus = String(
         payload.status || payload.order_status || payload.data?.status || payload.payment_status || ''
@@ -360,7 +360,7 @@ export class PineLabsGatewayProvider implements PaymentGatewayProvider {
       status,
       rawStatus,
       amountPaise,
-      currency: orderData.order_amount?.currency || 'INR',
+      currency: orderData.order_amount?.currency || orderData.currency || undefined,
       paymentId: orderData.payment_id || orderData.payments?.[0]?.payment_id,
       details: orderData,
     };
