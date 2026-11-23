@@ -118,13 +118,15 @@ export class PackagesService {
       where: { configKey: 'DEFAULT_PAYMENT_CONFIG' },
     });
 
-    const isConfigured = Boolean(config && config.isVerified && config.merchantUpiVpa);
+    const isConfigured = Boolean(config && config.isVerified && config.merchantUpiVpa && config.upiEnabled !== false);
 
     return {
       isConfigured,
+      enabled: isConfigured,
       merchantUpiVpa: isConfigured ? config!.merchantUpiVpa : null,
       merchantName: config?.merchantName || 'ASKR EV Mobility',
       isVerified: Boolean(config?.isVerified),
+      manualReviewRequired: config?.manualReviewRequired ?? true,
       pricing: {
         BASIC_ACTIVATION: 3000,
         FULL_ACTIVATION: 33000,

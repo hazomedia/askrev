@@ -82,9 +82,13 @@ export class PaymentsService implements OnModuleDestroy {
       .filter((g) => g.isFunctional) // Only expose functional gateways to users for live checkout
       .sort((a, b) => (providerPriority[a.provider] || 99) - (providerPriority[b.provider] || 99));
 
+    const isUpiActive = Boolean(upiConfig?.upiEnabled && upiConfig?.isVerified && upiConfig?.merchantUpiVpa);
+
     return {
       upi: {
-        enabled: Boolean(upiConfig?.upiEnabled && upiConfig?.isVerified && upiConfig?.merchantUpiVpa),
+        enabled: isUpiActive,
+        isEnabled: isUpiActive,
+        isConfigured: isUpiActive,
         merchantUpiVpa: upiConfig?.isVerified ? upiConfig.merchantUpiVpa : null,
         merchantName: upiConfig?.merchantName || 'ASKR EV Mobility',
         isVerified: Boolean(upiConfig?.isVerified),

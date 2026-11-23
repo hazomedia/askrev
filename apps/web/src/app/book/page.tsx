@@ -467,7 +467,7 @@ function BookingFlowContent() {
                         </button>
                         <div className="flex items-center justify-center gap-2 text-[11px] text-[#AAB7C8]">
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Simulation Mode • Non-Payment Reservation • Priority Dispatch Queue</span>
+                          <span>Official Showroom Reservation • Non-Payment Pre-Booking • Priority Dispatch Queue</span>
                         </div>
                       </div>
                     </form>
