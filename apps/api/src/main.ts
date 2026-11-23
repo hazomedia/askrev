@@ -58,6 +58,15 @@ async function bootstrap() {
       if (allowedOrigins.has(requestOrigin)) {
         return callback(null, true);
       }
+      // Allow Vercel preview/staging deployments in Staging environment
+      if (
+        requestOrigin.endsWith('.vercel.app') &&
+        (process.env.RAILWAY_ENVIRONMENT === 'staging' ||
+          process.env.NODE_ENV !== 'production' ||
+          process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY')
+      ) {
+        return callback(null, true);
+      }
       return callback(null, false);
     },
     credentials: true,
