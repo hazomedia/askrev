@@ -1359,139 +1359,7 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* =========================================================================
-                    DESKTOP & MOBILE SPONSOR REFERRAL LINKS (REQUIREMENT 1)
-                    Left & Right referral links with Copy, WhatsApp and Native Share
-                    ========================================================================= */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Share2 className="w-4 h-4 text-[#165DAD]" />
-                        <h3 className="text-sm font-bold text-[#253247]">Your Sponsor Referral Links</h3>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Share your direct referral link with new members to place them automatically in your Left or Right binary team.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <span className="text-xs text-slate-500 font-medium">Sponsor ID:</span>
-                      <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-blue-50 text-[#165DAD] border border-blue-200">
-                        {user.memberId}
-                      </span>
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Left Team Card */}
-                    <div className="p-4 rounded-xl bg-slate-50 border border-blue-200/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#165DAD]" />
-                          <span className="text-xs font-bold text-[#0C2348] uppercase tracking-wide">LEFT Team Referral Link</span>
-                        </div>
-                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                          Left Subtree
-                        </span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 select-all truncate">
-                        {getReferralLink('LEFT')}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleCopyLink('LEFT')}
-                          className="flex-1 py-2 px-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                        >
-                          {copiedLeft ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-emerald-700">Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Copy Link</span>
-                            </>
-                          )}
-                        </button>
-                        <a
-                          href={getWhatsAppShareUrl('LEFT')}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                          title="Share via WhatsApp"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">WhatsApp</span>
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => handleShareLink('LEFT')}
-                          className="py-2 px-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#165DAD] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-blue-200 shadow-2xs"
-                          title="Share"
-                        >
-                          <Share2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Share</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Right Team Card */}
-                    <div className="p-4 rounded-xl bg-slate-50 border border-emerald-200/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#15803D]" />
-                          <span className="text-xs font-bold text-[#0C2348] uppercase tracking-wide">RIGHT Team Referral Link</span>
-                        </div>
-                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                          Right Subtree
-                        </span>
-                      </div>
-                      <div className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 select-all truncate">
-                        {getReferralLink('RIGHT')}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleCopyLink('RIGHT')}
-                          className="flex-1 py-2 px-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                        >
-                          {copiedRight ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-emerald-700">Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Copy Link</span>
-                            </>
-                          )}
-                        </button>
-                        <a
-                          href={getWhatsAppShareUrl('RIGHT')}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="py-2 px-3 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                          title="Share via WhatsApp"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">WhatsApp</span>
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => handleShareLink('RIGHT')}
-                          className="py-2 px-3 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#15803D] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-emerald-200 shadow-2xs"
-                          title="Share"
-                        >
-                          <Share2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Share</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
                 {/* =========================================================================
                     SECTION 1 & 6 — PREMIUM GRADIENT EARNINGS CARDS (5 COORDINATED CARDS)
@@ -1644,10 +1512,10 @@ function DashboardContent() {
                         {/* 1. EV Legacy Qualification Dynamic Card */}
                         <div className="bg-white rounded-2xl border-2 border-indigo-100 p-5 shadow-xs flex flex-col justify-between">
                           <div>
-                            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-indigo-900">
-                              <span>EV Legacy Eligibility</span>
+                            <div className="flex items-center justify-between gap-1 text-xs font-bold uppercase tracking-wider text-indigo-900">
+                              <span className="truncate">EV Legacy Eligibility</span>
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shrink-0">
-                                {Math.min(activeDirectsCount, 3)} / 3 Active
+                                {Math.min(activeDirectsCount, 3)}/3 ACTIVE
                               </span>
                             </div>
                             <div className="mt-2.5">
@@ -1691,7 +1559,7 @@ function DashboardContent() {
                           </div>
                         </div>
 
-                        {/* 3. Direct Package Counts (Requirement 5) */}
+                        {/* 3. Direct Packages (Requirement 5) */}
                         <div className="bg-white rounded-2xl border-2 border-cyan-100 p-5 shadow-xs flex flex-col justify-between">
                           <div>
                             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-cyan-900">
@@ -1732,9 +1600,15 @@ function DashboardContent() {
                               </div>
                             </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                            <span>Matched: <strong>{binaryTree?.node?.totalMatchesConsumed ?? 0}</strong> pairs</span>
-                            <span className="font-semibold text-amber-700">Cap: {binaryTree?.node?.todayMatchesSettled ?? 0} / 15</span>
+                          <div className="mt-3 pt-2 border-t border-slate-100 space-y-1">
+                            <div className="text-[11px] text-slate-500 flex items-center justify-between">
+                              <span>Matched: <strong>{binaryTree?.node?.totalMatchesConsumed ?? 0}</strong> pairs</span>
+                              <span className="font-semibold text-amber-700">Cap: {binaryTree?.node?.todayMatchesSettled ?? 0} / 15 Pairs</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                              <span>Carry: {binaryTree?.node?.carryLeftUnits ?? 0} Left</span>
+                              <span>{binaryTree?.node?.carryRightUnits ?? 0} Right</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1776,20 +1650,31 @@ function DashboardContent() {
 
                 {/* =========================================================================
                     TASK 7 & REQUIREMENT 8 — RECENT DIRECT REFERRALS TABLE
-                    Includes Member ID, Name, Membership Status, Joining Date in IST & My Team CTA
+                    Includes Member ID, Name, Membership Status, Joining Date in IST, Refer & Share + My Team CTA
                     ========================================================================= */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-bold text-[#253247]">Recent Direct Referrals</h3>
                     </div>
-                    <button
-                      onClick={() => setActiveTab('team')}
-                      className="text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1 min-h-[36px]"
-                    >
-                      <span>My Team</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowShareModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#165DAD] border border-blue-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Refer & Share</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('team')}
+                        className="text-xs font-semibold text-[#165DAD] hover:underline flex items-center gap-1 px-1 py-1.5 cursor-pointer"
+                      >
+                        <span>My Team</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -1943,7 +1828,21 @@ function DashboardContent() {
                   </div>
                 )}
 
-                {user.currentPackage === 'FREE' ? (
+                {user.isFullQualified || user.currentPackage === 'FULL' ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 sm:p-8 text-center space-y-3 shadow-2xs">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mb-1">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-[#0C2348]">Fully Qualified EV ULTRA Member</h3>
+                    <p className="text-xs text-slate-600 max-w-lg mx-auto leading-relaxed">
+                      Your account is fully activated with max tier privileges, ₹30,000 vehicle shopping voucher credit, and 1:1 binary matching rewards. No duplicate or additional membership booking is required.
+                    </p>
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-emerald-300 text-emerald-800 text-xs font-bold shadow-2xs">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Full EV ULTRA Plan Active</span>
+                    </div>
+                  </div>
+                ) : user.currentPackage === 'FREE' ? (
                   <div className="space-y-4">
                     <div>
                       <h3 className="text-base font-bold text-[#253247]">
@@ -2605,104 +2504,74 @@ function DashboardContent() {
                   {loadingBinarySubtree ? (
                     <div className="py-12 text-center text-xs text-slate-500">Loading binary subtree...</div>
                   ) : inspectedBinaryTree?.node ? (
-                    <div className="overflow-x-auto pb-4">
-                      <div className="min-w-[680px] flex flex-col items-center">
-                        {/* Parent Node (Top of Tree) */}
-                        <div className="w-64 bg-slate-50 border-2 border-[#165DAD] rounded-xl p-3.5 shadow-sm text-center relative z-10">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-[#165DAD] text-white uppercase">
-                              {inspectedBinaryTree.node.user.memberId === user.memberId ? 'You (Root)' : 'Subtree Root'}
-                            </span>
-                            <span className="px-2 py-0.5 rounded text-[9px] font-semibold bg-white text-[#253247] border border-slate-200">
-                              {getTierDisplayName(inspectedBinaryTree.node.user.currentPackage)}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-semibold ${inspectedBinaryTree.node.user.isFullQualified
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
-                              {inspectedBinaryTree.node.user.isFullQualified ? 'Active' : 'Pending'}
-                            </span>
-                          </div>
-                          <div className="font-bold text-xs text-[#253247] mt-1.5 truncate">
+                    <div>
+                      {/* =========================================================================
+                          MOBILE GRAPHICAL BINARY TREE (MOBILE FIRST)
+                          Shows ONLY Member Name & Member ID, parent-child lines, clickable nodes
+                          ========================================================================= */}
+                      <div className="md:hidden flex flex-col items-center w-full px-1 space-y-3">
+                        {/* Mobile Root Node */}
+                        <button
+                          type="button"
+                          onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.node.user.memberId, inspectedBinaryTree.node.user.fullName)}
+                          className="w-full max-w-[280px] bg-slate-50 border-2 border-[#165DAD] rounded-xl p-3 shadow-xs text-center cursor-pointer hover:bg-blue-50/40 transition-colors"
+                        >
+                          <div className="font-bold text-xs text-[#253247] truncate">
                             {inspectedBinaryTree.node.user.fullName}
                           </div>
-                          <div className="text-[11px] font-mono font-bold text-[#165DAD]">
+                          <div className="text-[11px] font-mono font-bold text-[#165DAD] mt-0.5">
                             {inspectedBinaryTree.node.user.memberId}
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-200 grid grid-cols-2 gap-1 text-[10px]">
-                            <div className="text-blue-700 font-medium">
-                              L: {inspectedBinaryTree.node.leftCount} ({inspectedBinaryTree.node.carryLeftUnits}u carry)
-                            </div>
-                            <div className="text-emerald-700 font-medium">
-                              R: {inspectedBinaryTree.node.rightCount} ({inspectedBinaryTree.node.carryRightUnits}u carry)
-                            </div>
-                          </div>
+                        </button>
+
+                        {/* Mobile Connecting Lines */}
+                        <div className="w-full max-w-[280px] h-6 relative flex justify-center">
+                          <div className="w-0.5 h-3 bg-slate-300" />
+                          <div className="absolute top-3 left-[25%] right-[25%] h-0.5 bg-slate-300" />
+                          <div className="absolute top-3 left-[25%] w-0.5 h-3 bg-slate-300" />
+                          <div className="absolute top-3 right-[25%] w-0.5 h-3 bg-slate-300" />
                         </div>
 
-                        {/* Root-to-Level 1 Connecting Lines */}
-                        <div className="w-full max-w-[480px] h-8 relative flex justify-center">
-                          <div className="w-0.5 h-4 bg-slate-300" />
-                          <div className="absolute top-4 left-[25%] right-[25%] h-0.5 bg-slate-300" />
-                          <div className="absolute top-4 left-[25%] w-0.5 h-4 bg-slate-300" />
-                          <div className="absolute top-4 right-[25%] w-0.5 h-4 bg-slate-300" />
-                        </div>
-
-                        {/* Level 1: Left & Right Branches */}
-                        <div className="grid grid-cols-2 gap-8 w-full max-w-[680px]">
-                          {/* LEFT BRANCH */}
+                        {/* Mobile Level 1: Left & Right Branches */}
+                        <div className="grid grid-cols-2 gap-2 w-full">
+                          {/* Mobile Left Branch */}
                           <div className="flex flex-col items-center">
                             <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">
                               LEFT BRANCH
                             </span>
                             {inspectedBinaryTree.leftChild ? (
-                              <div className="w-full bg-white border border-blue-200 hover:border-blue-400 rounded-xl shadow-xs transition-all overflow-hidden space-y-0">
+                              <div className="w-full space-y-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.memberId, inspectedBinaryTree.leftChild.fullName)}
-                                  className="w-full text-left p-3.5 space-y-2 focus:outline-none focus:ring-2 focus:ring-blue-400 group cursor-pointer transition-colors hover:bg-blue-50/30"
+                                  className="w-full p-2.5 rounded-xl bg-white border border-blue-200 hover:border-blue-400 text-left shadow-2xs cursor-pointer transition-colors"
                                 >
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="font-bold text-xs text-[#253247] truncate group-hover:text-[#165DAD] transition-colors">
-                                      {inspectedBinaryTree.leftChild.fullName}
-                                    </span>
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-                                      {getTierDisplayName(inspectedBinaryTree.leftChild.currentPackage)}
-                                    </span>
+                                  <div className="font-bold text-xs text-[#253247] truncate">
+                                    {inspectedBinaryTree.leftChild.fullName}
                                   </div>
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="font-mono font-bold text-blue-700">
-                                      {inspectedBinaryTree.leftChild.memberId}
-                                    </span>
-                                    {inspectedBinaryTree.leftChild.isFullQualified && (
-                                      <span className="text-[9px] text-[#15803D] font-semibold flex items-center gap-0.5">
-                                        <Check className="w-2.5 h-2.5" /> Qualified
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
-                                    <span>Team: {inspectedBinaryTree.leftChild.leftCount ?? 0}L : {inspectedBinaryTree.leftChild.rightCount ?? 0}R</span>
-                                    <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                                      <span>Tap to open</span>
-                                      <ChevronRight className="w-3 h-3" />
-                                    </span>
+                                  <div className="text-[11px] font-mono font-bold text-blue-700 mt-0.5">
+                                    {inspectedBinaryTree.leftChild.memberId}
                                   </div>
                                 </button>
 
-                                {/* Level 2 Slots Under Left Child */}
-                                <div className="p-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 bg-slate-50/50">
+                                {/* Level 2 Sub-slots */}
+                                <div className="grid grid-cols-2 gap-1">
                                   {inspectedBinaryTree.leftChild.leftChild ? (
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.leftChild.memberId, inspectedBinaryTree.leftChild.leftChild.fullName)}
-                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors cursor-pointer group"
+                                      className="p-1.5 rounded-lg bg-blue-50/70 border border-blue-100 text-left cursor-pointer hover:border-blue-300 transition-colors"
                                     >
-                                      <div className="text-[8px] font-bold text-blue-600 uppercase">LEFT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-blue-700">{inspectedBinaryTree.leftChild.leftChild.fullName}</div>
-                                      <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.leftChild.memberId}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">
+                                        {inspectedBinaryTree.leftChild.leftChild.fullName}
+                                      </div>
+                                      <div className="text-[9px] font-mono font-semibold text-blue-700 truncate">
+                                        {inspectedBinaryTree.leftChild.leftChild.memberId}
+                                      </div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
-                                      Vacant Left
+                                    <div className="p-1.5 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant
                                     </div>
                                   )}
 
@@ -2710,89 +2579,74 @@ function DashboardContent() {
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.rightChild.memberId, inspectedBinaryTree.leftChild.rightChild.fullName)}
-                                      className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors cursor-pointer group"
+                                      className="p-1.5 rounded-lg bg-blue-50/70 border border-blue-100 text-left cursor-pointer hover:border-blue-300 transition-colors"
                                     >
-                                      <div className="text-[8px] font-bold text-blue-600 uppercase">RIGHT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-blue-700">{inspectedBinaryTree.leftChild.rightChild.fullName}</div>
-                                      <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.rightChild.memberId}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">
+                                        {inspectedBinaryTree.leftChild.rightChild.fullName}
+                                      </div>
+                                      <div className="text-[9px] font-mono font-semibold text-blue-700 truncate">
+                                        {inspectedBinaryTree.leftChild.rightChild.memberId}
+                                      </div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
-                                      Vacant Right
+                                    <div className="p-1.5 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant
                                     </div>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
-                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vacant Left Branch</div>
-                                <p className="text-[11px] text-slate-500">No member placed on Left leg yet.</p>
+                              <div className="w-full p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase">Vacant Left</div>
                                 <button
                                   type="button"
                                   onClick={() => handleCopyLink('LEFT')}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-[#165DAD] hover:border-blue-300 transition-colors shadow-2xs"
+                                  className="px-2 py-1 rounded bg-white border border-slate-200 text-[10px] font-semibold text-slate-700 hover:text-[#165DAD] cursor-pointer"
                                 >
-                                  <Copy className="w-3 h-3" />
-                                  <span>Copy Left Link</span>
+                                  Copy Link
                                 </button>
                               </div>
                             )}
                           </div>
 
-                          {/* RIGHT BRANCH */}
+                          {/* Mobile Right Branch */}
                           <div className="flex flex-col items-center">
                             <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">
                               RIGHT BRANCH
                             </span>
                             {inspectedBinaryTree.rightChild ? (
-                              <div className="w-full bg-white border border-emerald-200 hover:border-emerald-400 rounded-xl shadow-xs transition-all overflow-hidden space-y-0">
+                              <div className="w-full space-y-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.memberId, inspectedBinaryTree.rightChild.fullName)}
-                                  className="w-full text-left p-3.5 space-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 group cursor-pointer transition-colors hover:bg-emerald-50/30"
+                                  className="w-full p-2.5 rounded-xl bg-white border border-emerald-200 hover:border-emerald-400 text-left shadow-2xs cursor-pointer transition-colors"
                                 >
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="font-bold text-xs text-[#253247] truncate group-hover:text-emerald-700 transition-colors">
-                                      {inspectedBinaryTree.rightChild.fullName}
-                                    </span>
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                                      {getTierDisplayName(inspectedBinaryTree.rightChild.currentPackage)}
-                                    </span>
+                                  <div className="font-bold text-xs text-[#253247] truncate">
+                                    {inspectedBinaryTree.rightChild.fullName}
                                   </div>
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="font-mono font-bold text-emerald-700">
-                                      {inspectedBinaryTree.rightChild.memberId}
-                                    </span>
-                                    {inspectedBinaryTree.rightChild.isFullQualified && (
-                                      <span className="text-[9px] text-[#15803D] font-semibold flex items-center gap-0.5">
-                                        <Check className="w-2.5 h-2.5" /> Qualified
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
-                                    <span>Team: {inspectedBinaryTree.rightChild.leftCount ?? 0}L : {inspectedBinaryTree.rightChild.rightCount ?? 0}R</span>
-                                    <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
-                                      <span>Tap to open</span>
-                                      <ChevronRight className="w-3 h-3" />
-                                    </span>
+                                  <div className="text-[11px] font-mono font-bold text-emerald-700 mt-0.5">
+                                    {inspectedBinaryTree.rightChild.memberId}
                                   </div>
                                 </button>
 
-                                {/* Level 2 Slots Under Right Child */}
-                                <div className="p-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 bg-slate-50/50">
+                                {/* Level 2 Sub-slots */}
+                                <div className="grid grid-cols-2 gap-1">
                                   {inspectedBinaryTree.rightChild.leftChild ? (
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.leftChild.memberId, inspectedBinaryTree.rightChild.leftChild.fullName)}
-                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors cursor-pointer group"
+                                      className="p-1.5 rounded-lg bg-emerald-50/70 border border-emerald-100 text-left cursor-pointer hover:border-emerald-300 transition-colors"
                                     >
-                                      <div className="text-[8px] font-bold text-emerald-600 uppercase">LEFT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.fullName}</div>
-                                      <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.memberId}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">
+                                        {inspectedBinaryTree.rightChild.leftChild.fullName}
+                                      </div>
+                                      <div className="text-[9px] font-mono font-semibold text-emerald-700 truncate">
+                                        {inspectedBinaryTree.rightChild.leftChild.memberId}
+                                      </div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
-                                      Vacant Left
+                                    <div className="p-1.5 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant
                                     </div>
                                   )}
 
@@ -2800,33 +2654,265 @@ function DashboardContent() {
                                     <button
                                       type="button"
                                       onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.rightChild.memberId, inspectedBinaryTree.rightChild.rightChild.fullName)}
-                                      className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors cursor-pointer group"
+                                      className="p-1.5 rounded-lg bg-emerald-50/70 border border-emerald-100 text-left cursor-pointer hover:border-emerald-300 transition-colors"
                                     >
-                                      <div className="text-[8px] font-bold text-emerald-600 uppercase">RIGHT SLOT</div>
-                                      <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.fullName}</div>
-                                      <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.memberId}</div>
+                                      <div className="text-[10px] font-bold text-[#253247] truncate">
+                                        {inspectedBinaryTree.rightChild.rightChild.fullName}
+                                      </div>
+                                      <div className="text-[9px] font-mono font-semibold text-emerald-700 truncate">
+                                        {inspectedBinaryTree.rightChild.rightChild.memberId}
+                                      </div>
                                     </button>
                                   ) : (
-                                    <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
-                                      Vacant Right
+                                    <div className="p-1.5 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                      Vacant
                                     </div>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
-                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vacant Right Branch</div>
-                                <p className="text-[11px] text-slate-500">No member placed on Right leg yet.</p>
+                              <div className="w-full p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase">Vacant Right</div>
                                 <button
                                   type="button"
                                   onClick={() => handleCopyLink('RIGHT')}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-[#15803D] hover:border-emerald-300 transition-colors shadow-2xs"
+                                  className="px-2 py-1 rounded bg-white border border-slate-200 text-[10px] font-semibold text-slate-700 hover:text-[#15803D] cursor-pointer"
                                 >
-                                  <Copy className="w-3 h-3" />
-                                  <span>Copy Right Link</span>
+                                  Copy Link
                                 </button>
                               </div>
                             )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* =========================================================================
+                          DESKTOP GRAPHICAL BINARY TREE
+                          Full detail view with tier badges, carry volumes, and tree expansion
+                          ========================================================================= */}
+                      <div className="hidden md:block overflow-x-auto pb-4">
+                        <div className="min-w-[680px] flex flex-col items-center">
+                          {/* Parent Node (Top of Tree) */}
+                          <div className="w-64 bg-slate-50 border-2 border-[#165DAD] rounded-xl p-3.5 shadow-sm text-center relative z-10">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-[#165DAD] text-white uppercase">
+                                {inspectedBinaryTree.node.user.memberId === user.memberId ? 'You (Root)' : 'Subtree Root'}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[9px] font-semibold bg-white text-[#253247] border border-slate-200">
+                                {getTierDisplayName(inspectedBinaryTree.node.user.currentPackage)}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-semibold ${inspectedBinaryTree.node.user.isFullQualified
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                }`}>
+                                {inspectedBinaryTree.node.user.isFullQualified ? 'Active' : 'Pending'}
+                              </span>
+                            </div>
+                            <div className="font-bold text-xs text-[#253247] mt-1.5 truncate">
+                              {inspectedBinaryTree.node.user.fullName}
+                            </div>
+                            <div className="text-[11px] font-mono font-bold text-[#165DAD]">
+                              {inspectedBinaryTree.node.user.memberId}
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-slate-200 grid grid-cols-2 gap-1 text-[10px]">
+                              <div className="text-blue-700 font-medium">
+                                L: {inspectedBinaryTree.node.leftCount} ({inspectedBinaryTree.node.carryLeftUnits} carry)
+                              </div>
+                              <div className="text-emerald-700 font-medium">
+                                R: {inspectedBinaryTree.node.rightCount} ({inspectedBinaryTree.node.carryRightUnits} carry)
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Root-to-Level 1 Connecting Lines */}
+                          <div className="w-full max-w-[480px] h-8 relative flex justify-center">
+                            <div className="w-0.5 h-4 bg-slate-300" />
+                            <div className="absolute top-4 left-[25%] right-[25%] h-0.5 bg-slate-300" />
+                            <div className="absolute top-4 left-[25%] w-0.5 h-4 bg-slate-300" />
+                            <div className="absolute top-4 right-[25%] w-0.5 h-4 bg-slate-300" />
+                          </div>
+
+                          {/* Level 1: Left & Right Branches */}
+                          <div className="grid grid-cols-2 gap-8 w-full max-w-[680px]">
+                            {/* LEFT BRANCH */}
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">
+                                LEFT BRANCH
+                              </span>
+                              {inspectedBinaryTree.leftChild ? (
+                                <div className="w-full bg-white border border-blue-200 hover:border-blue-400 rounded-xl shadow-xs transition-all overflow-hidden space-y-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.memberId, inspectedBinaryTree.leftChild.fullName)}
+                                    className="w-full text-left p-3.5 space-y-2 focus:outline-none focus:ring-2 focus:ring-blue-400 group cursor-pointer transition-colors hover:bg-blue-50/30"
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-xs text-[#253247] truncate group-hover:text-[#165DAD] transition-colors">
+                                        {inspectedBinaryTree.leftChild.fullName}
+                                      </span>
+                                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                        {getTierDisplayName(inspectedBinaryTree.leftChild.currentPackage)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="font-mono font-bold text-blue-700">
+                                        {inspectedBinaryTree.leftChild.memberId}
+                                      </span>
+                                      {inspectedBinaryTree.leftChild.isFullQualified && (
+                                        <span className="text-[9px] text-[#15803D] font-semibold flex items-center gap-0.5">
+                                          <Check className="w-2.5 h-2.5" /> Qualified
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
+                                      <span>Team: {inspectedBinaryTree.leftChild.leftCount ?? 0}L : {inspectedBinaryTree.leftChild.rightCount ?? 0}R</span>
+                                      <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                        <span>Tap to open</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                      </span>
+                                    </div>
+                                  </button>
+
+                                  {/* Level 2 Slots Under Left Child */}
+                                  <div className="p-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 bg-slate-50/50">
+                                    {inspectedBinaryTree.leftChild.leftChild ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.leftChild.memberId, inspectedBinaryTree.leftChild.leftChild.fullName)}
+                                        className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors cursor-pointer group"
+                                      >
+                                        <div className="text-[8px] font-bold text-blue-600 uppercase">LEFT SLOT</div>
+                                        <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-blue-700">{inspectedBinaryTree.leftChild.leftChild.fullName}</div>
+                                        <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.leftChild.memberId}</div>
+                                      </button>
+                                    ) : (
+                                      <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                        Vacant Left
+                                      </div>
+                                    )}
+
+                                    {inspectedBinaryTree.leftChild.rightChild ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.leftChild.rightChild.memberId, inspectedBinaryTree.leftChild.rightChild.fullName)}
+                                        className="p-2 rounded-lg bg-blue-50/60 border border-blue-100 text-left hover:border-blue-300 transition-colors cursor-pointer group"
+                                      >
+                                        <div className="text-[8px] font-bold text-blue-600 uppercase">RIGHT SLOT</div>
+                                        <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-blue-700">{inspectedBinaryTree.leftChild.rightChild.fullName}</div>
+                                        <div className="text-[9px] font-mono text-blue-700">{inspectedBinaryTree.leftChild.rightChild.memberId}</div>
+                                      </button>
+                                    ) : (
+                                      <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                        Vacant Right
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
+                                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vacant Left Branch</div>
+                                  <p className="text-[11px] text-slate-500">No member placed on Left leg yet.</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink('LEFT')}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-[#165DAD] hover:border-blue-300 transition-colors shadow-2xs"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                    <span>Copy Left Link</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* RIGHT BRANCH */}
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">
+                                RIGHT BRANCH
+                              </span>
+                              {inspectedBinaryTree.rightChild ? (
+                                <div className="w-full bg-white border border-emerald-200 hover:border-emerald-400 rounded-xl shadow-xs transition-all overflow-hidden space-y-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.memberId, inspectedBinaryTree.rightChild.fullName)}
+                                    className="w-full text-left p-3.5 space-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 group cursor-pointer transition-colors hover:bg-emerald-50/30"
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-xs text-[#253247] truncate group-hover:text-emerald-700 transition-colors">
+                                        {inspectedBinaryTree.rightChild.fullName}
+                                      </span>
+                                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                        {getTierDisplayName(inspectedBinaryTree.rightChild.currentPackage)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="font-mono font-bold text-emerald-700">
+                                        {inspectedBinaryTree.rightChild.memberId}
+                                      </span>
+                                      {inspectedBinaryTree.rightChild.isFullQualified && (
+                                        <span className="text-[9px] text-[#15803D] font-semibold flex items-center gap-0.5">
+                                          <Check className="w-2.5 h-2.5" /> Qualified
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100">
+                                      <span>Team: {inspectedBinaryTree.rightChild.leftCount ?? 0}L : {inspectedBinaryTree.rightChild.rightCount ?? 0}R</span>
+                                      <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                        <span>Tap to open</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                      </span>
+                                    </div>
+                                  </button>
+
+                                  {/* Level 2 Slots Under Right Child */}
+                                  <div className="p-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 bg-slate-50/50">
+                                    {inspectedBinaryTree.rightChild.leftChild ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.leftChild.memberId, inspectedBinaryTree.rightChild.leftChild.fullName)}
+                                        className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors cursor-pointer group"
+                                      >
+                                        <div className="text-[8px] font-bold text-emerald-600 uppercase">LEFT SLOT</div>
+                                        <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.fullName}</div>
+                                        <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.leftChild.memberId}</div>
+                                      </button>
+                                    ) : (
+                                      <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                        Vacant Left
+                                      </div>
+                                    )}
+
+                                    {inspectedBinaryTree.rightChild.rightChild ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInspectBinarySubtree(inspectedBinaryTree.rightChild.rightChild.memberId, inspectedBinaryTree.rightChild.rightChild.fullName)}
+                                        className="p-2 rounded-lg bg-emerald-50/60 border border-emerald-100 text-left hover:border-emerald-300 transition-colors cursor-pointer group"
+                                      >
+                                        <div className="text-[8px] font-bold text-emerald-600 uppercase">RIGHT SLOT</div>
+                                        <div className="text-[10px] font-bold text-[#253247] truncate group-hover:text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.fullName}</div>
+                                        <div className="text-[9px] font-mono text-emerald-700">{inspectedBinaryTree.rightChild.rightChild.memberId}</div>
+                                      </button>
+                                    ) : (
+                                      <div className="p-2 rounded-lg bg-white border border-dashed border-slate-200 text-center text-[9px] text-slate-400">
+                                        Vacant Right
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
+                                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Vacant Right Branch</div>
+                                  <p className="text-[11px] text-slate-500">No member placed on Right leg yet.</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyLink('RIGHT')}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:text-[#15803D] hover:border-emerald-300 transition-colors shadow-2xs"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                    <span>Copy Right Link</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -3332,8 +3418,7 @@ function DashboardContent() {
                           <th className="py-3 px-4">Amount</th>
                           <th className="py-3 px-4">Payment Method</th>
                           <th className="py-3 px-4">UTR / Reference</th>
-                          <th className="py-3 px-4">Verification</th>
-                          <th className="py-3 px-4">Approval Status</th>
+                          <th className="py-3 px-4">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-[#253247]">
@@ -3380,13 +3465,19 @@ function DashboardContent() {
                                   {req.paymentReference || '—'}
                                 </td>
                                 <td className="py-3 px-4">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${req.isVerified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                    {req.isVerified ? 'VERIFIED' : 'PENDING'}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${req.status === 'APPROVED' ? 'bg-emerald-50 text-[#15803D] border-emerald-200' : req.status === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
-                                    {req.status}
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${req.status === 'APPROVED'
+                                      ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                      : req.status === 'REJECTED'
+                                        ? 'bg-red-50 text-red-700 border-red-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                                      }`}
+                                  >
+                                    {req.status === 'APPROVED'
+                                      ? 'Approved'
+                                      : req.status === 'REJECTED'
+                                        ? 'Rejected'
+                                        : 'Pending Review'}
                                   </span>
                                 </td>
                               </tr>
@@ -3394,7 +3485,7 @@ function DashboardContent() {
                           })
                         ) : (
                           <tr>
-                            <td colSpan={8} className="py-8 text-center text-slate-400">
+                            <td colSpan={7} className="py-8 text-center text-slate-400">
                               No EV booking requests found. You can book an EV package anytime.
                             </td>
                           </tr>
@@ -3427,8 +3518,19 @@ function DashboardContent() {
                             </div>
                             <div className="flex items-center justify-between text-slate-500">
                               <span>{formatISTDateTime(req.createdAt)}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${req.status === 'APPROVED' ? 'bg-emerald-50 text-[#15803D] border-emerald-200' : req.status === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
-                                {req.status}
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${req.status === 'APPROVED'
+                                  ? 'bg-emerald-50 text-[#15803D] border-emerald-200'
+                                  : req.status === 'REJECTED'
+                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  }`}
+                              >
+                                {req.status === 'APPROVED'
+                                  ? 'Approved'
+                                  : req.status === 'REJECTED'
+                                    ? 'Rejected'
+                                    : 'Pending Review'}
                               </span>
                             </div>
                             <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
@@ -3829,8 +3931,8 @@ function DashboardContent() {
       </div>
 
       {/* =========================================================================
-          MOBILE BOTTOM NAVIGATION BAR (REQUIREMENT 12)
-          Fixed 5-item bar: HOME | EARNINGS | WALLET | BINARY | MENU
+          MOBILE BOTTOM NAVIGATION BAR
+          Exact 5-item bar: HOME | EARNINGS | TEAM | BINARY | REFERRALS
           ========================================================================= */}
       <nav
         aria-label="Mobile Navigation"
@@ -3850,17 +3952,17 @@ function DashboardContent() {
           className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
             }`}
         >
-          <Crown className={`w-5 h-5 mb-0.5 ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <Wallet className={`w-5 h-5 mb-0.5 ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
           <span>Earnings</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('wallets')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+          onClick={() => setActiveTab('team')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${activeTab === 'team' ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
             }`}
         >
-          <Wallet className={`w-5 h-5 mb-0.5 ${activeTab === 'wallets' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
-          <span>Wallet</span>
+          <Users className={`w-5 h-5 mb-0.5 ${activeTab === 'team' ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Team</span>
         </button>
 
         <button
@@ -3873,11 +3975,12 @@ function DashboardContent() {
         </button>
 
         <button
-          onClick={() => setMobileMenuOpen(true)}
-          className="flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold text-slate-500 hover:text-[#165DAD] transition-colors"
+          onClick={() => setShowShareModal(true)}
+          className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${showShareModal ? 'text-[#165DAD]' : 'text-slate-500 hover:text-slate-700'
+            }`}
         >
-          <Menu className="w-5 h-5 mb-0.5 text-slate-400" />
-          <span>Menu</span>
+          <Share2 className={`w-5 h-5 mb-0.5 ${showShareModal ? 'text-[#165DAD]' : 'text-slate-400'}`} />
+          <span>Referrals</span>
         </button>
       </nav>
 
@@ -3899,12 +4002,14 @@ function DashboardContent() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#253247]">Share Sponsor Referral Links</h3>
-                  <p className="text-[11px] text-slate-400">Invite new members directly to Left or Right team</p>
+                  <p className="text-[11px] text-slate-500">
+                    Sponsor ID: <span className="font-mono font-bold text-[#165DAD]">{user?.memberId}</span> · Automatic placement
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowShareModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
