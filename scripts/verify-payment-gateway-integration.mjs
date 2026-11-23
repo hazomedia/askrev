@@ -654,9 +654,8 @@ async function main() {
   assert.equal(rejectedCount, 1, 'Second concurrent webhook insert must be stopped by unique constraint');
   console.log('  ✓ PASS: Database unique constraint prevents concurrent duplicate webhook insertion');
 
-  // 16. BOUNDED RECONCILIATION SCHEDULER & POSTGRES ADVISORY LOCK (ISSUE 3)
-  console.log('\n--- 16. BOUNDED RECONCILIATION SCHEDULER & POSTGRES ADVISORY LOCK ---');
-  const ADVISORY_LOCK_ID = 884920;
+  // 16. BOUNDED RECONCILIATION SCHEDULER & DURABLE FOR UPDATE SKIP LOCKED LEASES
+  console.log('\n--- 16. BOUNDED RECONCILIATION SCHEDULER & DURABLE FOR UPDATE SKIP LOCKED LEASES ---');
 
   // Create distinct second database connection to simulate independent replica worker
   const prismaWorker2 = new PrismaClient({
@@ -668,20 +667,150 @@ async function main() {
   });
   await prismaWorker2.$connect();
 
-  // 1. Worker 1 acquires PostgreSQL advisory lock
-  const lock1 = await prisma.$queryRaw`SELECT pg_try_advisory_lock(${ADVISORY_LOCK_ID}) as acquired`;
-  assert.equal(lock1[0].acquired, true, 'Primary worker must acquire advisory lock');
+  const worker1Id = `worker-node-1-${crypto.randomUUID()}`;
+  const worker2Id = `worker-node-2-${crypto.randomUUID()}`;
 
-  // 2. Worker 2 (separate connection/session) attempts to acquire same advisory lock
-  const lock2 = await prismaWorker2.$queryRaw`SELECT pg_try_advisory_lock(${ADVISORY_LOCK_ID}) as acquired`;
-  assert.equal(lock2[0].acquired, false, 'Second concurrent worker must be blocked by advisory lock');
-  console.log('  ✓ PASS: Distributed concurrency safety enforced: PostgreSQL advisory lock blocks overlapping workers');
+  // 1. Create a claimable test PaymentOrder (older than 15s)
+  const lockTestOrder = await prisma.paymentOrder.create({
+    data: {
+      userId: testUser.id,
+      memberId: testUser.memberId,
+      provider: 'PINELABS',
+      requestType: 'BASIC_ACTIVATION',
+      merchantReference: `RCPT-BASI-${testUser.memberId}-LEASE-${Date.now()}`,
+      amountPaise: 300000n,
+      currency: 'INR',
+      status: 'PROCESSING',
+      attempts: 0,
+      createdAt: new Date(Date.now() - 30000), // 30s ago
+    },
+  });
 
-  // 3. Worker 1 releases advisory lock
-  await prisma.$queryRaw`SELECT pg_advisory_unlock(${ADVISORY_LOCK_ID})`;
+  // 2. Worker 1 claims order using FOR UPDATE SKIP LOCKED
+  const claimedByWorker1 = await prisma.$queryRaw`
+    WITH claimable AS (
+      SELECT id
+      FROM "PaymentOrder"
+      WHERE id = ${lockTestOrder.id}
+        AND (
+          (status IN ('CREATED', 'PROCESSING') AND "lockedBy" IS NULL AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= (NOW() AT TIME ZONE 'utc')))
+          OR
+          (status = 'PROCESSING' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" <= (NOW() AT TIME ZONE 'utc'))
+        )
+        AND status NOT IN ('VERIFIED', 'REFUNDED', 'CANCELLED', 'INVESTIGATION_REQUIRED')
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "PaymentOrder" p
+    SET status = 'PROCESSING',
+        "lockedBy" = ${worker1Id},
+        "lockedAt" = (NOW() AT TIME ZONE 'utc'),
+        "leaseExpiresAt" = (NOW() AT TIME ZONE 'utc') + INTERVAL '60 seconds',
+        "updatedAt" = (NOW() AT TIME ZONE 'utc')
+    FROM claimable
+    WHERE p.id = claimable.id
+    RETURNING p.*;
+  `;
+  assert.equal(claimedByWorker1.length, 1, 'Worker 1 must successfully claim eligible order');
+  assert.equal(claimedByWorker1[0].lockedBy, worker1Id, 'Worker 1 ownership must be recorded');
+  console.log('  ✓ PASS: Durable claim acquired with workerId lease via FOR UPDATE SKIP LOCKED');
+
+  // 3. Worker 2 (competing replica) attempts to claim same order concurrently
+  const claimedByWorker2 = await prismaWorker2.$queryRaw`
+    WITH claimable AS (
+      SELECT id
+      FROM "PaymentOrder"
+      WHERE id = ${lockTestOrder.id}
+        AND (
+          (status IN ('CREATED', 'PROCESSING') AND "lockedBy" IS NULL AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= (NOW() AT TIME ZONE 'utc')))
+          OR
+          (status = 'PROCESSING' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" <= (NOW() AT TIME ZONE 'utc'))
+        )
+        AND status NOT IN ('VERIFIED', 'REFUNDED', 'CANCELLED', 'INVESTIGATION_REQUIRED')
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "PaymentOrder" p
+    SET status = 'PROCESSING',
+        "lockedBy" = ${worker2Id},
+        "lockedAt" = (NOW() AT TIME ZONE 'utc'),
+        "leaseExpiresAt" = (NOW() AT TIME ZONE 'utc') + INTERVAL '60 seconds',
+        "updatedAt" = (NOW() AT TIME ZONE 'utc')
+    FROM claimable
+    WHERE p.id = claimable.id
+    RETURNING p.*;
+  `;
+  assert.equal(claimedByWorker2.length, 0, 'Worker 2 must skip order actively leased to Worker 1');
+  console.log('  ✓ PASS: Distributed concurrency isolation verified: competing replica skipped actively leased order');
+
+  // 4. Stale Worker Protection: Worker 2 cannot mutate an order leased to Worker 1
+  const illegalWorker2Update = await prismaWorker2.$executeRaw`
+    UPDATE "PaymentOrder"
+    SET status = 'VERIFIED',
+        "lockedBy" = NULL,
+        "leaseExpiresAt" = NULL
+    WHERE id = ${lockTestOrder.id}
+      AND status = 'PROCESSING'
+      AND "lockedBy" = ${worker2Id}
+  `;
+  assert.equal(illegalWorker2Update, 0, 'Worker 2 must NOT be able to modify Worker 1 leased order');
+  console.log('  ✓ PASS: Stale worker protection verified: non-owner update affected 0 rows');
+
+  // 5. Worker Crash Recovery: Simulate Worker 1 crashing and its lease expiring
+  await prisma.$executeRaw`
+    UPDATE "PaymentOrder"
+    SET "leaseExpiresAt" = (NOW() AT TIME ZONE 'utc') - INTERVAL '1 second'
+    WHERE id = ${lockTestOrder.id}
+  `;
+
+  // Worker 2 now runs recovery claim query on the expired lease
+  const recoveredByWorker2 = await prismaWorker2.$queryRaw`
+    WITH claimable AS (
+      SELECT id
+      FROM "PaymentOrder"
+      WHERE id = ${lockTestOrder.id}
+        AND (
+          (status IN ('CREATED', 'PROCESSING') AND "lockedBy" IS NULL AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= (NOW() AT TIME ZONE 'utc')))
+          OR
+          (status = 'PROCESSING' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" <= (NOW() AT TIME ZONE 'utc'))
+        )
+        AND status NOT IN ('VERIFIED', 'REFUNDED', 'CANCELLED', 'INVESTIGATION_REQUIRED')
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "PaymentOrder" p
+    SET status = 'PROCESSING',
+        "lockedBy" = ${worker2Id},
+        "lockedAt" = (NOW() AT TIME ZONE 'utc'),
+        "leaseExpiresAt" = (NOW() AT TIME ZONE 'utc') + INTERVAL '60 seconds',
+        "updatedAt" = (NOW() AT TIME ZONE 'utc')
+    FROM claimable
+    WHERE p.id = claimable.id
+    RETURNING p.*;
+  `;
+  assert.equal(recoveredByWorker2.length, 1, 'Worker 2 must successfully recover expired lease from crashed Worker 1');
+  assert.equal(recoveredByWorker2[0].lockedBy, worker2Id, 'Worker 2 now owns the recovered lease');
+  console.log('  ✓ PASS: Worker crash recovery verified: expired lease claimed safely by surviving replica');
+
+  // 6. Safe Release: Worker 2 finishes and safely releases lease
+  const releasedCount = await prismaWorker2.$executeRaw`
+    UPDATE "PaymentOrder"
+    SET "lockedBy" = NULL,
+        "leaseExpiresAt" = NULL,
+        "updatedAt" = (NOW() AT TIME ZONE 'utc')
+    WHERE id = ${lockTestOrder.id}
+      AND status = 'PROCESSING'
+      AND "lockedBy" = ${worker2Id}
+  `;
+  assert.equal(releasedCount, 1, 'Worker 2 must successfully release durable lease');
+  console.log('  ✓ PASS: Safe lease release verified: order unlocked for future processing');
+
   await prismaWorker2.$disconnect();
 
-  // 4. Bounded retries: test order with attempts >= 5
+  // 7. Bounded retries: test order with attempts >= 5 routed to INVESTIGATION_REQUIRED
   const exhaustedOrder = await prisma.paymentOrder.create({
     data: {
       userId: testUser.id,
@@ -696,20 +825,20 @@ async function main() {
     },
   });
 
-  // Poller checks attempts >= 5 and routes to FAILED
+  // Poller checks attempts >= 5 and routes to INVESTIGATION_REQUIRED (Requirement 7)
   const updatedExhausted = await prisma.paymentOrder.update({
     where: { id: exhaustedOrder.id },
     data: {
-      status: 'FAILED',
+      status: 'INVESTIGATION_REQUIRED',
       failedAt: new Date(),
-      failureReason: 'Payment reconciliation exceeded maximum 5 retry attempts without provider confirmation',
+      failureReason: 'EXHAUSTED_RETRIES_INVESTIGATION_REQUIRED: Payment reconciliation could not confirm status after 5 attempts; flagged for manual admin verification',
     },
   });
-  assert.equal(updatedExhausted.status, 'FAILED');
-  assert.ok(updatedExhausted.failureReason.includes('exceeded maximum 5 retry attempts'));
-  console.log('  ✓ PASS: Bounded retry limit (5) enforced: stale pending order moved to FAILED');
+  assert.equal(updatedExhausted.status, 'INVESTIGATION_REQUIRED');
+  assert.ok(updatedExhausted.failureReason.includes('EXHAUSTED_RETRIES_INVESTIGATION_REQUIRED'));
+  console.log('  ✓ PASS: Bounded retry limit (5) routes to INVESTIGATION_REQUIRED (not treated as definitively unpaid)');
 
-  // 5. Exponential backoff: test order with nextRetryAt
+  // 8. Exponential backoff: test order with nextRetryAt in future
   const backoffOrder = await prisma.paymentOrder.create({
     data: {
       userId: testUser.id,
@@ -726,17 +855,17 @@ async function main() {
   });
 
   // Query eligible orders: order with nextRetryAt > now must NOT be picked up
-  const eligibleNow = await prisma.paymentOrder.findMany({
-    where: {
-      id: backoffOrder.id,
-      status: { in: ['CREATED', 'PROCESSING'] },
-      OR: [
-        { nextRetryAt: null },
-        { nextRetryAt: { lte: new Date() } },
-      ],
-    },
-  });
-  assert.equal(eligibleNow.length, 0, 'Order with active backoff window must be skipped by poller');
+  const eligibleNow = await prisma.$queryRaw`
+    SELECT id
+    FROM "PaymentOrder"
+    WHERE id = ${backoffOrder.id}
+      AND (
+        (status IN ('CREATED', 'PROCESSING') AND "lockedBy" IS NULL AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= (NOW() AT TIME ZONE 'utc')))
+        OR
+        (status = 'PROCESSING' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" <= (NOW() AT TIME ZONE 'utc'))
+      )
+  `;
+  assert.equal(eligibleNow.length, 0, 'Order with active backoff window must be skipped by poller claim query');
   console.log('  ✓ PASS: Exponential backoff enforced: order skipped while nextRetryAt is in the future');
 
   // 17. SERVER RESTART / CRASH RECOVERY

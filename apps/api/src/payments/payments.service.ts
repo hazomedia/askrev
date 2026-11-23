@@ -8,6 +8,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../common/encryption.service';
 import { PaymentGatewayRegistry } from './providers/payment-gateway.registry';
@@ -23,12 +24,18 @@ import { FINANCIAL_RULES, MembershipPackage, MembershipRequestType, paiseToRupee
 export class PaymentsService implements OnModuleDestroy {
   private readonly logger = new Logger(PaymentsService.name);
   private pollerTimer: NodeJS.Timeout | null = null;
+  private readonly workerId = crypto.randomUUID();
+  private readonly leaseDurationSeconds = 60;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryptionService: EncryptionService,
     private readonly gatewayRegistry: PaymentGatewayRegistry
   ) { }
+
+  getWorkerId(): string {
+    return this.workerId;
+  }
 
   // =========================================================================
   // PUBLIC / MEMBER PAYMENT METHODS
@@ -1096,224 +1103,395 @@ export class PaymentsService implements OnModuleDestroy {
   }
 
   /**
-   * Pending Payment Orders Auto-Recovery & Bounded Poller
+   * Atomically claims eligible pending/orphaned PaymentOrders using PostgreSQL FOR UPDATE SKIP LOCKED.
+   * Ensures:
+   * 1. Concurrency Safety: Multiple worker replicas skip already-claimed rows (FOR UPDATE SKIP LOCKED).
+   * 2. Bounded Leases: Leased for 60 seconds with workerId ownership.
+   * 3. Crash Recovery: Automatically claims PROCESSING orders whose lease has expired (leaseExpiresAt <= NOW()).
+   * 4. Backoff Compliance: Respects nextRetryAt window.
+   */
+  async claimPendingPaymentOrders(limit = 25): Promise<any[]> {
+    try {
+      const claimed: any[] = await this.prisma.$queryRaw`
+        WITH claimable AS (
+          SELECT id
+          FROM "PaymentOrder"
+          WHERE (
+            (status IN ('CREATED', 'PROCESSING') AND "lockedBy" IS NULL AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= (NOW() AT TIME ZONE 'utc')))
+            OR
+            (status = 'PROCESSING' AND "leaseExpiresAt" IS NOT NULL AND "leaseExpiresAt" <= (NOW() AT TIME ZONE 'utc'))
+          )
+          AND status NOT IN ('VERIFIED', 'REFUNDED', 'CANCELLED', 'INVESTIGATION_REQUIRED')
+          AND "createdAt" <= (NOW() AT TIME ZONE 'utc') - INTERVAL '15 seconds'
+          ORDER BY "createdAt" ASC
+          LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE "PaymentOrder" p
+        SET status = 'PROCESSING',
+            "lockedBy" = ${this.workerId},
+            "lockedAt" = (NOW() AT TIME ZONE 'utc'),
+            "leaseExpiresAt" = (NOW() AT TIME ZONE 'utc') + (${this.leaseDurationSeconds} * INTERVAL '1 second'),
+            "updatedAt" = (NOW() AT TIME ZONE 'utc')
+        FROM claimable
+        WHERE p.id = claimable.id
+        RETURNING p.*;
+      `;
+      return claimed || [];
+    } catch (err: any) {
+      this.logger.error(`Failed to claim pending payment orders with FOR UPDATE SKIP LOCKED: ${err.message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Safely releases a worker lease on a PaymentOrder if processing could not complete or was postponed.
+   */
+  async releaseOrderLease(orderId: string): Promise<boolean> {
+    try {
+      const { count } = await this.prisma.paymentOrder.updateMany({
+        where: {
+          id: orderId,
+          status: 'PROCESSING',
+          lockedBy: this.workerId,
+        },
+        data: {
+          lockedBy: null,
+          leaseExpiresAt: null,
+        },
+      });
+      return count > 0;
+    } catch (err: any) {
+      this.logger.error(`Error releasing lease on order ${orderId}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Pending Payment Orders Auto-Recovery & Bounded Distributed Poller
    * Enforces:
-   * 1. Distributed Concurrency Safety: Uses PostgreSQL advisory lock (ID: 884920) across horizontal workers.
-   * 2. Crash/Restart Recovery: Discovers orphaned CREATED / PROCESSING orders.
-   * 3. Bounded Retries: Routes orders to FAILED after max 5 attempts.
-   * 4. Exponential Backoff: Enforces nextRetryAt with backoff window up to 10 minutes.
-   * 5. Strict Verification: Rejects missing amount, currency or paymentId without assumed defaults.
+   * 1. Distributed Concurrency Safety: Durable database-backed FOR UPDATE SKIP LOCKED claims with workerId leases.
+   * 2. Crash/Restart Recovery: Discovers orphaned CREATED / PROCESSING orders and expired leases.
+   * 3. External API Isolation: Claims occur in fast sub-millisecond DB query; external provider API calls execute outside DB transactions.
+   * 4. Bounded Retries: Routes orders to INVESTIGATION_REQUIRED (with investigation metadata) after max 5 attempts.
+   * 5. Exponential Backoff: Enforces nextRetryAt with backoff window up to 10 minutes.
+   * 6. Strict Verification: Rejects missing amount, currency or paymentId without assumed defaults.
+   * 7. Fail Closed: Locking failures abort processing without touching or assuming ownership of records.
    */
   async reconcilePendingPaymentOrders(adminOrTrigger = 'SYSTEM') {
-    const ADVISORY_LOCK_ID = 884920;
-    let lockAcquired = false;
-
+    let claimedOrders: any[] = [];
     try {
-      const lockRes: any[] = await this.prisma.$queryRaw`SELECT pg_try_advisory_lock(${ADVISORY_LOCK_ID}) as acquired`;
-      lockAcquired = Boolean(lockRes?.[0]?.acquired);
-    } catch {
-      // For mock environments in unit tests without raw pg advisory lock support
-      lockAcquired = true;
+      claimedOrders = await this.claimPendingPaymentOrders(25);
+    } catch (err: any) {
+      this.logger.error(`Reconciliation aborted: durable claim lock failed: ${err.message}`);
+      // Fail closed: never treat database locking failure as successful lock acquisition (Requirement 3)
+      return {
+        acquired: false,
+        error: err.message,
+        workerId: this.workerId,
+        claimedCount: 0,
+        reconciledCount: 0,
+        failedCount: 0,
+        investigationCount: 0,
+        pendingCount: 0,
+        results: [],
+      };
     }
 
-    if (!lockAcquired) {
-      this.logger.debug('Payment reconciliation advisory lock held by another instance. Skipping cycle.');
-      return { acquired: false, reconciledCount: 0, failedCount: 0, pendingCount: 0, results: [] };
+    if (!claimedOrders || claimedOrders.length === 0) {
+      return {
+        acquired: true,
+        workerId: this.workerId,
+        claimedCount: 0,
+        reconciledCount: 0,
+        failedCount: 0,
+        investigationCount: 0,
+        pendingCount: 0,
+        results: [],
+      };
     }
 
-    try {
-      const now = new Date();
-      // Age threshold: order must be older than 15s to allow user checkout flow
-      const eligibleThreshold = new Date(now.getTime() - 15000);
+    const results: Array<{ orderId: string; status: string; reason?: string; error?: string }> = [];
 
-      // Query pending orders eligible for reconciliation
-      const pendingOrders = await this.prisma.paymentOrder.findMany({
-        where: {
-          status: { in: ['CREATED', 'PROCESSING'] },
-          createdAt: { lte: eligibleThreshold },
-          OR: [
-            { nextRetryAt: null },
-            { nextRetryAt: { lte: now } },
-          ],
-        },
-        take: 25,
-        orderBy: { createdAt: 'asc' },
-      });
-
-      const results: Array<{ orderId: string; status: string; reason?: string; error?: string }> = [];
-
-      for (const order of pendingOrders) {
-        // Bounded retries: if attempts >= 5, route to FAILED (timeout / dead letter)
-        if (order.attempts >= 5) {
-          await this.prisma.paymentOrder.update({
-            where: { id: order.id },
+    for (const order of claimedOrders) {
+      // Bounded retries: if attempts >= 5, route to INVESTIGATION_REQUIRED (Requirement 7)
+      // Never treat an uncertain payment as definitively unpaid; flag for manual admin audit.
+      if (order.attempts >= 5) {
+        try {
+          const { count } = await this.prisma.paymentOrder.updateMany({
+            where: {
+              id: order.id,
+              status: 'PROCESSING',
+              lockedBy: this.workerId,
+            },
             data: {
-              status: 'FAILED',
+              status: 'INVESTIGATION_REQUIRED',
               failedAt: new Date(),
-              failureReason: 'Payment reconciliation exceeded maximum 5 retry attempts without provider confirmation',
+              failureReason: 'EXHAUSTED_RETRIES_INVESTIGATION_REQUIRED: Payment reconciliation could not confirm status after 5 attempts; flagged for manual admin verification',
+              lockedBy: null,
+              leaseExpiresAt: null,
             },
           });
-          results.push({ orderId: order.id, status: 'FAILED', reason: 'Max attempts exceeded' });
+
+          if (count > 0 && order.membershipRequestId) {
+            await this.prisma.membershipRequest.update({
+              where: { id: order.membershipRequestId },
+              data: {
+                metadata: {
+                  paymentStatus: 'INVESTIGATION_REQUIRED',
+                  requiresInvestigation: true,
+                  investigationReason: 'Payment reconciliation could not confirm status after 5 attempts; manual bank/PSP verification required',
+                  compliance: 'SIMULATION_ONLY',
+                },
+              },
+            });
+          }
+          results.push({ orderId: order.id, status: 'INVESTIGATION_REQUIRED', reason: 'Max attempts exceeded; flagged for manual verification' });
+        } catch (err: any) {
+          this.logger.error(`Failed to route order ${order.id} to INVESTIGATION_REQUIRED: ${err.message}`);
+          await this.releaseOrderLease(order.id);
+        }
+        continue;
+      }
+
+      try {
+        const provider = this.gatewayRegistry.getProvider(order.provider);
+        if (!provider || !provider.getOrderStatus) {
+          await this.releaseOrderLease(order.id);
+          results.push({ orderId: order.id, status: 'SKIPPED', reason: 'Provider does not support inquiry' });
           continue;
         }
 
-        try {
-          const provider = this.gatewayRegistry.getProvider(order.provider);
-          if (!provider.getOrderStatus) {
-            results.push({ orderId: order.id, status: 'SKIPPED', reason: 'Provider does not support inquiry' });
-            continue;
-          }
+        const config = await this.prisma.paymentGatewayConfig.findUnique({
+          where: { provider: order.provider },
+        });
 
-          const config = await this.prisma.paymentGatewayConfig.findUnique({
-            where: { provider: order.provider },
-          });
+        if (!config || !config.encryptedSecretKey || !config.merchantId) {
+          await this.releaseOrderLease(order.id);
+          results.push({ orderId: order.id, status: 'SKIPPED', reason: 'Provider credentials missing' });
+          continue;
+        }
 
-          if (!config || !config.encryptedSecretKey || !config.merchantId) {
-            results.push({ orderId: order.id, status: 'SKIPPED', reason: 'Provider credentials missing' });
-            continue;
-          }
+        const secretKey = this.encryptionService.decrypt(config.encryptedSecretKey);
+        const lookupKey = order.providerOrderId || order.merchantReference;
 
-          const secretKey = this.encryptionService.decrypt(config.encryptedSecretKey);
-          const lookupKey = order.providerOrderId || order.merchantReference;
+        // External provider API call executed OUTSIDE database transactions (Requirement 4)
+        const statusRes = await provider.getOrderStatus(lookupKey, {
+          merchantId: config.merchantId,
+          secretKey,
+          isSandbox: config.isSandbox,
+        });
 
-          const statusRes = await provider.getOrderStatus(lookupKey, {
-            merchantId: config.merchantId,
-            secretKey,
-            isSandbox: config.isSandbox,
-          });
-
-          if (statusRes.status === 'SUCCESS') {
-            // Strict verification: Reject if amount, currency, or paymentId missing or mismatched (Issue 2)
-            if (
-              statusRes.amountPaise === undefined ||
-              statusRes.amountPaise === null ||
-              !statusRes.currency ||
-              !statusRes.paymentId
-            ) {
-              await this.prisma.paymentOrder.update({
-                where: { id: order.id },
-                data: {
-                  status: 'FAILED',
-                  failedAt: new Date(),
-                  failureReason: 'Missing mandatory provider verification values during reconciliation inquiry',
-                },
-              });
-              results.push({ orderId: order.id, status: 'FAILED', reason: 'Missing verification values' });
-              continue;
-            }
-
-            if (statusRes.currency.toUpperCase() !== order.currency.toUpperCase()) {
-              await this.prisma.paymentOrder.update({
-                where: { id: order.id },
-                data: {
-                  status: 'FAILED',
-                  failedAt: new Date(),
-                  failureReason: `Currency mismatch during recovery: expected ${order.currency}, received ${statusRes.currency}`,
-                },
-              });
-              results.push({ orderId: order.id, status: 'FAILED', reason: 'Currency mismatch' });
-              continue;
-            }
-
-            if (statusRes.amountPaise !== order.amountPaise) {
-              await this.prisma.paymentOrder.update({
-                where: { id: order.id },
-                data: {
-                  status: 'FAILED',
-                  failedAt: new Date(),
-                  failureReason: `Amount mismatch during recovery: expected ${order.amountPaise} paise, received ${statusRes.amountPaise} paise`,
-                },
-              });
-              results.push({ orderId: order.id, status: 'FAILED', reason: 'Amount mismatch' });
-              continue;
-            }
-
-            // Atomic update to VERIFIED
-            await this.prisma.$transaction(async (tx) => {
-              await tx.paymentOrder.update({
-                where: { id: order.id },
-                data: {
-                  status: 'VERIFIED',
-                  providerOrderId: statusRes.orderId || order.providerOrderId,
-                  providerPaymentId: statusRes.paymentId || order.providerPaymentId,
-                  verifiedAt: new Date(),
-                  reconciledAt: new Date(),
-                  rawResponse: statusRes.details as any,
-                },
-              });
-
-              if (order.membershipRequestId) {
-                await tx.membershipRequest.update({
-                  where: { id: order.membershipRequestId },
-                  data: {
-                    metadata: {
-                      paymentVerified: true,
-                      verifiedPaymentOrderId: order.id,
-                      verifiedProviderPaymentId: statusRes.paymentId || null,
-                      paymentVerifiedAt: new Date().toISOString(),
-                      approvalRequirement: 'PENDING_AUTHORIZED_ADMIN_APPROVAL',
-                      compliance: 'SIMULATION_ONLY',
-                    },
-                  },
-                });
-              }
-            });
-
-            results.push({ orderId: order.id, status: 'VERIFIED' });
-          } else if (statusRes.status === 'FAILED') {
-            await this.prisma.paymentOrder.update({
-              where: { id: order.id },
+        if (statusRes.status === 'SUCCESS') {
+          // Strict verification: Reject if amount, currency, or paymentId missing or mismatched (Requirement 8)
+          if (
+            statusRes.amountPaise === undefined ||
+            statusRes.amountPaise === null ||
+            !statusRes.currency ||
+            !statusRes.paymentId
+          ) {
+            await this.prisma.paymentOrder.updateMany({
+              where: {
+                id: order.id,
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+              },
               data: {
                 status: 'FAILED',
                 failedAt: new Date(),
-                failureReason: 'Provider confirmed failure during recovery inquiry',
+                failureReason: 'Missing mandatory provider verification values during reconciliation inquiry',
+                lockedBy: null,
+                leaseExpiresAt: null,
               },
             });
-            results.push({ orderId: order.id, status: 'FAILED' });
+            results.push({ orderId: order.id, status: 'FAILED', reason: 'Missing verification values' });
+            continue;
+          }
+
+          if (statusRes.currency.toUpperCase() !== order.currency.toUpperCase()) {
+            await this.prisma.paymentOrder.updateMany({
+              where: {
+                id: order.id,
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+              },
+              data: {
+                status: 'FAILED',
+                failedAt: new Date(),
+                failureReason: `Currency mismatch during recovery: expected ${order.currency}, received ${statusRes.currency}`,
+                lockedBy: null,
+                leaseExpiresAt: null,
+              },
+            });
+            results.push({ orderId: order.id, status: 'FAILED', reason: 'Currency mismatch' });
+            continue;
+          }
+
+          if (BigInt(statusRes.amountPaise) !== BigInt(order.amountPaise)) {
+            await this.prisma.paymentOrder.updateMany({
+              where: {
+                id: order.id,
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+              },
+              data: {
+                status: 'FAILED',
+                failedAt: new Date(),
+                failureReason: `Amount mismatch during recovery: expected ${order.amountPaise} paise, received ${statusRes.amountPaise} paise`,
+                lockedBy: null,
+                leaseExpiresAt: null,
+              },
+            });
+            results.push({ orderId: order.id, status: 'FAILED', reason: 'Amount mismatch' });
+            continue;
+          }
+
+          // Protected atomic update to VERIFIED with worker ownership check
+          await this.prisma.$transaction(async (tx) => {
+            const { count } = await tx.paymentOrder.updateMany({
+              where: {
+                id: order.id,
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+              },
+              data: {
+                status: 'VERIFIED',
+                providerOrderId: statusRes.orderId || order.providerOrderId,
+                providerPaymentId: statusRes.paymentId || order.providerPaymentId,
+                verifiedAt: new Date(),
+                reconciledAt: new Date(),
+                rawResponse: statusRes.details as any,
+                lockedBy: null,
+                leaseExpiresAt: null,
+              },
+            });
+
+            if (count > 0 && order.membershipRequestId) {
+              await tx.membershipRequest.update({
+                where: { id: order.membershipRequestId },
+                data: {
+                  metadata: {
+                    paymentVerified: true,
+                    verifiedPaymentOrderId: order.id,
+                    verifiedProviderPaymentId: statusRes.paymentId || null,
+                    paymentVerifiedAt: new Date().toISOString(),
+                    approvalRequirement: 'PENDING_AUTHORIZED_ADMIN_APPROVAL',
+                    compliance: 'SIMULATION_ONLY',
+                  },
+                },
+              });
+            }
+          });
+
+          results.push({ orderId: order.id, status: 'VERIFIED' });
+        } else if (statusRes.status === 'FAILED') {
+          await this.prisma.paymentOrder.updateMany({
+            where: {
+              id: order.id,
+              status: 'PROCESSING',
+              lockedBy: this.workerId,
+            },
+            data: {
+              status: 'FAILED',
+              failedAt: new Date(),
+              failureReason: 'Provider confirmed failure during recovery inquiry',
+              lockedBy: null,
+              leaseExpiresAt: null,
+            },
+          });
+          results.push({ orderId: order.id, status: 'FAILED' });
+        } else {
+          // Still PENDING at provider: advance attempts and apply exponential backoff
+          const nextAttempts = (order.attempts || 0) + 1;
+          if (nextAttempts >= 5) {
+            await this.prisma.paymentOrder.updateMany({
+              where: {
+                id: order.id,
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+              },
+              data: {
+                status: 'INVESTIGATION_REQUIRED',
+                attempts: nextAttempts,
+                failedAt: new Date(),
+                failureReason: 'EXHAUSTED_RETRIES_INVESTIGATION_REQUIRED: Payment reconciliation could not confirm status after 5 attempts; flagged for manual admin verification',
+                lockedBy: null,
+                leaseExpiresAt: null,
+              },
+            });
+            results.push({ orderId: order.id, status: 'INVESTIGATION_REQUIRED', reason: 'Max attempts exceeded' });
           } else {
-            // Still PENDING at provider: apply exponential backoff
-            const nextAttempts = order.attempts + 1;
             const backoffSec = Math.min(30 * Math.pow(2, nextAttempts), 600);
             const nextRetryAt = new Date(Date.now() + backoffSec * 1000);
 
-            await this.prisma.paymentOrder.update({
-              where: { id: order.id },
+            await this.prisma.paymentOrder.updateMany({
+              where: {
+                id: order.id,
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+              },
               data: {
                 attempts: nextAttempts,
                 nextRetryAt,
                 reconciledAt: new Date(),
+                lockedBy: null,
+                leaseExpiresAt: null,
               },
             });
             results.push({ orderId: order.id, status: 'PENDING', reason: `Backoff until ${nextRetryAt.toISOString()}` });
           }
-        } catch (err: any) {
-          const nextAttempts = order.attempts + 1;
+        }
+      } catch (err: any) {
+        const nextAttempts = (order.attempts || 0) + 1;
+        if (nextAttempts >= 5) {
+          await this.prisma.paymentOrder.updateMany({
+            where: {
+              id: order.id,
+              status: 'PROCESSING',
+              lockedBy: this.workerId,
+            },
+            data: {
+              status: 'INVESTIGATION_REQUIRED',
+              attempts: nextAttempts,
+              failedAt: new Date(),
+              failureReason: `EXHAUSTED_RETRIES_INVESTIGATION_REQUIRED: Reconciliation error (${err.message}); flagged for manual admin verification`,
+              lockedBy: null,
+              leaseExpiresAt: null,
+            },
+          });
+          results.push({ orderId: order.id, status: 'INVESTIGATION_REQUIRED', error: err.message });
+        } else {
           const backoffSec = Math.min(30 * Math.pow(2, nextAttempts), 600);
           const nextRetryAt = new Date(Date.now() + backoffSec * 1000);
 
-          await this.prisma.paymentOrder.update({
-            where: { id: order.id },
+          await this.prisma.paymentOrder.updateMany({
+            where: {
+              id: order.id,
+              status: 'PROCESSING',
+              lockedBy: this.workerId,
+            },
             data: {
               attempts: nextAttempts,
               nextRetryAt,
+              lockedBy: null,
+              leaseExpiresAt: null,
             },
           });
           results.push({ orderId: order.id, status: 'ERROR', error: err.message });
         }
       }
-
-      return {
-        acquired: true,
-        reconciledCount: results.filter((r) => r.status === 'VERIFIED').length,
-        failedCount: results.filter((r) => r.status === 'FAILED').length,
-        pendingCount: results.filter((r) => r.status === 'PENDING').length,
-        results,
-      };
-    } finally {
-      try {
-        await this.prisma.$queryRaw`SELECT pg_advisory_unlock(${ADVISORY_LOCK_ID})`;
-      } catch {}
     }
+
+    return {
+      acquired: true,
+      workerId: this.workerId,
+      claimedCount: claimedOrders.length,
+      reconciledCount: results.filter((r) => r.status === 'VERIFIED').length,
+      failedCount: results.filter((r) => r.status === 'FAILED').length,
+      investigationCount: results.filter((r) => r.status === 'INVESTIGATION_REQUIRED').length,
+      pendingCount: results.filter((r) => r.status === 'PENDING').length,
+      results,
+    };
   }
 }
 

@@ -772,6 +772,7 @@ enum PaymentOrderStatus {
   FAILED
   CANCELLED
   REFUNDED
+  INVESTIGATION_REQUIRED
 }
 
 model PaymentOrder {
@@ -797,6 +798,9 @@ model PaymentOrder {
   membershipRequestId String?
   attempts            Int                @default(0)
   nextRetryAt         DateTime?
+  lockedBy            String?
+  lockedAt            DateTime?
+  leaseExpiresAt      DateTime?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -806,6 +810,7 @@ model PaymentOrder {
   @@index([providerOrderId])
   @@index([merchantReference])
   @@index([status, nextRetryAt])
+  @@index([status, leaseExpiresAt])
 }
 
 model ProcessedWebhookEvent {

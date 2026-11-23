@@ -58,6 +58,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         update: vi.fn().mockResolvedValue({ id: 'po-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findMany: vi.fn().mockResolvedValue([]),
       },
       processedWebhookEvent: {
@@ -593,7 +594,7 @@ describe('Payment Settings & Gateway Integration Suite', () => {
       expect((res as any).reason).toContain('Terminal state REFUNDED is immutable');
     });
 
-    it('should execute bounded reconciliation poller and mark max attempts exceeded as FAILED', async () => {
+    it('should execute bounded reconciliation poller and route max attempts to INVESTIGATION_REQUIRED', async () => {
       // Order with 5 previous attempts
       const exhaustedOrder = {
         id: 'po-exhausted-01',
@@ -606,21 +607,38 @@ describe('Payment Settings & Gateway Integration Suite', () => {
         createdAt: new Date(Date.now() - 60000),
       };
 
-      mockPrisma.paymentOrder.findMany.mockResolvedValue([exhaustedOrder]);
+      mockPrisma.$queryRaw.mockResolvedValue([exhaustedOrder]);
 
       const res = await paymentsService.reconcilePendingPaymentOrders('TEST_POLLER');
 
       expect(res.acquired).toBe(true);
-      expect(res.failedCount).toBe(1);
-      expect(mockPrisma.paymentOrder.update).toHaveBeenCalledWith(
+      expect(res.investigationCount).toBe(1);
+      expect(mockPrisma.paymentOrder.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'po-exhausted-01' },
+          where: {
+            id: 'po-exhausted-01',
+            status: 'PROCESSING',
+            lockedBy: paymentsService.getWorkerId(),
+          },
           data: expect.objectContaining({
-            status: 'FAILED',
-            failureReason: expect.stringContaining('exceeded maximum 5 retry attempts'),
+            status: 'INVESTIGATION_REQUIRED',
+            failureReason: expect.stringContaining('EXHAUSTED_RETRIES_INVESTIGATION_REQUIRED'),
+            lockedBy: null,
+            leaseExpiresAt: null,
           }),
         })
       );
+    });
+
+    it('should fail closed when database claim locking query fails', async () => {
+      mockPrisma.$queryRaw.mockRejectedValue(new Error('PostgreSQL connection terminated'));
+
+      const res = await paymentsService.reconcilePendingPaymentOrders('TEST_POLLER');
+
+      expect(res.acquired).toBe(false);
+      expect(res.error).toContain('PostgreSQL connection terminated');
+      expect(res.claimedCount).toBe(0);
+      expect(res.reconciledCount).toBe(0);
     });
 
     it('should enforce PAYMENT_ENCRYPTION_KEY in production environment', () => {
