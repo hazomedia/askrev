@@ -1,0 +1,86 @@
+name: ASKR EV Staging Continuous Deployment
+
+on:
+  push:
+    branches:
+      - develop
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    name: Build, Test & Deploy Staging
+    runs-on: ubuntu-latest
+    env:
+      COMPLIANCE_MODE: SIMULATION_ONLY
+      ENABLE_LIVE_PAYOUTS: "false"
+      ENABLE_LIVE_MATCHING: "false"
+      JWT_ACCESS_SECRET: ci-access-secret-minimum-32-characters-test!
+      JWT_REFRESH_SECRET: ci-refresh-secret-minimum-32-characters-test!
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/askrev_ci?schema=public"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.1
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Prisma Schema Validation
+        run: pnpm --filter @askrev/database exec prisma validate
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @askrev/database exec prisma generate
+
+      - name: Build Shared Package
+        run: pnpm --filter @askrev/shared run build
+
+      - name: Build Database Package
+        run: pnpm --filter @askrev/database run build
+
+      - name: Run API Unit & Regression Tests
+        run: pnpm --filter @askrev/api test
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy Member Web to Staging (askrev-staging)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_MEMBER }}
+        run: |
+          vercel deploy \
+            --prod \
+            --yes \
+            --token "$VERCEL_TOKEN" \
+            --project "$VERCEL_PROJECT_ID" \
+            --build-env NEXT_PUBLIC_API_URL="https://api-staging-293f51d9.up.railway.app" \
+            --build-env NEXT_PUBLIC_APP_URL="https://staging.askrevdrive.com"
+
+      - name: Deploy Admin Portal to Staging (askrev-admin-staging)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_ADMIN }}
+        run: |
+          vercel deploy \
+            --prod \
+            --yes \
+            --token "$VERCEL_TOKEN" \
+            --project "$VERCEL_PROJECT_ID" \
+            --build-env NEXT_PUBLIC_API_URL="https://api-staging-293f51d9.up.railway.app" \
+            --build-env NEXT_PUBLIC_APP_URL="https://staging-admin.askrevdrive.com"
