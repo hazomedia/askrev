@@ -3350,7 +3350,7 @@ function DashboardContent() {
                     </p>
                   </div>
                   <Link
-                    href="/bikes"
+                    href="https://www.askrevdrive.com/scooters"
                     className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 self-start md:self-auto min-h-[44px]"
                   >
                     <Bike className="w-4 h-4" />

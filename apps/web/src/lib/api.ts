@@ -14,16 +14,38 @@ export function setCsrfToken(token: string | null) {
 }
 
 /**
- * Retrieve CSRF token from document cookies or session storage (double-submit pattern)
+ * Retrieve CSRF token from document cookies or session storage (double-submit pattern).
+ * Prioritizes the current valid CSRF cookie where accessible in browser environments
+ * to ensure strict synchronization with ambient credentials sent in Cookie headers.
  */
 export function getCsrfToken(): string | null {
-  if (typeof window !== 'undefined') {
-    const fromSession = sessionStorage.getItem('askrev_csrf_token') || inMemoryCsrfToken;
-    if (fromSession) return fromSession;
+  if (typeof document !== 'undefined') {
+    const match = document.cookie.match(/(?:^|;\s*)askrev_csrf_token=([^;]+)/);
+    if (match && match[1]) {
+      const cookieVal = decodeURIComponent(match[1]).trim();
+      if (cookieVal) {
+        inMemoryCsrfToken = cookieVal;
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem('askrev_csrf_token', cookieVal);
+          } catch {}
+        }
+        return cookieVal;
+      }
+    }
   }
-  if (typeof document === 'undefined') return inMemoryCsrfToken;
-  const match = document.cookie.match(/(?:^|;\s*)askrev_csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : inMemoryCsrfToken;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const fromSession = sessionStorage.getItem('askrev_csrf_token');
+      if (fromSession) {
+        inMemoryCsrfToken = fromSession;
+        return fromSession;
+      }
+    } catch {}
+  }
+
+  return inMemoryCsrfToken;
 }
 
 /**
@@ -187,13 +209,16 @@ export async function attemptTokenRefresh(): Promise<boolean> {
 }
 
 /**
- * Ensure a valid CSRF token exists; if missing, proactively fetch from /auth/csrf
+ * Ensure a valid CSRF token exists; if missing or forced, proactively fetch from /auth/csrf
  */
-export async function ensureCsrfToken(): Promise<string | null> {
-  const existing = getCsrfToken();
-  if (existing) return existing;
+export async function ensureCsrfToken(forceRefresh = false): Promise<string | null> {
+  if (!forceRefresh) {
+    const existing = getCsrfToken();
+    if (existing) return existing;
+  }
   try {
     const res = await fetch(`${API_BASE}/auth/csrf`, {
+      method: 'GET',
       credentials: 'include',
     });
     if (res.ok) {
@@ -209,9 +234,14 @@ export async function ensureCsrfToken(): Promise<string | null> {
   return getCsrfToken();
 }
 
-export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export async function fetchApi<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  isRetry = false
+): Promise<T> {
   const token = getAuthToken();
   const method = (options.method || 'GET').toUpperCase();
+  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -223,11 +253,11 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   let csrf = getCsrfToken();
-  if (!csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !endpoint.startsWith('/auth/csrf') && !endpoint.startsWith('/auth/login')) {
+  if (!csrf && isMutation && !endpoint.startsWith('/auth/csrf') && !endpoint.startsWith('/auth/login')) {
     csrf = await ensureCsrfToken();
   }
 
-  if (csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+  if (csrf && isMutation) {
     headers['X-CSRF-Token'] = csrf;
   }
 
@@ -237,21 +267,62 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     headers,
   });
 
+  // Handle 401 Unauthorized (expired token refresh & single retry)
   if (
     response.status === 401 &&
+    !isRetry &&
     !endpoint.startsWith('/auth/login') &&
     !endpoint.startsWith('/auth/register') &&
     !endpoint.startsWith('/auth/refresh')
   ) {
     const refreshed = await attemptTokenRefresh();
     if (refreshed) {
-      response = await fetch(`${API_BASE}${endpoint}`, {
-        credentials: 'include',
-        ...options,
-        headers,
-      });
+      return fetchApi<T>(endpoint, options, true);
     } else {
       clearAuthSession();
+    }
+  }
+
+  // Handle 403 Forbidden specifically due to explicit CSRF token mismatch
+  if (
+    response.status === 403 &&
+    !isRetry &&
+    isMutation &&
+    !endpoint.startsWith('/auth/csrf')
+  ) {
+    let isCsrfMismatch = false;
+    try {
+      const cloned = response.clone();
+      const errData = await cloned.json();
+      const message = Array.isArray(errData?.message)
+        ? errData.message.join('. ')
+        : (errData?.message || '');
+      if (
+        typeof message === 'string' &&
+        (message.toLowerCase().includes('csrf') || message.toLowerCase().includes('token mismatch'))
+      ) {
+        isCsrfMismatch = true;
+      }
+    } catch {}
+
+    if (isCsrfMismatch) {
+      const freshCsrf = await ensureCsrfToken(true);
+      if (freshCsrf) {
+        const retryHeaders: Record<string, string> = {
+          ...headers,
+          'X-CSRF-Token': freshCsrf,
+        };
+        const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
+          credentials: 'include',
+          ...options,
+          headers: retryHeaders,
+        });
+
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        response = retryResponse;
+      }
     }
   }
 
@@ -280,7 +351,10 @@ export async function uploadProductImageApi(
   target: 'gallery' | 'variant' = 'gallery'
 ): Promise<{ url: string; filename: string; storageProvider?: string }> {
   const token = getAuthToken();
-  const csrf = getCsrfToken();
+  let csrf = getCsrfToken();
+  if (!csrf) {
+    csrf = await ensureCsrfToken();
+  }
   const formData = new FormData();
   formData.append('file', file);
 
@@ -293,12 +367,50 @@ export async function uploadProductImageApi(
   }
 
   const query = `?slug=${encodeURIComponent(slugPrefix || 'catalog')}&target=${target}`;
-  const response = await fetch(`${API_BASE}/admin/products/upload-image${query}`, {
+  let response = await fetch(`${API_BASE}/admin/products/upload-image${query}`, {
     method: 'POST',
     credentials: 'include',
     headers,
     body: formData,
   });
+
+  // Safe one-time CSRF retry on explicit token mismatch
+  if (response.status === 403) {
+    let isCsrfMismatch = false;
+    try {
+      const cloned = response.clone();
+      const errData = await cloned.json();
+      const message = Array.isArray(errData?.message)
+        ? errData.message.join('. ')
+        : (errData?.message || '');
+      if (
+        typeof message === 'string' &&
+        (message.toLowerCase().includes('csrf') || message.toLowerCase().includes('token mismatch'))
+      ) {
+        isCsrfMismatch = true;
+      }
+    } catch {}
+
+    if (isCsrfMismatch) {
+      const freshCsrf = await ensureCsrfToken(true);
+      if (freshCsrf) {
+        const retryHeaders: Record<string, string> = {
+          ...headers,
+          'X-CSRF-Token': freshCsrf,
+        };
+        const retryResponse = await fetch(`${API_BASE}/admin/products/upload-image${query}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: retryHeaders,
+          body: formData,
+        });
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+        response = retryResponse;
+      }
+    }
+  }
 
   if (!response.ok) {
     let errMessage = 'Image upload failed';
@@ -583,7 +695,10 @@ export async function adminUploadHeroImage(
   name: string = 'hero'
 ): Promise<{ url: string; filename: string }> {
   const token = getAuthToken();
-  const csrf = getCsrfToken();
+  let csrf = getCsrfToken();
+  if (!csrf) {
+    csrf = await ensureCsrfToken();
+  }
   const formData = new FormData();
   formData.append('file', file);
 
@@ -592,12 +707,50 @@ export async function adminUploadHeroImage(
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
   const url = `${API_BASE}/admin/homepage/hero-slides/upload-image?kind=${kind}&name=${encodeURIComponent(name)}`;
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
     headers,
     body: formData,
   });
+
+  // Safe one-time CSRF retry on explicit token mismatch
+  if (res.status === 403) {
+    let isCsrfMismatch = false;
+    try {
+      const cloned = res.clone();
+      const errData = await cloned.json();
+      const message = Array.isArray(errData?.message)
+        ? errData.message.join('. ')
+        : (errData?.message || '');
+      if (
+        typeof message === 'string' &&
+        (message.toLowerCase().includes('csrf') || message.toLowerCase().includes('token mismatch'))
+      ) {
+        isCsrfMismatch = true;
+      }
+    } catch {}
+
+    if (isCsrfMismatch) {
+      const freshCsrf = await ensureCsrfToken(true);
+      if (freshCsrf) {
+        const retryHeaders: Record<string, string> = {
+          ...headers,
+          'X-CSRF-Token': freshCsrf,
+        };
+        const retryRes = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: retryHeaders,
+          body: formData,
+        });
+        if (retryRes.ok) {
+          return retryRes.json();
+        }
+        res = retryRes;
+      }
+    }
+  }
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -746,7 +899,10 @@ export async function adminUploadBannerImage(
   kind: 'top' | 'popup' = 'top'
 ): Promise<{ url: string; filename: string }> {
   const token = getAuthToken();
-  const csrf = getCsrfToken();
+  let csrf = getCsrfToken();
+  if (!csrf) {
+    csrf = await ensureCsrfToken();
+  }
   const formData = new FormData();
   formData.append('file', file);
 
@@ -755,12 +911,50 @@ export async function adminUploadBannerImage(
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
   const url = `${API_BASE}/admin/banners/upload-image?kind=${kind}`;
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
     headers,
     body: formData,
   });
+
+  // Safe one-time CSRF retry on explicit token mismatch
+  if (res.status === 403) {
+    let isCsrfMismatch = false;
+    try {
+      const cloned = res.clone();
+      const errData = await cloned.json();
+      const message = Array.isArray(errData?.message)
+        ? errData.message.join('. ')
+        : (errData?.message || '');
+      if (
+        typeof message === 'string' &&
+        (message.toLowerCase().includes('csrf') || message.toLowerCase().includes('token mismatch'))
+      ) {
+        isCsrfMismatch = true;
+      }
+    } catch {}
+
+    if (isCsrfMismatch) {
+      const freshCsrf = await ensureCsrfToken(true);
+      if (freshCsrf) {
+        const retryHeaders: Record<string, string> = {
+          ...headers,
+          'X-CSRF-Token': freshCsrf,
+        };
+        const retryRes = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: retryHeaders,
+          body: formData,
+        });
+        if (retryRes.ok) {
+          return retryRes.json();
+        }
+        res = retryRes;
+      }
+    }
+  }
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
