@@ -440,15 +440,116 @@ export class MembersService {
       }
 
       // Rule: Matching reward recipient must be Full Qualified!
+      // If member is on BASIC (or not Full Qualified), calculate matches and FLUSH them!
       if (!user.isFullQualified) {
+        const totalLeft = Math.max(0, Number(placement.carryLeftPaise));
+        const totalRight = Math.max(0, Number(placement.carryRightPaise));
+        const matchesFound = Math.min(totalLeft, totalRight);
+
+        if (matchesFound <= 0) {
+          return {
+            success: true,
+            isFlushed: false,
+            isQualified: false,
+            matchesSettled: 0,
+            flushedPairs: 0,
+            rewardINR: 0,
+            carryLeft: totalLeft,
+            carryRight: totalRight,
+            reason: 'Zero qualifying binary matches found for Basic member.',
+          };
+        }
+
+        const now = new Date();
+        const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+        const flushIdempotencyKey =
+          idempotencyKey || `FLUSH-BIN-${todayStr}-${beneficiaryUserId}-${placement.totalMatchesConsumed}`;
+
+        const existingFlush = await tx.binaryMatchFlush.findUnique({
+          where: { idempotencyKey: flushIdempotencyKey },
+        });
+
+        if (existingFlush) {
+          return {
+            success: true,
+            isFlushed: true,
+            isQualified: false,
+            matchesSettled: 0,
+            flushedPairs: existingFlush.flushedPairs,
+            notionalMissedINR: paiseToRupees(existingFlush.notionalMissedPaise),
+            carryLeft: existingFlush.newCarryLeft,
+            carryRight: existingFlush.newCarryRight,
+            idempotentReplay: true,
+            reason: 'Basic member binary match flush already recorded for this transaction.',
+          };
+        }
+
+        // 1. Consume ONLY matched pairs
+        const newCarryLeft = totalLeft - matchesFound;
+        const newCarryRight = totalRight - matchesFound;
+        const notionalMissedPaise = BigInt(matchesFound) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE;
+
+        // 2. Update BinaryPlacement State
+        await tx.binaryPlacement.update({
+          where: { userId: beneficiaryUserId },
+          data: {
+            carryLeftPaise: BigInt(newCarryLeft),
+            carryRightPaise: BigInt(newCarryRight),
+            matchedVolumeLeftPaise: { increment: BigInt(matchesFound) },
+            matchedVolumeRightPaise: { increment: BigInt(matchesFound) },
+            totalMatchesConsumed: { increment: matchesFound },
+            cumulativeFlushedPairs: { increment: matchesFound },
+            cumulativeFlushedPaise: { increment: notionalMissedPaise },
+            lastMatchDate: todayStr,
+          },
+        });
+
+        // 3. Record non-payable FLUSHED event
+        const flushRecord = await tx.binaryMatchFlush.create({
+          data: {
+            userId: beneficiaryUserId,
+            matchDate: todayStr,
+            flushedPairs: matchesFound,
+            notionalMissedPaise,
+            previousCarryLeft: totalLeft,
+            previousCarryRight: totalRight,
+            newCarryLeft,
+            newCarryRight,
+            idempotencyKey: flushIdempotencyKey,
+          },
+        });
+
+        // 4. Audit Log
+        await tx.auditLog.create({
+          data: {
+            actorId: beneficiaryUserId,
+            action: 'BINARY_MATCH_FLUSHED',
+            entityType: 'BINARY_MATCH_FLUSH',
+            entityId: flushRecord.id,
+            metadata: {
+              memberId: user.memberId,
+              flushedPairs: matchesFound,
+              notionalMissedINR: paiseToRupees(notionalMissedPaise),
+              previousCarryLeft: totalLeft,
+              previousCarryRight: totalRight,
+              newCarryLeft,
+              newCarryRight,
+              complianceMode: 'SIMULATION_ONLY',
+            },
+          },
+        });
+
+        // NO wallet credit. NO journal entry. Unmatched carry-forward preserved.
         return {
-          success: false,
+          success: true,
+          isFlushed: true,
           isQualified: false,
           matchesSettled: 0,
-          rewardINR: 0,
-          reason: 'Beneficiary member is not Full Qualified. Full Qualification is mandatory for binary matching rewards.',
-          carryLeft: Number(placement.carryLeftPaise),
-          carryRight: Number(placement.carryRightPaise),
+          flushedPairs: matchesFound,
+          notionalMissedINR: paiseToRupees(notionalMissedPaise),
+          carryLeft: newCarryLeft,
+          carryRight: newCarryRight,
+          reason: `${matchesFound} binary match pairs flushed without monetary reward for Basic member. Upgrade to EV ULTRA to earn future binary matching rewards.`,
         };
       }
 
@@ -1163,5 +1264,62 @@ export class MembersService {
         createdAt: l.createdAt,
       })),
     };
+  }
+
+  /**
+   * Feature 3: Get Binary Flush History for a member
+   */
+  async getBinaryFlushHistory(userId: string) {
+    const placement = await this.prisma.binaryPlacement.findUnique({
+      where: { userId },
+      select: {
+        cumulativeFlushedPairs: true,
+        cumulativeFlushedPaise: true,
+      },
+    });
+
+    const flushes = await this.prisma.binaryMatchFlush.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const cumulativeFlushedPairs = placement?.cumulativeFlushedPairs || 0;
+    const cumulativeFlushedPaise = placement?.cumulativeFlushedPaise || 0n;
+
+    return {
+      cumulativeFlushedPairs,
+      cumulativeFlushedPaise: cumulativeFlushedPaise.toString(),
+      cumulativeFlushedINR: paiseToRupees(cumulativeFlushedPaise),
+      flushes: flushes.map((f) => ({
+        id: f.id,
+        matchDate: f.matchDate,
+        flushedPairs: f.flushedPairs,
+        notionalMissedINR: paiseToRupees(f.notionalMissedPaise),
+        previousCarryLeft: f.previousCarryLeft,
+        previousCarryRight: f.previousCarryRight,
+        newCarryLeft: f.newCarryLeft,
+        newCarryRight: f.newCarryRight,
+        createdAt: f.createdAt,
+      })),
+    };
+  }
+
+  async getAdminBinaryFlushes() {
+    const flushes = await this.prisma.binaryMatchFlush.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    const userIds = [...new Set(flushes.map((f) => f.userId))];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, memberId: true, fullName: true, currentPackage: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    return flushes.map((f) => ({
+      ...f,
+      user: userMap.get(f.userId) || null,
+      notionalMissedINR: paiseToRupees(f.notionalMissedPaise),
+    }));
   }
 }

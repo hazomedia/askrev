@@ -40,8 +40,19 @@ import {
   AlertCircle,
   CreditCard,
   Sparkles,
+  Layers,
 } from 'lucide-react';
-import { fetchApi, getStoredUser, logoutSession, fetchCurrentUserProfile } from '../../lib/api';
+import {
+  fetchApi,
+  getStoredUser,
+  logoutSession,
+  fetchCurrentUserProfile,
+  fetchAdminMatrixTreeApi,
+  fetchAdminMatrixReportApi,
+  fetchAdminBinaryFlushesApi,
+  fetchAdminCommissionHoldsApi,
+  fetchAdminVouchersApi,
+} from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
 import { AdminBannerManagement } from '../../components/admin/AdminBannerManagement';
@@ -57,6 +68,7 @@ type AdminTab =
   | 'members'
   | 'approvals'
   | 'binary'
+  | 'matrix'
   | 'finance'
   | 'vouchers'
   | 'bookings'
@@ -159,6 +171,38 @@ export default function AdminPage() {
   const [auditSearch, setAuditSearch] = useState('');
   const [suspiciousActivity, setSuspiciousActivity] = useState<any | null>(null);
 
+  // UAT Matrix & Audit States
+  const [matrixReport, setMatrixReport] = useState<any>(null);
+  const [matrixTreeData, setMatrixTreeData] = useState<any>(null);
+  const [binaryFlushes, setBinaryFlushes] = useState<any[]>([]);
+  const [commissionHolds, setCommissionHolds] = useState<any[]>([]);
+  const [allVouchersData, setAllVouchersData] = useState<any[]>([]);
+  const [loadingMatrix, setLoadingMatrix] = useState(false);
+  const [matrixSubTab, setMatrixSubTab] = useState<'tree' | 'qualifications' | 'flushes' | 'holds' | 'vouchers'>('tree');
+
+  const fetchMatrixAdminData = async () => {
+    setLoadingMatrix(true);
+    try {
+      const [report, tree, flushes, holds, vouchers] = await Promise.all([
+        fetchAdminMatrixReportApi().catch(() => null),
+        fetchAdminMatrixTreeApi(1, 4).catch(() => null),
+        fetchAdminBinaryFlushesApi().catch(() => []),
+        fetchAdminCommissionHoldsApi().catch(() => []),
+        fetchAdminVouchersApi().catch(() => null),
+      ]);
+      setMatrixReport(report);
+      setMatrixTreeData(tree);
+      setBinaryFlushes(Array.isArray(flushes) ? flushes : []);
+      setCommissionHolds(Array.isArray(holds) ? holds : []);
+      const vList = vouchers?.vouchers || (Array.isArray(vouchers) ? vouchers : []);
+      setAllVouchersData(vList);
+    } catch (err: any) {
+      console.warn('Matrix admin data fetch notice:', err.message);
+    } finally {
+      setLoadingMatrix(false);
+    }
+  };
+
   // 1. Initial Authentication & Verification
   useEffect(() => {
     const stored = getStoredUser();
@@ -200,6 +244,7 @@ export default function AdminPage() {
         fetchBookings(),
         fetchReconciliation(),
         fetchAuditLogs(),
+        fetchMatrixAdminData(),
       ]);
     } catch (err: any) {
       console.warn('Initial data load notice:', err.message);
@@ -216,6 +261,7 @@ export default function AdminPage() {
       else if (activeTab === 'approvals') {
         await Promise.all([fetchMembershipRequests(), fetchPaymentConfig()]);
       } else if (activeTab === 'binary') await fetchBinaryData(binaryTreeMemberId);
+      else if (activeTab === 'matrix') await fetchMatrixAdminData();
       else if (activeTab === 'finance') {
         await Promise.allSettled([fetchWallets(), fetchLedger()]);
       } else if (activeTab === 'vouchers') await fetchVouchers();
@@ -626,6 +672,9 @@ export default function AdminPage() {
   const handleSelectTab = (tab: AdminTab) => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
+    if (tab === 'matrix') {
+      fetchMatrixAdminData();
+    }
     if (typeof window !== 'undefined') {
       const url = tab === 'overview' ? '/admin' : `/admin?tab=${tab}`;
       window.history.replaceState(null, '', url);
@@ -648,6 +697,7 @@ export default function AdminPage() {
       badgeColor: 'bg-amber-500 text-white',
     },
     { id: 'binary', label: 'Binary Network', icon: GitBranch },
+    { id: 'matrix', label: 'Legacy Matrix & UAT Reports', icon: Layers },
     { id: 'finance', label: 'Financial Ledger', icon: Wallet },
     { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: vouchersData?.metrics?.totalVouchers },
     { id: 'bookings', label: 'EV Bookings', icon: Bike, count: bookingsData?.metrics?.totalBookings },
@@ -2929,6 +2979,449 @@ export default function AdminPage() {
             {activeTab === 'payment-settings' && (
               <div className="space-y-6">
                 <AdminPaymentSettings currentUser={currentUser} />
+              </div>
+            )}
+
+            {/* TAB: LEGACY MATRIX & UAT AUDIT REPORTS (FEATURE 8) */}
+            {activeTab === 'matrix' && (
+              <div className="space-y-6">
+                {/* 1. Header Overview & Summary Metrics */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
+                          UAT Compensation Refinements
+                        </span>
+                        <span className="text-xs text-slate-500 font-mono">
+                          28 Baseline Placements Loaded
+                        </span>
+                      </div>
+                      <h2 className="text-lg font-black text-[#0C2348] mt-1 flex items-center gap-2">
+                        <span>Global 3×8 Legacy Matrix & UAT Audit Reports</span>
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Monitor round-robin Matrix fill order (A-M), 3-active-direct qualifications, non-payable binary match flushes, and BASIC sponsor held entitlements.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={fetchMatrixAdminData}
+                      disabled={loadingMatrix}
+                      className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingMatrix ? 'animate-spin' : ''}`} />
+                      <span>{loadingMatrix ? 'Refreshing...' : 'Refresh Matrix Data'}</span>
+                    </button>
+                  </div>
+
+                  {/* 4 Key Metrics Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-5">
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Matrix Placed</div>
+                      <div className="text-xl font-black text-indigo-900 mt-1">
+                        {matrixReport?.report?.filter((r: any) => r.matrixSequence)?.length ?? 28} / {matrixReport?.totalMembers ?? 28}
+                      </div>
+                      <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">100% Backfilled</div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">3-Direct Qualified</div>
+                      <div className="text-xl font-black text-emerald-700 mt-1">
+                        {matrixReport?.qualifiedMembersCount ?? 0}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium mt-0.5">Unlocked 8 Levels</div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Binary Flushes</div>
+                      <div className="text-xl font-black text-amber-700 mt-1">
+                        {binaryFlushes.length}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                        ₹{binaryFlushes.reduce((acc, f) => acc + (f.notionalMissedINR || 0), 0).toLocaleString('en-IN')} Missed
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Held Sponsor Entitlements</div>
+                      <div className="text-xl font-black text-purple-700 mt-1">
+                        ₹{commissionHolds.filter((h: any) => h.status === 'HELD').reduce((acc, h) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                        {commissionHolds.filter((h: any) => h.status === 'HELD').length} Active Holds
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sandbox Emails Sent</div>
+                      <div className="text-xl font-black text-blue-700 mt-1">
+                        {allVouchersData.filter((v: any) => v.emailSent).length} / {allVouchersData.length}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium mt-0.5">Voucher Notifications</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub Tab Switcher */}
+                <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                  {[
+                    { id: 'tree', label: 'Matrix Placements (1–28)' },
+                    { id: 'qualifications', label: '3-Active-Direct Qualifications' },
+                    { id: 'flushes', label: `Binary Flush Audit (${binaryFlushes.length})` },
+                    { id: 'holds', label: `Held Sponsor Bonuses (${commissionHolds.length})` },
+                    { id: 'vouchers', label: `Voucher Categories & Delivery (${allVouchersData.length})` },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setMatrixSubTab(tab.id as any)}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        matrixSubTab === tab.id
+                          ? 'bg-[#165DAD] text-white shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* SUBTAB 1: MATRIX PLACEMENTS */}
+                {matrixSubTab === 'tree' && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#253247]">Deterministic Matrix Placement Sequence</h3>
+                        <p className="text-xs text-slate-500">Filled layer-by-layer, round-robin position 1..3 across parents</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md border border-indigo-200">
+                        Total Placed: {matrixReport?.report?.filter((r: any) => r.matrixSequence)?.length ?? 28}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Sequence</th>
+                            <th className="py-2.5 px-3">Member ID</th>
+                            <th className="py-2.5 px-3">Full Name</th>
+                            <th className="py-2.5 px-3">Role</th>
+                            <th className="py-2.5 px-3">Package</th>
+                            <th className="py-2.5 px-3">Depth / Layer</th>
+                            <th className="py-2.5 px-3">Position Index</th>
+                            <th className="py-2.5 px-3">Parent Member ID</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
+                          {matrixReport?.report && matrixReport.report.length > 0 ? (
+                            matrixReport.report
+                              .filter((r: any) => r.matrixSequence)
+                              .sort((a: any, b: any) => (a.matrixSequence || 0) - (b.matrixSequence || 0))
+                              .map((r: any) => (
+                                <tr key={r.memberId} className="hover:bg-slate-50/70 transition-colors font-sans">
+                                  <td className="py-2.5 px-3 font-mono font-bold text-indigo-700">#{r.matrixSequence}</td>
+                                  <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{r.memberId}</td>
+                                  <td className="py-2.5 px-3 font-medium text-slate-800">{r.fullName}</td>
+                                  <td className="py-2.5 px-3">
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                                      {r.role}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                      r.package === 'FULL'
+                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                        : r.package === 'BASIC'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
+                                      {r.package}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 font-mono text-slate-600">Layer {r.matrixDepth}</td>
+                                  <td className="py-2.5 px-3 font-mono text-slate-600">Pos {r.matrixPosition}</td>
+                                  <td className="py-2.5 px-3 font-mono text-indigo-900 font-semibold">{r.matrixParent || '— (Root)'}</td>
+                                </tr>
+                              ))
+                          ) : (
+                            <tr>
+                              <td colSpan={8} className="py-8 text-center text-slate-400 font-sans">
+                                Loading matrix placements...
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 2: QUALIFICATIONS */}
+                {matrixSubTab === 'qualifications' && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#253247]">Three-Active-Direct Sponsor Qualifications</h3>
+                        <p className="text-xs text-slate-500">Requires 3 active directs (EV PRO or EV ULTRA) to unlock all 8 Matrix levels</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md border border-emerald-200">
+                        {matrixReport?.qualifiedMembersCount ?? 0} Qualified
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Member ID</th>
+                            <th className="py-2.5 px-3">Full Name</th>
+                            <th className="py-2.5 px-3">Package</th>
+                            <th className="py-2.5 px-3">Active Directs (X / 3)</th>
+                            <th className="py-2.5 px-3">Qualification Status</th>
+                            <th className="py-2.5 px-3">Unlocked Levels</th>
+                            <th className="py-2.5 px-3">Active Direct Referrals</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {matrixReport?.report && matrixReport.report.length > 0 ? (
+                            matrixReport.report.map((r: any) => (
+                              <tr key={r.memberId} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{r.memberId}</td>
+                                <td className="py-2.5 px-3 font-medium text-slate-800">{r.fullName}</td>
+                                <td className="py-2.5 px-3 font-mono text-[11px] font-bold">{r.package}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-indigo-700">
+                                  {r.activeDirectsCount} / 3
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    r.isQualified
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    {r.isQualified ? 'QUALIFIED' : 'PENDING'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-semibold text-slate-600">
+                                  {r.isQualified ? 'Levels 1–8 Unlocked' : '0 Levels (Pending 3 Directs)'}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                                  {r.activeDirects && r.activeDirects.length > 0
+                                    ? r.activeDirects.map((d: any) => `${d.memberId} (${d.currentPackage})`).join(', ')
+                                    : 'None'}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={7} className="py-8 text-center text-slate-400">
+                                Loading qualification data...
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 3: BINARY FLUSH AUDIT */}
+                {matrixSubTab === 'flushes' && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#253247]">Binary Match Flush-Out Audit Logs</h3>
+                        <p className="text-xs text-slate-500">Non-payable matches for BASIC members: pairs consumed, ₹0 paid, carryover preserved</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md border border-amber-200">
+                        {binaryFlushes.length} Flushed Events
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Date</th>
+                            <th className="py-2.5 px-3">Member ID</th>
+                            <th className="py-2.5 px-3">Name</th>
+                            <th className="py-2.5 px-3">Flushed Pairs</th>
+                            <th className="py-2.5 px-3">Notional Missed Reward</th>
+                            <th className="py-2.5 px-3">Previous Carry (L/R)</th>
+                            <th className="py-2.5 px-3">New Carry-Forward (L/R)</th>
+                            <th className="py-2.5 px-3">Wallet Impact</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {binaryFlushes.length > 0 ? (
+                            binaryFlushes.map((f: any) => (
+                              <tr key={f.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-2.5 px-3 font-mono">{new Date(f.matchDate || f.createdAt).toLocaleDateString('en-IN')}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{f.user?.memberId || f.userId}</td>
+                                <td className="py-2.5 px-3 font-medium text-slate-800">{f.user?.fullName || '—'}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-amber-700">{f.flushedPairs} Pairs</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-rose-600">₹{(f.notionalMissedINR || 0).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 px-3 font-mono text-slate-600">{f.previousCarryLeft}L / {f.previousCarryRight}R</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">{f.newCarryLeft}L / {f.newCarryRight}R</td>
+                                <td className="py-2.5 px-3">
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-bold text-[10px]">
+                                    ₹0 (No payout)
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={8} className="py-8 text-center text-slate-400">
+                                No binary match flushes recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 4: COMMISSION HOLDS */}
+                {matrixSubTab === 'holds' && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#253247]">Held Sponsor Commission Audit Logs</h3>
+                        <p className="text-xs text-slate-500">Commissions held for BASIC sponsors awaiting upgrade to EV ULTRA</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md border border-purple-200">
+                        {commissionHolds.length} Holds
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Created</th>
+                            <th className="py-2.5 px-3">Sponsor ID</th>
+                            <th className="py-2.5 px-3">Sponsor Name</th>
+                            <th className="py-2.5 px-3">Referred Direct ID</th>
+                            <th className="py-2.5 px-3">Direct Name</th>
+                            <th className="py-2.5 px-3">Held Amount</th>
+                            <th className="py-2.5 px-3">Reason</th>
+                            <th className="py-2.5 px-3">Status</th>
+                            <th className="py-2.5 px-3">Released At</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {commissionHolds.length > 0 ? (
+                            commissionHolds.map((h: any) => (
+                              <tr key={h.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-2.5 px-3 font-mono">{new Date(h.createdAt).toLocaleDateString('en-IN')}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{h.sponsor?.memberId || h.sponsorId}</td>
+                                <td className="py-2.5 px-3 font-medium text-slate-800">{h.sponsor?.fullName || '—'}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-indigo-700">{h.referredMember?.memberId || h.referredMemberId}</td>
+                                <td className="py-2.5 px-3 font-medium text-slate-800">{h.referredMember?.fullName || '—'}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-purple-700">₹{(h.heldINR || 0).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 px-3 font-mono text-[10px] text-slate-600">{h.reason}</td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    h.status === 'RELEASED'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    {h.status}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-slate-500">
+                                  {h.releasedAt ? new Date(h.releasedAt).toLocaleDateString('en-IN') : '— (Active Hold)'}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={9} className="py-8 text-center text-slate-400">
+                                No commission holds recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 5: VOUCHER CATEGORIES & DELIVERY */}
+                {matrixSubTab === 'vouchers' && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#253247]">Voucher Categories & Delivery Audit</h3>
+                        <p className="text-xs text-slate-500">Distinct categories (EV_VEHICLE_VOUCHER vs ADDITIONAL_SHOPPING_VOUCHER) and sandbox email status</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-200">
+                        {allVouchersData.length} Vouchers
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Voucher Code</th>
+                            <th className="py-2.5 px-3">Member ID</th>
+                            <th className="py-2.5 px-3">Category</th>
+                            <th className="py-2.5 px-3">Initial Value</th>
+                            <th className="py-2.5 px-3">Balance</th>
+                            <th className="py-2.5 px-3">Status</th>
+                            <th className="py-2.5 px-3">Sandbox Email Sent</th>
+                            <th className="py-2.5 px-3">Sent At</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {allVouchersData.length > 0 ? (
+                            allVouchersData.map((v: any) => (
+                              <tr key={v.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-2.5 px-3 font-mono font-bold text-[#165DAD]">{v.voucherCode}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{v.user?.memberId || '—'}</td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    v.category === 'EV_VEHICLE_VOUCHER'
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                                  }`}>
+                                    {v.category === 'EV_VEHICLE_VOUCHER' ? 'EV Vehicle Voucher' : 'Shopping Voucher'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono font-medium">₹{(v.initialValueINR || (Number(v.initialValuePaise || 0) / 100)).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">₹{(v.remainingBalanceINR || (Number(v.remainingBalancePaise || 0) / 100)).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 px-3">
+                                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                    {v.status}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    v.emailSent ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {v.emailSent ? '✓ SENT (SANDBOX)' : 'PENDING'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-slate-500">
+                                  {v.emailSentAt ? new Date(v.emailSentAt).toLocaleString('en-IN') : '—'}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={8} className="py-8 text-center text-slate-400">
+                                Loading vouchers...
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </main>

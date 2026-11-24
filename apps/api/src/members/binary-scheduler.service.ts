@@ -167,10 +167,10 @@ export class BinarySchedulerService {
 
       this.logger.log(`🚀 Commencing Binary Matching Simulation for date: ${todayStr} [DryRun: ${isDryRun}] (Run ID: ${runRecord.id})`);
 
-      // 4. Fetch all eligible Full Qualified members who have an active binary placement
+      // 4. Fetch all eligible members who have an active binary placement (both FULL and BASIC)
       const eligibleMembers = await this.prisma.user.findMany({
         where: {
-          isFullQualified: true,
+          currentPackage: { in: ['FULL', 'BASIC'] },
           binaryPlacement: {
             isNot: null,
           },

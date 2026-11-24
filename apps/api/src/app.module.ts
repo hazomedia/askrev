@@ -18,6 +18,7 @@ import { TaxModule } from './tax/tax.module';
 import { RetailQualificationModule } from './retail-qualification/retail-qualification.module';
 import { PaymentsModule } from './payments/payments.module';
 import { BannersModule } from './banners/banners.module';
+import { LegacyMatrixModule } from './legacy-matrix/legacy-matrix.module';
 import { HealthController } from './health.controller';
 import { CsrfGuard } from './auth/guards/csrf.guard';
 
@@ -41,6 +42,7 @@ import { CsrfGuard } from './auth/guards/csrf.guard';
     RetailQualificationModule,
     PaymentsModule,
     BannersModule,
+    LegacyMatrixModule,
   ],
   controllers: [HealthController],
   providers: [

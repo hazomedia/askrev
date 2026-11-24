@@ -94,6 +94,8 @@ model User {
   binaryMatchingOutbox    BinaryMatchingOutbox[]
   paymentOrders           PaymentOrder[]
   popupDismissals         PopupDismissal[]
+  legacyPlacement         LegacyMatrixPlacement?
+  binaryMatchFlushes      BinaryMatchFlush[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -119,6 +121,8 @@ model BinaryPlacement {
   matchedVolumeRightPaise BigInt    @default(0)
   totalMatchesConsumed   Int        @default(0)
   totalRewardEarnedPaise BigInt     @default(0)
+  cumulativeFlushedPairs Int        @default(0)
+  cumulativeFlushedPaise BigInt     @default(0)
   lastMatchDate          String?
   dailyMatchesCount      Int        @default(0)
 
@@ -178,6 +182,7 @@ model CommissionHold {
   sponsorId            String
   referredMemberId     String
   heldAmountPaise      BigInt
+  reason               String?   @default("BASIC_HOLD_RESERVE")
   status               String    @default("HELD") // HELD, RELEASED, FORFEITED
   releasedAt           DateTime?
   releaseTransactionId String?
@@ -208,6 +213,9 @@ model ShoppingVoucher {
   initialValuePaise     BigInt
   remainingBalancePaise BigInt
   issuedReason          String
+  category              String               @default("SHOPPING_VOUCHER") // EV_VEHICLE_VOUCHER, ADDITIONAL_SHOPPING_VOUCHER, SHOPPING_VOUCHER
+  emailSent             Boolean              @default(false)
+  emailSentAt           DateTime?
   status                String               @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED, FULLY_REDEEMED, PARTIALLY_REDEEMED
   expiresAt             DateTime
   transactions          VoucherTransaction[]
@@ -908,6 +916,56 @@ model PopupDismissal {
   @@index([userId])
   @@index([campaignId])
 }
+
+model LegacyMatrixPlacement {
+  id              String                  @id @default(uuid())
+  userId          String                  @unique
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId        String?
+  parent          LegacyMatrixPlacement?  @relation("MatrixChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children        LegacyMatrixPlacement[] @relation("MatrixChildren")
+  positionIndex   Int                     // 1, 2, or 3
+  matrixSequence  Int                     @unique // 1, 2, 3...
+  depth           Int                     @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([parentId, positionIndex])
+  @@index([parentId])
+  @@index([depth])
+  @@index([matrixSequence])
+}
+
+model LegacyMatrixAuditLog {
+  id              String   @id @default(uuid())
+  placementId     String?
+  userId          String
+  action          String   // PLACEMENT_ASSIGNED, QUALIFICATION_CHECK, SIMULATION_CALCULATED
+  details         Json?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+}
+
+model BinaryMatchFlush {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchDate           String   // YYYY-MM-DD
+  flushedPairs        Int
+  notionalMissedPaise BigInt
+  previousCarryLeft   Int
+  previousCarryRight  Int
+  newCarryLeft        Int
+  newCarryRight       Int
+  idempotencyKey      String?  @unique
+  createdAt           DateTime @default(now())
+
+  @@index([userId])
+  @@index([matchDate])
+}
+
 
 
 

@@ -838,10 +838,14 @@ export async function authRevokeAllSessions(): Promise<{ message: string; succes
 }
 
 /**
- * Fetch latest authenticated user profile
+ * Fetch latest authenticated user profile and synchronize localStorage
  */
 export async function fetchCurrentUserProfile(): Promise<any> {
-  return fetchApi<any>('/auth/me');
+  const profile = await fetchApi<any>('/auth/me');
+  if (profile && typeof window !== 'undefined') {
+    localStorage.setItem('askrev_user', JSON.stringify(profile));
+  }
+  return profile;
 }
 
 /**
@@ -1050,5 +1054,45 @@ export async function adminReorderSlides(slideIds: string[]): Promise<any[]> {
     body: JSON.stringify({ slideIds }),
   });
 }
+
+/**
+ * =============================================================================
+ * UAT COMPENSATION REFINEMENTS: LEGACY MATRIX, FLUSH & HOLD APIS
+ * =============================================================================
+ */
+
+export async function fetchMyMatrixOverviewApi(): Promise<any> {
+  return fetchApi<any>('/legacy-matrix/my-matrix');
+}
+
+export async function fetchMyMatrixQualificationApi(): Promise<any> {
+  return fetchApi<any>('/legacy-matrix/qualification');
+}
+
+export async function fetchBinaryFlushHistoryApi(userId?: string): Promise<any> {
+  const url = userId ? `/members/binary/flush-history?userId=${userId}` : '/members/binary/flush-history';
+  return fetchApi<any>(url);
+}
+
+export async function fetchAdminMatrixTreeApi(rootSequence = 1, maxDepth = 4): Promise<any> {
+  return fetchApi<any>(`/legacy-matrix/admin/tree?rootSequence=${rootSequence}&maxDepth=${maxDepth}`);
+}
+
+export async function fetchAdminMatrixReportApi(): Promise<any> {
+  return fetchApi<any>('/legacy-matrix/admin/report');
+}
+
+export async function fetchAdminBinaryFlushesApi(): Promise<any[]> {
+  return fetchApi<any[]>('/members/admin/binary-flushes');
+}
+
+export async function fetchAdminCommissionHoldsApi(): Promise<any[]> {
+  return fetchApi<any[]>('/packages/admin/commission-holds');
+}
+
+export async function fetchAdminVouchersApi(): Promise<any> {
+  return fetchApi<any>('/vouchers/admin/all');
+}
+
 
 

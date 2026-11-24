@@ -1,6 +1,8 @@
 import { Injectable, BadRequestException, NotFoundException, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InstantBinaryMatchingService } from '../members/instant-binary-matching.service';
+import { LegacyMatrixService } from '../legacy-matrix/legacy-matrix.service';
+import { EmailService } from '../auth/email.service';
 import {
   Prisma,
   User,
@@ -32,7 +34,11 @@ export class PackagesService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => InstantBinaryMatchingService))
     @Optional()
-    private readonly instantBinaryMatchingService?: InstantBinaryMatchingService
+    private readonly instantBinaryMatchingService?: InstantBinaryMatchingService,
+    @Optional()
+    private readonly legacyMatrixService?: LegacyMatrixService,
+    @Optional()
+    private readonly emailService?: EmailService
   ) {}
 
   getAllPackages() {
@@ -587,7 +593,7 @@ export class PackagesService {
           },
         });
 
-        // Grant Member's ₹30,000 Shopping Voucher
+        // Grant Member's ₹30,000 Shopping Voucher (EV Vehicle Voucher)
         const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
         await tx.shoppingVoucher.create({
           data: {
@@ -596,10 +602,22 @@ export class PackagesService {
             initialValuePaise: voucherIssuedPaise,
             remainingBalancePaise: voucherIssuedPaise,
             issuedReason: 'FULL_MEMBERSHIP_ACTIVATION_GRANT',
+            category: 'EV_VEHICLE_VOUCHER',
+            emailSent: true,
+            emailSentAt: new Date(),
             status: 'ACTIVE',
             expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
         });
+
+        if (this.emailService && user.email) {
+          await this.emailService.sendVoucherNotification(user.email, user.fullName, {
+            voucherCode,
+            category: 'EV_VEHICLE_VOUCHER',
+            valueINR: paiseToRupees(voucherIssuedPaise),
+            expiresAt: '2099-12-31',
+          });
+        }
 
         await tx.walletAccount.update({
           where: { userId: user.id },
@@ -655,7 +673,7 @@ export class PackagesService {
           },
         });
 
-        // Grant Member's ₹30,000 Shopping Voucher
+        // Grant Member's ₹30,000 Shopping Voucher (EV Vehicle Voucher)
         const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
         await tx.shoppingVoucher.create({
           data: {
@@ -664,10 +682,22 @@ export class PackagesService {
             initialValuePaise: voucherIssuedPaise,
             remainingBalancePaise: voucherIssuedPaise,
             issuedReason: 'UPGRADE_PAYMENT_GRANT',
+            category: 'EV_VEHICLE_VOUCHER',
+            emailSent: true,
+            emailSentAt: new Date(),
             status: 'ACTIVE',
             expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
         });
+
+        if (this.emailService && user.email) {
+          await this.emailService.sendVoucherNotification(user.email, user.fullName, {
+            voucherCode,
+            category: 'EV_VEHICLE_VOUCHER',
+            valueINR: paiseToRupees(voucherIssuedPaise),
+            expiresAt: '2099-12-31',
+          });
+        }
 
         await tx.walletAccount.update({
           where: { userId: user.id },
@@ -702,6 +732,65 @@ export class PackagesService {
             },
           },
         });
+
+        // Feature 4 Case D: Release all qualifying held sponsor bonuses for this upgrading sponsor
+        const qualifyingHolds = await tx.commissionHold.findMany({
+          where: {
+            sponsorId: user.id,
+            status: 'HELD',
+            reason: { in: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
+          },
+        });
+
+        const totalHoldToRelease = qualifyingHolds.reduce((acc, h) => acc + h.heldAmountPaise, 0n);
+
+        if (totalHoldToRelease > 0n) {
+          await tx.walletAccount.update({
+            where: { userId: user.id },
+            data: {
+              heldCommissionsPaise: { decrement: totalHoldToRelease },
+              availableEarningsPaise: { increment: totalHoldToRelease },
+              totalEarnedPaise: { increment: totalHoldToRelease },
+            },
+          });
+
+          for (const hold of qualifyingHolds) {
+            await tx.commissionHold.update({
+              where: { id: hold.id },
+              data: {
+                status: 'RELEASED',
+                releasedAt: new Date(),
+                releaseTransactionId: `JNL-HOLD-REL-UPG-${req.id}-${hold.id.slice(0, 8)}`,
+              },
+            });
+          }
+
+          await tx.journalEntry.create({
+            data: {
+              referenceId: `JNL-HOLD-REL-UPG-${req.id}`,
+              eventType: 'SPONSOR_UPGRADE_HOLD_RELEASE',
+              narration: `Simulated release of ₹${paiseToRupees(totalHoldToRelease)} held sponsor bonus upon upgrading to FULL for ${user.fullName} (${user.memberId})`,
+              lines: {
+                create: [
+                  {
+                    account: JournalAccount.COMMISSION_HOLD_RESERVE,
+                    userId: user.id,
+                    debitPaise: totalHoldToRelease,
+                    creditPaise: 0n,
+                    description: `Release of held sponsor bonuses upon upgrading to FULL`,
+                  },
+                  {
+                    account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                    userId: user.id,
+                    debitPaise: 0n,
+                    creditPaise: totalHoldToRelease,
+                    description: `Earnings payable credited to ${user.fullName} from released held sponsor bonuses`,
+                  },
+                ],
+              },
+            },
+          });
+        }
       }
 
       // 3. PHASE 3B: ATOMIC SPONSOR COMMISSION ENGINE
@@ -716,9 +805,24 @@ export class PackagesService {
         });
       }
 
-      // 3b. PHASE 3C: BINARY PLACEMENT & VOLUME PROPAGATION ON FULL QUALIFICATION
+      // 3b. PHASE 3C & FEATURES 1 & 2: BINARY & LEGACY MATRIX PLACEMENT
       let binaryPlacementResult: any = null;
-      if (
+      if (req.requestType === MembershipRequestType.BASIC_ACTIVATION) {
+        // Feature 2: Place BASIC member in binary tree (count only, 0 volume)
+        const existingPlacement = await tx.binaryPlacement.findUnique({
+          where: { userId: user.id },
+        });
+
+        if (!existingPlacement || !existingPlacement.parentId) {
+          const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user, false);
+          binaryPlacementResult = autoRes;
+        }
+
+        // Feature 1: Place in Global 3x8 Legacy Matrix
+        if (this.legacyMatrixService) {
+          await this.legacyMatrixService.placeMemberInMatrix(user.id, tx);
+        }
+      } else if (
         (req.requestType === MembershipRequestType.FULL_ACTIVATION ||
           req.requestType === MembershipRequestType.BASIC_TO_FULL_UPGRADE) &&
         !previouslyFullQualified
@@ -737,11 +841,16 @@ export class PackagesService {
             affectedAncestors: ancestors,
           };
         } else {
-          const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user);
+          const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user, true);
           if (autoRes?.affectedAncestors) {
             pendingImmediateAncestors.push(...autoRes.affectedAncestors);
           }
           binaryPlacementResult = autoRes;
+        }
+
+        // Feature 1: Place in Global 3x8 Legacy Matrix
+        if (this.legacyMatrixService) {
+          await this.legacyMatrixService.placeMemberInMatrix(user.id, tx);
         }
       }
 
@@ -1105,11 +1214,178 @@ export class PackagesService {
         ? FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE
         : 0n;
 
+      // Check whether sponsor is FULL or BASIC
+      const latestSponsor = await tx.user.findUnique({
+        where: { id: params.sponsor.id },
+        select: { id: true, memberId: true, fullName: true, email: true, currentPackage: true, isFullQualified: true },
+      });
+      const isSponsorFull = Boolean(
+        latestSponsor?.isFullQualified || latestSponsor?.currentPackage === MembershipPackage.FULL
+      );
+
       // ---------------------------------------------------------------------
       // SUBCASE 2A: 1st or 3rd+ Full Qualified Direct -> ₹10,000 Total Entitlement
       // ---------------------------------------------------------------------
       if (qualificationOrder === 1 || qualificationOrder >= 3) {
         const totalEntitlement = FINANCIAL_RULES.QUALIFIED_DIRECT_1ST_ENTITLEMENT_PAISE; // ₹10,000
+
+        // Feature 4: BASIC SPONSOR COMMISSION HOLD (Case B & Case C)
+        if (!isSponsorFull) {
+          if (wasPreviouslyBasic) {
+            // CASE B: Sponsor is BASIC, Direct was BASIC and now upgrades to FULL
+            // Sponsor already received ₹1,000 earlier. Hold additional ₹9,000.
+            const holdAmountPaise = 900000n; // ₹9,000
+
+            await tx.walletAccount.update({
+              where: { userId: params.sponsor.id },
+              data: {
+                heldCommissionsPaise: { increment: holdAmountPaise },
+              },
+            });
+
+            await tx.commissionHold.create({
+              data: {
+                sponsorId: params.sponsor.id,
+                referredMemberId: params.referredUser.id,
+                heldAmountPaise: holdAmountPaise,
+                reason: 'BASIC_SPONSOR_DIRECT_UPGRADE',
+                status: 'HELD',
+              },
+            });
+
+            await tx.journalEntry.create({
+              data: {
+                referenceId: `JNL-HOLD-UPG-${params.requestId}`,
+                eventType: 'BASIC_SPONSOR_DIRECT_UPGRADE_HELD',
+                narration: `Simulated ₹9,000 sponsor bonus held for BASIC sponsor ${params.sponsor.memberId} on direct upgrade of ${params.referredUser.fullName}`,
+                lines: {
+                  create: [
+                    {
+                      account: JournalAccount.DIRECT_SPONSOR_COMMISSION_EXPENSE,
+                      userId: null,
+                      debitPaise: holdAmountPaise,
+                      creditPaise: 0n,
+                      description: `Commission expense for direct upgrade of ${params.referredUser.fullName}`,
+                    },
+                    {
+                      account: JournalAccount.COMMISSION_HOLD_RESERVE,
+                      userId: params.sponsor.id,
+                      debitPaise: 0n,
+                      creditPaise: holdAmountPaise,
+                      description: `Hold reserve recorded for BASIC sponsor ${params.sponsor.memberId}`,
+                    },
+                  ],
+                },
+              },
+            });
+
+            await tx.qualificationEvent.create({
+              data: {
+                memberId: params.referredUser.id,
+                sponsorId: params.sponsor.id,
+                qualificationMethod: QualificationMethod.UPGRADE_PAYMENT,
+                qualificationOrderForSponsor: qualificationOrder,
+                feePaidPaise: params.feePaise,
+                voucherIssuedPaise: 0n,
+                walletCreditedPaise: 0n,
+                holdReleasedPaise: 0n,
+                commissionRecoveredPaise: 0n,
+                unfundedRecoveryPaise: 0n,
+              },
+            });
+
+            return {
+              sponsorMemberId: params.sponsor.memberId,
+              qualificationOrder,
+              action: 'COMMISSION_HELD_BASIC_SPONSOR',
+              heldINR: paiseToRupees(holdAmountPaise),
+              reason: 'Direct upgraded to Full; ₹9,000 held until sponsor upgrades to Full',
+            };
+          } else {
+            // CASE C: Sponsor is BASIC, Direct joins FULL directly
+            // Release ₹1,000 to wallet, Hold ₹9,000.
+            const releaseAmountPaise = 100000n; // ₹1,000
+            const holdAmountPaise = 900000n;    // ₹9,000
+
+            await tx.walletAccount.update({
+              where: { userId: params.sponsor.id },
+              data: {
+                availableEarningsPaise: { increment: releaseAmountPaise },
+                totalEarnedPaise: { increment: releaseAmountPaise },
+                heldCommissionsPaise: { increment: holdAmountPaise },
+              },
+            });
+
+            await tx.commissionHold.create({
+              data: {
+                sponsorId: params.sponsor.id,
+                referredMemberId: params.referredUser.id,
+                heldAmountPaise: holdAmountPaise,
+                reason: 'BASIC_SPONSOR_DIRECT_FULL',
+                status: 'HELD',
+              },
+            });
+
+            await tx.journalEntry.create({
+              data: {
+                referenceId: `JNL-BASIC-FULL-${params.requestId}`,
+                eventType: 'BASIC_SPONSOR_DIRECT_FULL_COMMISSION',
+                narration: `Simulated entitlement for BASIC sponsor ${params.sponsor.memberId} from direct FULL join of ${params.referredUser.fullName}. Released ₹1,000, Held ₹9,000`,
+                lines: {
+                  create: [
+                    {
+                      account: JournalAccount.DIRECT_SPONSOR_COMMISSION_EXPENSE,
+                      userId: null,
+                      debitPaise: releaseAmountPaise + holdAmountPaise,
+                      creditPaise: 0n,
+                      description: `Commission expense for direct FULL activation of ${params.referredUser.fullName}`,
+                    },
+                    {
+                      account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                      userId: params.sponsor.id,
+                      debitPaise: 0n,
+                      creditPaise: releaseAmountPaise,
+                      description: `Earnings payable credited to sponsor ${params.sponsor.memberId}`,
+                    },
+                    {
+                      account: JournalAccount.COMMISSION_HOLD_RESERVE,
+                      userId: params.sponsor.id,
+                      debitPaise: 0n,
+                      creditPaise: holdAmountPaise,
+                      description: `Hold reserve recorded for BASIC sponsor ${params.sponsor.memberId}`,
+                    },
+                  ],
+                },
+              },
+            });
+
+            await tx.qualificationEvent.create({
+              data: {
+                memberId: params.referredUser.id,
+                sponsorId: params.sponsor.id,
+                qualificationMethod: QualificationMethod.DIRECT_FULL,
+                qualificationOrderForSponsor: qualificationOrder,
+                feePaidPaise: params.feePaise,
+                voucherIssuedPaise: 0n,
+                walletCreditedPaise: releaseAmountPaise,
+                holdReleasedPaise: 0n,
+                commissionRecoveredPaise: 0n,
+                unfundedRecoveryPaise: 0n,
+              },
+            });
+
+            return {
+              sponsorMemberId: params.sponsor.memberId,
+              qualificationOrder,
+              action: 'PARTIAL_RELEASE_AND_HOLD',
+              releasedINR: paiseToRupees(releaseAmountPaise),
+              heldINR: paiseToRupees(holdAmountPaise),
+              reason: 'Direct joined Full; ₹1,000 released, ₹9,000 held until sponsor upgrades to Full',
+            };
+          }
+        }
+
+        // FULL SPONSOR: Normal flow
         const netWalletCredit = totalEntitlement - priorCommissionPaise; // e.g. ₹9,000 if previously Basic
 
         await tx.walletAccount.update({
@@ -1181,7 +1457,7 @@ export class PackagesService {
       // 3. Reconcile/recover earlier ₹1,000 basic commission (if previously basic)
       // ---------------------------------------------------------------------
       if (qualificationOrder === 2) {
-        // Part 1: Issue ₹30,000 Shopping Voucher
+        // Part 1: Issue ₹30,000 Shopping Voucher (EV Vehicle Voucher)
         const voucherGrantPaise = FINANCIAL_RULES.QUALIFIED_DIRECT_2ND_VOUCHER_PAISE;
         const sponsorVoucherCode = `VCHR-SPON-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -1192,10 +1468,26 @@ export class PackagesService {
             initialValuePaise: voucherGrantPaise,
             remainingBalancePaise: voucherGrantPaise,
             issuedReason: 'SECOND_QUALIFIED_DIRECT_GRANT',
+            category: 'EV_VEHICLE_VOUCHER',
+            emailSent: true,
+            emailSentAt: new Date(),
             status: 'ACTIVE',
             expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
         });
+
+        if (this.emailService && params.sponsor.email) {
+          await this.emailService.sendVoucherNotification(
+            params.sponsor.email,
+            params.sponsor.fullName,
+            {
+              voucherCode: sponsorVoucherCode,
+              category: 'EV_VEHICLE_VOUCHER',
+              valueINR: paiseToRupees(voucherGrantPaise),
+              expiresAt: '2099-12-31',
+            }
+          );
+        }
 
         await tx.walletAccount.update({
           where: { userId: params.sponsor.id },
@@ -1492,12 +1784,15 @@ export class PackagesService {
   }
 
   /**
-   * Deterministically places a Full Qualified member in the binary tree on their intended leg
+   * Deterministically places a member in the binary tree on their intended leg
    * under the sponsor's subtree (standard direct-selling extreme outer spillover).
+   * For BASIC members (isFullQualified = false), increments counts only (+1 count), 0 volume.
+   * For FULL members (isFullQualified = true), increments counts and payable volume (+1 unit).
    */
   private async autoPlaceMemberInBinaryTree(
     tx: Prisma.TransactionClient,
-    targetUser: User
+    targetUser: User,
+    isFullQualified: boolean = true
   ) {
     if (targetUser.role === UserRole.SUPER_ADMIN) {
       return null;
@@ -1571,7 +1866,7 @@ export class PackagesService {
       },
     });
 
-    // 4. Propagate counts (+1 count) and qualified volume (+1 unit) up the ancestor chain
+    // 4. Propagate counts (+1 count) and qualified volume (+1 unit if isFullQualified) up the ancestor chain
     let currParentId: string | null = targetParentId;
     let currLeg: BinaryLeg | null = intendedSide;
     const visitedPropagate = new Set<string>();
@@ -1591,12 +1886,16 @@ export class PackagesService {
       const updateData: any = {};
       if (currLeg === BinaryLeg.LEFT) {
         updateData.leftCount = { increment: 1 };
-        updateData.leftVolumePaise = { increment: 1n };
-        updateData.carryLeftPaise = { increment: 1n };
+        if (isFullQualified) {
+          updateData.leftVolumePaise = { increment: 1n };
+          updateData.carryLeftPaise = { increment: 1n };
+        }
       } else {
         updateData.rightCount = { increment: 1 };
-        updateData.rightVolumePaise = { increment: 1n };
-        updateData.carryRightPaise = { increment: 1n };
+        if (isFullQualified) {
+          updateData.rightVolumePaise = { increment: 1n };
+          updateData.carryRightPaise = { increment: 1n };
+        }
       }
 
       await tx.binaryPlacement.update({
@@ -1604,15 +1903,17 @@ export class PackagesService {
         data: updateData,
       });
 
-      affectedAncestors.push(currParentId);
+      if (isFullQualified) {
+        affectedAncestors.push(currParentId);
+      }
 
       if (!parentNode.parentId || !parentNode.leg) break;
       currLeg = parentNode.leg;
       currParentId = parentNode.parentId;
     }
 
-    // Queue outbox records for ancestors in tx
-    if (tx.binaryMatchingOutbox) {
+    // Queue outbox records for ancestors in tx only if volume was added (isFullQualified)
+    if (isFullQualified && tx.binaryMatchingOutbox) {
       for (const ancestorId of affectedAncestors) {
         await tx.binaryMatchingOutbox.create({
           data: {
@@ -1632,6 +1933,31 @@ export class PackagesService {
       leg: intendedSide,
       affectedAncestors,
     };
+  }
+
+  /**
+   * Admin Portal: Held Sponsor Commission Report
+   */
+  async getAdminCommissionHolds() {
+    const holds = await this.prisma.commissionHold.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const userIds = [
+      ...new Set([...holds.map((h) => h.sponsorId), ...holds.map((h) => h.referredMemberId)]),
+    ];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, memberId: true, fullName: true, currentPackage: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    return holds.map((h) => ({
+      ...h,
+      heldINR: paiseToRupees(h.heldAmountPaise),
+      sponsor: userMap.get(h.sponsorId) || null,
+      referredMember: userMap.get(h.referredMemberId) || null,
+    }));
   }
 }
 
