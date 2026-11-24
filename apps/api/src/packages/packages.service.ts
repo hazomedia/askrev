@@ -394,7 +394,7 @@ export class PackagesService {
           feeINR: paiseToRupees(request.feePaise),
         },
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
   }
 
   async getMyMembershipRequests(userId: string) {
@@ -578,6 +578,81 @@ export class PackagesService {
             },
           },
         });
+
+        // Feature 5: Grant Member's ₹3,000 Shopping Voucher (Additional Shopping Voucher)
+        const basicVoucherGrantPaise = FINANCIAL_RULES.BASIC_MEMBERSHIP_PRICE_PAISE; // ₹3,000 (300,000 paise)
+        const existingBasicVoucher = await tx.shoppingVoucher.findFirst({
+          where: {
+            userId: user.id,
+            issuedReason: 'BASIC_MEMBERSHIP_ACTIVATION_GRANT',
+          },
+        });
+
+        if (!existingBasicVoucher) {
+          const basicVoucherCode = `VCHR-BSC-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+          await tx.shoppingVoucher.create({
+            data: {
+              voucherCode: basicVoucherCode,
+              userId: user.id,
+              initialValuePaise: basicVoucherGrantPaise,
+              remainingBalancePaise: basicVoucherGrantPaise,
+              issuedReason: 'BASIC_MEMBERSHIP_ACTIVATION_GRANT',
+              category: 'ADDITIONAL_SHOPPING_VOUCHER',
+              emailSent: false, // Sandbox logged only, not live delivered
+              emailSentAt: null,
+              status: 'ACTIVE',
+              expiresAt: new Date('2099-12-31T23:59:59.999Z'),
+            },
+          });
+
+          if (this.emailService && user.email) {
+            await this.emailService.sendVoucherNotification(
+              user.email,
+              user.fullName,
+              {
+                voucherCode: basicVoucherCode,
+                category: 'ADDITIONAL_SHOPPING_VOUCHER',
+                valueINR: paiseToRupees(basicVoucherGrantPaise),
+                expiresAt: '2099-12-31',
+              }
+            );
+          }
+
+          await tx.walletAccount.update({
+            where: { userId: user.id },
+            data: {
+              shoppingVoucherBalancePaise: { increment: basicVoucherGrantPaise },
+            },
+          });
+
+          // Double-entry: Basic Voucher Liability
+          await tx.journalEntry.create({
+            data: {
+              referenceId: `JNL-VCHR-BSC-${req.id}`,
+              eventType: 'BASIC_VOUCHER_LIABILITY',
+              narration: `Simulated ₹3,000 shopping voucher issued to basic member ${user.fullName} (${user.memberId})`,
+              lines: {
+                create: [
+                  {
+                    account: JournalAccount.SHOPPING_VOUCHER_PROMO_EXPENSE,
+                    userId: null,
+                    debitPaise: basicVoucherGrantPaise,
+                    creditPaise: 0n,
+                    description: `Promotional voucher incentive expense for basic member ${user.memberId}`,
+                  },
+                  {
+                    account: JournalAccount.SHOPPING_VOUCHER_LIABILITY,
+                    userId: user.id,
+                    debitPaise: 0n,
+                    creditPaise: basicVoucherGrantPaise,
+                    description: `Voucher liability recorded for basic member ${user.memberId}`,
+                  },
+                ],
+              },
+            },
+          });
+        }
       } else if (req.requestType === MembershipRequestType.FULL_ACTIVATION) {
         qualificationMethod = QualificationMethod.DIRECT_FULL;
         voucherIssuedPaise = FINANCIAL_RULES.FULL_VOUCHER_GRANT_PAISE; // ₹30,000
@@ -890,7 +965,7 @@ export class PackagesService {
         sponsorSettlement: sponsorSettlementResult,
         binaryPlacement: binaryPlacementResult,
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     // Trigger instant matching evaluation post-commit
     if (pendingImmediateAncestors.length > 0 && this.instantBinaryMatchingService) {
@@ -965,14 +1040,14 @@ export class PackagesService {
           feeINR: paiseToRupees(updated.feePaise),
         },
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
   }
 
   // =========================================================================
   // PHASE 3B: SPONSOR COMMISSION SETTLEMENT ENGINE (IN-TRANSACTION)
   // =========================================================================
 
-  private async settleSponsorCommissionInTx(
+  async settleSponsorCommissionInTx(
     tx: Prisma.TransactionClient,
     params: {
       sponsor: User & { wallet: WalletAccount | null };
@@ -1483,7 +1558,7 @@ export class PackagesService {
             params.sponsor.fullName,
             {
               voucherCode: sponsorVoucherCode,
-              category: 'EV_VEHICLE_VOUCHER',
+              category: 'ADDITIONAL_SHOPPING_VOUCHER',
               valueINR: paiseToRupees(voucherGrantPaise),
               expiresAt: '2099-12-31',
             }
@@ -1525,56 +1600,56 @@ export class PackagesService {
         });
 
         // Part 2: Release sponsor-level ₹1,000 hold reserve
-        const currentHeld = sponsorWallet.heldCommissionsPaise;
-        const holdToReleasePaise =
-          currentHeld >= FINANCIAL_RULES.BASIC_HOLD_RESERVE_TARGET_PAISE
-            ? FINANCIAL_RULES.BASIC_HOLD_RESERVE_TARGET_PAISE
-            : currentHeld;
+        // 1. Identify the eligible BASIC hold reserve record FIRST
+        const activeHold = await tx.commissionHold.findFirst({
+          where: {
+            sponsorId: params.sponsor.id,
+            status: 'HELD',
+            reason: { notIn: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
 
-        if (holdToReleasePaise > 0n) {
+        // 2. Derive release amount EXCLUSIVELY from the eligible hold record
+        const holdToReleasePaise = activeHold ? activeHold.heldAmountPaise : 0n;
+
+        // 3. Never release money when no eligible reserve exists!
+        if (activeHold && holdToReleasePaise > 0n) {
+          const actualDecrement =
+            sponsorWallet.heldCommissionsPaise >= holdToReleasePaise
+              ? holdToReleasePaise
+              : sponsorWallet.heldCommissionsPaise;
+
           await tx.walletAccount.update({
             where: { userId: params.sponsor.id },
             data: {
-              heldCommissionsPaise: { decrement: holdToReleasePaise },
-              availableEarningsPaise: { increment: holdToReleasePaise },
-              totalEarnedPaise: { increment: holdToReleasePaise },
+              heldCommissionsPaise: { decrement: actualDecrement },
+              availableEarningsPaise: { increment: actualDecrement },
+              totalEarnedPaise: { increment: actualDecrement },
             },
           });
 
-          // Update oldest active BASIC hold reserve record (strictly excluding ₹9,000 upgrade holds!)
-          const activeHold = await tx.commissionHold.findFirst({
-            where: {
-              sponsorId: params.sponsor.id,
-              status: 'HELD',
-              reason: { notIn: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
-              heldAmountPaise: { lte: holdToReleasePaise },
+          await tx.commissionHold.update({
+            where: { id: activeHold.id },
+            data: {
+              status: 'RELEASED',
+              releasedAt: new Date(),
+              releaseTransactionId: `JNL-HOLD-REL-${params.requestId}`,
             },
-            orderBy: { createdAt: 'asc' },
           });
-
-          if (activeHold) {
-            await tx.commissionHold.update({
-              where: { id: activeHold.id },
-              data: {
-                status: 'RELEASED',
-                releasedAt: new Date(),
-                releaseTransactionId: `JNL-HOLD-REL-${params.requestId}`,
-              },
-            });
-          }
 
           // Journal 2: Hold Release
           await tx.journalEntry.create({
             data: {
               referenceId: `JNL-HOLD-REL-${params.requestId}`,
               eventType: 'HOLD_RESERVE_RELEASE',
-              narration: `Simulated release of ₹${paiseToRupees(holdToReleasePaise)} hold reserve to sponsor ${params.sponsor.memberId}`,
+              narration: `Simulated release of ₹${paiseToRupees(actualDecrement)} hold reserve to sponsor ${params.sponsor.memberId}`,
               lines: {
                 create: [
                   {
                     account: JournalAccount.COMMISSION_HOLD_RESERVE,
                     userId: params.sponsor.id,
-                    debitPaise: holdToReleasePaise,
+                    debitPaise: actualDecrement,
                     creditPaise: 0n,
                     description: `Hold reserve released for sponsor ${params.sponsor.memberId}`,
                   },
@@ -1582,7 +1657,7 @@ export class PackagesService {
                     account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
                     userId: params.sponsor.id,
                     debitPaise: 0n,
-                    creditPaise: holdToReleasePaise,
+                    creditPaise: actualDecrement,
                     description: `Earnings payable credited to sponsor ${params.sponsor.memberId} from hold release`,
                   },
                 ],

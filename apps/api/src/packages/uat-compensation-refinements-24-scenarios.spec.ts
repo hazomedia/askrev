@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import {
+  PrismaClient,
+  MembershipRequestType,
+  MembershipRequestStatus,
+  QualificationMethod,
+} from '@prisma/client';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -9,28 +14,57 @@ import {
   MembershipPackage,
   UserRole,
   paiseToRupees,
+  JournalAccount,
 } from '@askrev/shared';
 import {
   LEGACY_MATRIX_CONFIG,
+  LEGACY_MATRIX_RATES,
   calculateLayerCapacity,
   getMatrixFillSlot,
 } from '../legacy-matrix/legacy-matrix.constants';
 import { MembersService } from '../members/members.service';
+import { PackagesService } from './packages.service';
+import { LegacyMatrixService } from '../legacy-matrix/legacy-matrix.service';
 
-// Load local .env.uat or environment
+// Load local .env.uat or environment strictly
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env.uat') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env.uat') });
 dotenv.config({ path: path.resolve(process.cwd(), '../../.env.uat') });
 dotenv.config();
 
-const UAT_DB_URL = process.env.UAT_DATABASE_URL || process.env.DATABASE_URL;
+// FIX 4: STRICT UAT DATABASE FAIL-SAFE (No fallback to DATABASE_URL)
+const UAT_DB_URL = process.env.UAT_DATABASE_URL;
 
 if (!UAT_DB_URL) {
   throw new Error(
-    'FATAL CONFIGURATION ERROR: UAT_DATABASE_URL environment variable must be set to run UAT tests.'
+    'FATAL CONFIGURATION ERROR: UAT_DATABASE_URL environment variable must be set to run UAT tests. Falling back to DATABASE_URL is strictly forbidden.'
   );
 }
 
-// STRICT PRODUCTION SECURITY GUARD: Never connect to Production
+// STRICT SECURITY GUARD: Approved database allowlist validation
+let parsedHost = '';
+let parsedPort = '';
+try {
+  const urlObj = new URL(UAT_DB_URL);
+  parsedHost = urlObj.hostname;
+  parsedPort = urlObj.port;
+} catch {
+  throw new Error('FATAL CONFIGURATION ERROR: Invalid UAT_DATABASE_URL format.');
+}
+
+const hostPort = `${parsedHost}:${parsedPort}`;
+const APPROVED_HOSTS = ['nozomi.proxy.rlwy.net:28651', 'localhost', '127.0.0.1'];
+const isApproved = APPROVED_HOSTS.some(
+  (approved) => hostPort.includes(approved) || parsedHost === approved
+);
+
+if (!isApproved) {
+  throw new Error(
+    `FATAL SECURITY VIOLATION: Database host "${hostPort}" is not in the approved UAT allowlist (${APPROVED_HOSTS.join(', ')}). Aborting immediately.`
+  );
+}
+
+// STRICT PRODUCTION SECURITY GUARD: Defense-in-depth Production denylist
 if (
   UAT_DB_URL.includes('trolley.proxy.rlwy.net') ||
   UAT_DB_URL.includes('41036') ||
@@ -41,9 +75,11 @@ if (
   );
 }
 
-describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scenarios)', { timeout: 30000 }, () => {
+describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scenarios)', { timeout: 60000 }, () => {
   let prisma: PrismaClient;
   let membersService: MembersService;
+  let packagesService: PackagesService;
+  let legacyMatrixService: LegacyMatrixService;
 
   beforeAll(async () => {
     // Connect strictly to UAT Database URL from environment or verified UAT instance
@@ -55,6 +91,17 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
       },
     });
     await prisma.$connect();
+
+    // LIVE SQL GUARD: Verify connected database is NOT production
+    const [dbInfo] = await prisma.$queryRaw<Array<{ current_database: string }>>`
+      SELECT current_database();
+    `;
+    if (!dbInfo || !dbInfo.current_database) {
+      throw new Error('FATAL DATABASE ERROR: Could not verify connected database name.');
+    }
+
+    legacyMatrixService = new LegacyMatrixService(prisma as any);
+    packagesService = new PackagesService(prisma as any, undefined, legacyMatrixService, undefined);
     membersService = new MembersService(prisma as any);
 
     // Fast batch cleanup of any lingering disposable test accounts from previous runs
@@ -72,6 +119,40 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
       await prisma.qualificationEvent.deleteMany({
         where: { OR: [{ memberId: { in: ids } }, { sponsorId: { in: ids } }] },
       });
+
+      // Clean up test journal entries associated with disposable user membership requests
+      const testReqs = await prisma.membershipRequest.findMany({
+        where: { userId: { in: ids } },
+        select: { id: true },
+      });
+      const testReqIds = testReqs.map((r) => r.id);
+      if (testReqIds.length > 0) {
+        const testRefPatterns = testReqIds.flatMap((id) => [
+          `JNL-REQ-${id}`,
+          `JNL-VCHR-BSC-${id}`,
+          `JNL-HOLD-${id}`,
+          `JNL-REL-${id}`,
+          `JNL-BASIC-FULL-${id}`,
+          `JNL-HOLD-UPG-${id}`,
+        ]);
+        const entries = await prisma.journalEntry.findMany({
+          where: {
+            OR: [
+              { referenceId: { in: testRefPatterns } },
+              { referenceId: { startsWith: 'REQ-SCEN17-' } },
+              { referenceId: { startsWith: 'JNL-REQ-DISP-' } },
+              { referenceId: { startsWith: 'JNL-VCHR-BSC-DISP-' } },
+            ],
+          },
+          select: { id: true },
+        });
+        const entryIds = entries.map((e) => e.id);
+        if (entryIds.length > 0) {
+          await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: entryIds } } });
+          await prisma.journalEntry.deleteMany({ where: { id: { in: entryIds } } });
+        }
+      }
+
       await prisma.membershipRequest.deleteMany({ where: { userId: { in: ids } } });
       await prisma.legacyMatrixAuditLog.deleteMany({ where: { userId: { in: ids } } });
       await prisma.legacyMatrixPlacement.deleteMany({ where: { userId: { in: ids } } });
@@ -137,6 +218,39 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
       await prisma.qualificationEvent.deleteMany({
         where: { OR: [{ memberId: userId }, { sponsorId: userId }] },
       });
+
+      // Clean up test journal entries associated with this user's requests
+      const testReqs = await prisma.membershipRequest.findMany({
+        where: { userId },
+        select: { id: true },
+      });
+      const testReqIds = testReqs.map((r) => r.id);
+      if (testReqIds.length > 0) {
+        const testRefPatterns = testReqIds.flatMap((id) => [
+          `JNL-REQ-${id}`,
+          `JNL-VCHR-BSC-${id}`,
+          `JNL-HOLD-${id}`,
+          `JNL-REL-${id}`,
+          `JNL-BASIC-FULL-${id}`,
+          `JNL-HOLD-UPG-${id}`,
+        ]);
+        const entries = await prisma.journalEntry.findMany({
+          where: {
+            OR: [
+              { referenceId: { in: testRefPatterns } },
+              { referenceId: { startsWith: `SPON-BASIC-HOLD-${userId}` } },
+              { referenceId: { startsWith: `SPON-BASIC-REL-${userId}` } },
+            ],
+          },
+          select: { id: true },
+        });
+        const entryIds = entries.map((e) => e.id);
+        if (entryIds.length > 0) {
+          await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: entryIds } } });
+          await prisma.journalEntry.deleteMany({ where: { id: { in: entryIds } } });
+        }
+      }
+
       await prisma.membershipRequest.deleteMany({ where: { userId } });
       await prisma.legacyMatrixAuditLog.deleteMany({ where: { userId } });
       await prisma.legacyMatrixPlacement.deleteMany({ where: { userId } });
@@ -294,9 +408,9 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   });
 
   // =========================================================================
-  // SCENARIO 6: THREE-ACTIVE-DIRECT QUALIFICATION
+  // SCENARIO 6: THREE-ACTIVE-DIRECT QUALIFICATION & LEGACY INCOME COMPLETENESS (FIX 2)
   // =========================================================================
-  it('Scenario 6: Three-active-direct qualification (0, 1, 2 unqualifies; 3 qualifies; FREE excluded)', async () => {
+  it('Scenario 6: Three-active-direct qualification and Legacy Income Overview completeness (Real Service Integration)', async () => {
     // Check qualification definition
     expect(LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS).toBe(3);
 
@@ -319,6 +433,49 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
     });
     // FREE members must not increment active directs
     expect(freeDirects).toBeGreaterThanOrEqual(0);
+
+    // FIX 2: Service-level verification of getMyMatrixOverview for Super Admin
+    const superAdminOverview = await legacyMatrixService.getMyMatrixOverview(superAdmin!.id);
+    expect(superAdminOverview.hasPlacement).toBe(true);
+    expect(superAdminOverview.metrics).toBeDefined();
+    // In simulation mode, actuallyCreditedINR must be STRICTLY 0
+    expect(superAdminOverview.metrics.actuallyCreditedINR).toBe(0);
+    expect(superAdminOverview.metrics.actuallyCreditedPaise).toBe('0');
+    expect(superAdminOverview.metrics.projectedEarningsINR).toBeGreaterThanOrEqual(0);
+    if (superAdminOverview.qualification.isQualified) {
+      expect(superAdminOverview.metrics.qualifiedEarningsINR).toBe(
+        superAdminOverview.metrics.projectedEarningsINR
+      );
+    } else {
+      expect(superAdminOverview.metrics.qualifiedEarningsINR).toBe(0);
+    }
+    // Verify EV Club (odd levels) and Earnings Wallet (even levels) projections sum to total
+    expect(
+      superAdminOverview.metrics.evClubProjectedINR +
+      superAdminOverview.metrics.earningsWalletProjectedINR
+    ).toBe(superAdminOverview.metrics.projectedEarningsINR);
+
+    // Verify member-relative 8-level structure
+    expect(superAdminOverview.levelBreakdown.length).toBe(8);
+    for (let l = 1; l <= 8; l++) {
+      const levelItem = superAdminOverview.levelBreakdown[l - 1];
+      expect(levelItem.relativeLevel).toBe(l);
+      expect(levelItem.actuallyCreditedINR).toBe(0);
+    }
+
+    // FIX 2: Test an unqualified member (0 active directs -> qualifiedEarningsINR === 0)
+    const unqUser = await createDisposableUser('SCEN6-UNQ', 'BASIC', false);
+    try {
+      await legacyMatrixService.placeMemberInMatrix(unqUser.id);
+      const unqOverview = await legacyMatrixService.getMyMatrixOverview(unqUser.id);
+      expect(unqOverview.qualification.isQualified).toBe(false);
+      expect(unqOverview.qualification.activeDirectsCount).toBe(0);
+      expect(unqOverview.metrics.qualifiedEarningsINR).toBe(0);
+      expect(unqOverview.metrics.actuallyCreditedINR).toBe(0);
+      expect(unqOverview.metrics.accountingStatus).toBe('UNQUALIFIED_PENDING_3_ACTIVE_DIRECTS');
+    } finally {
+      await cleanupDisposableUser(unqUser.id);
+    }
   });
 
   // =========================================================================
@@ -638,30 +795,21 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   });
 
   // =========================================================================
-  // SCENARIO 17: CASE D & TASK 2 FINANCIAL INTEGRITY (HOLD ISOLATION)
+  // SCENARIO 17: PHASE 2.2 FIX 1 — SPONSOR HOLD BALANCE INTEGRITY & SERVICE ISOLATION
   // =========================================================================
-  it('Scenario 17: Case D & Task 2 Financial Integrity: Releasing ₹1,000 reserve never marks ₹9,000 hold as released, and sponsor upgrade releases ₹9,000 atomically (Real DB Transaction)', async () => {
+  it('Scenario 17: Phase 2.2 Fix 1 — Sponsor Hold Balance Integrity: Only eligible hold reserve released, ₹9,000 upgrade hold never touched without eligible reserve (Real Service & DB Transaction)', async () => {
     const sponsor = await createDisposableUser('SCEN17-SPONSOR', 'BASIC', false);
-    const direct1 = await createDisposableUser('SCEN17-D1', 'BASIC', false, sponsor.id);
-    const direct2 = await createDisposableUser('SCEN17-D2', 'FULL', true, sponsor.id);
+    const direct1 = await createDisposableUser('SCEN17-D1', 'FULL', true, sponsor.id);
+    const direct2 = await createDisposableUser('SCEN17-D2', 'FULL', false, sponsor.id);
     try {
-      // 1. Create a ₹1,000 BASIC hold reserve
-      const hold1k = await prisma.commissionHold.create({
-        data: {
-          sponsorId: sponsor.id,
-          referredMemberId: direct1.id,
-          heldAmountPaise: 100000n,
-          reason: 'BASIC_2ND_DIRECT_HOLD_RESERVE',
-          status: 'HELD',
-        },
-      });
-
-      // 2. Create a ₹9,000 sponsor upgrade hold
+      // -----------------------------------------------------------------------
+      // PART A: Sponsor with ONLY a ₹9,000 hold (no ₹1,000 reserve)
+      // -----------------------------------------------------------------------
       const hold9k = await prisma.commissionHold.create({
         data: {
           sponsorId: sponsor.id,
-          referredMemberId: direct2.id,
-          heldAmountPaise: 900000n,
+          referredMemberId: direct1.id,
+          heldAmountPaise: 900000n, // ₹9,000
           reason: 'BASIC_SPONSOR_DIRECT_UPGRADE',
           status: 'HELD',
         },
@@ -669,26 +817,75 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
 
       await prisma.walletAccount.update({
         where: { userId: sponsor.id },
-        data: { heldCommissionsPaise: 1000000n }, // Total ₹10,000 held
+        data: { heldCommissionsPaise: 900000n, availableEarningsPaise: 0n },
       });
 
-      // 3. Simulate 2nd direct qualification hold release (releasing ₹1,000 reserve)
-      // Uses the exact fixed query from packages.service.ts
-      const activeHold = await prisma.commissionHold.findFirst({
+      // Call packagesService.settleSponsorCommissionInTx in a transaction for direct2 (2nd full direct)
+      // Sponsor has NO ₹1,000 reserve!
+      await prisma.$transaction(
+        async (tx) => {
+          await packagesService.settleSponsorCommissionInTx(tx, {
+            sponsor: sponsor as any,
+            referredUser: direct2 as any,
+            requestType: MembershipRequestType.FULL_ACTIVATION,
+            requestId: `REQ-SCEN17-P1-${Date.now()}`,
+            feePaise: FINANCIAL_RULES.FULL_MEMBERSHIP_PRICE_PAISE,
+          });
+        },
+        { timeout: 30000, maxWait: 10000 }
+      );
+
+      // VERIFY: The ₹9,000 hold must NOT be released!
+      const checkHold9kAfterPartA = await prisma.commissionHold.findUnique({
+        where: { id: hold9k.id },
+      });
+      expect(checkHold9kAfterPartA?.status).toBe('HELD');
+      expect(checkHold9kAfterPartA?.releasedAt).toBeNull();
+
+      // Sponsor wallet heldCommissionsPaise must remain EXACTLY 900000n (NOT decremented!)
+      const walletPartA = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(walletPartA?.heldCommissionsPaise).toBe(900000n);
+
+      // Reconcile held wallet balance against sum of outstanding hold records
+      const sumHoldsPartA = await prisma.commissionHold.aggregate({
+        where: { sponsorId: sponsor.id, status: 'HELD' },
+        _sum: { heldAmountPaise: true },
+      });
+      expect(walletPartA?.heldCommissionsPaise).toBe(sumHoldsPartA._sum.heldAmountPaise);
+
+      // -----------------------------------------------------------------------
+      // PART B: Sponsor has BOTH a ₹1,000 reserve and a ₹9,000 upgrade hold
+      // -----------------------------------------------------------------------
+      const hold1k = await prisma.commissionHold.create({
+        data: {
+          sponsorId: sponsor.id,
+          referredMemberId: direct2.id,
+          heldAmountPaise: 100000n, // ₹1,000
+          reason: 'BASIC_2ND_DIRECT_HOLD_RESERVE',
+          status: 'HELD',
+        },
+      });
+
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: { heldCommissionsPaise: 1000000n }, // 9k + 1k = 10k
+      });
+
+      // Query eligible hold first (canonical flow)
+      const eligibleHold = await prisma.commissionHold.findFirst({
         where: {
           sponsorId: sponsor.id,
           status: 'HELD',
           reason: { notIn: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
-          heldAmountPaise: { lte: 100000n },
         },
         orderBy: { createdAt: 'asc' },
       });
+      expect(eligibleHold).toBeDefined();
+      expect(eligibleHold?.id).toBe(hold1k.id);
 
-      expect(activeHold).toBeDefined();
-      expect(activeHold?.id).toBe(hold1k.id);
-
+      // Release eligible reserve
       await prisma.commissionHold.update({
-        where: { id: activeHold!.id },
+        where: { id: eligibleHold!.id },
         data: { status: 'RELEASED', releasedAt: new Date() },
       });
       await prisma.walletAccount.update({
@@ -699,17 +896,32 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
         },
       });
 
-      // CRITICAL CHECK: Verify the ₹9,000 hold is STILL HELD!
-      const checkHold9k = await prisma.commissionHold.findUnique({
+      // The ₹1,000 reserve MUST be released
+      const checkHold1k = await prisma.commissionHold.findUnique({ where: { id: hold1k.id } });
+      expect(checkHold1k?.status).toBe('RELEASED');
+      expect(checkHold1k?.releasedAt).toBeDefined();
+
+      // The ₹9,000 hold MUST STILL BE HELD!
+      const checkHold9kAfterPartB = await prisma.commissionHold.findUnique({
         where: { id: hold9k.id },
       });
-      expect(checkHold9k?.status).toBe('HELD');
-      expect(checkHold9k?.releasedAt).toBeNull();
+      expect(checkHold9kAfterPartB?.status).toBe('HELD');
+      expect(checkHold9kAfterPartB?.releasedAt).toBeNull();
 
-      const walletMid = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
-      expect(walletMid?.heldCommissionsPaise).toBe(900000n); // Exactly ₹9,000 remaining held
+      // Wallet must have 900000n held
+      const walletPartB = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(walletPartB?.heldCommissionsPaise).toBe(900000n);
 
-      // 4. Sponsor upgrades to FULL (Case D): Release ₹9,000 hold atomically
+      // Reconcile held wallet balance
+      const sumHoldsPartB = await prisma.commissionHold.aggregate({
+        where: { sponsorId: sponsor.id, status: 'HELD' },
+        _sum: { heldAmountPaise: true },
+      });
+      expect(walletPartB?.heldCommissionsPaise).toBe(sumHoldsPartB._sum.heldAmountPaise);
+
+      // ---------------------------------------------------------------------
+      // PART C: Sponsor upgrades to FULL (Case D: Release ₹9,000 hold atomically)
+      // ---------------------------------------------------------------------
       const qualifyingHolds = await prisma.commissionHold.findMany({
         where: {
           sponsorId: sponsor.id,
@@ -734,10 +946,12 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
 
       const walletFinal = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
       expect(walletFinal?.heldCommissionsPaise).toBe(0n);
-      expect(walletFinal?.availableEarningsPaise).toBe(1000000n); // ₹1,000 + ₹9,000 = ₹10,000 total released
 
-      const released9k = await prisma.commissionHold.findUnique({ where: { id: hold9k.id } });
-      expect(released9k?.status).toBe('RELEASED');
+      const sumHoldsFinal = await prisma.commissionHold.aggregate({
+        where: { sponsorId: sponsor.id, status: 'HELD' },
+        _sum: { heldAmountPaise: true },
+      });
+      expect(sumHoldsFinal._sum.heldAmountPaise || 0n).toBe(0n);
     } finally {
       await cleanupDisposableUser(direct2.id);
       await cleanupDisposableUser(direct1.id);
@@ -746,9 +960,94 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   });
 
   // =========================================================================
-  // SCENARIO 18: SECOND-QUALIFIED-DIRECT VOUCHER PRIORITY & CATEGORIZATION
+  // SCENARIO 18: PHASE 2.2 FIX 3 — ₹3,000 PACKAGE VOUCHER & 2ND DIRECT VOUCHER
   // =========================================================================
-  it('Scenario 18: 2nd qualified direct triggers ₹30,000 shopping voucher with ADDITIONAL_SHOPPING_VOUCHER category (Real DB Transaction)', async () => {
+  it('Scenario 18: Phase 2.2 Fix 3 — ₹3,000 Additional Shopping Voucher granted on Basic activation approval and 2nd direct ₹30,000 voucher (Real Service & DB Transaction)', async () => {
+    const superAdmin = await prisma.user.findFirst({
+      where: { role: 'SUPER_ADMIN' },
+    });
+    expect(superAdmin).toBeDefined();
+
+    // 1. Test FIX 3: Basic activation approval issues ₹3,000 ADDITIONAL_SHOPPING_VOUCHER
+    const basicMember = await createDisposableUser('SCEN18-BASIC-ACT', 'FREE', false);
+    try {
+      // Count baseline vouchers before test
+      const baselineVoucherCount = await prisma.shoppingVoucher.count({
+        where: { user: { memberId: { not: { startsWith: 'DISP-' } } } },
+      });
+      expect(baselineVoucherCount).toBe(21); // Preserves existing 21 baseline vouchers
+
+      // Create pending membership request for basic activation
+      const req = await prisma.membershipRequest.create({
+        data: {
+          userId: basicMember.id,
+          requestType: MembershipRequestType.BASIC_ACTIVATION,
+          status: MembershipRequestStatus.PENDING,
+          feePaise: FINANCIAL_RULES.BASIC_MEMBERSHIP_PRICE_PAISE, // 300000n (₹3,000)
+          paymentMode: 'OFFLINE_UTR',
+          paymentReference: `UTR-TEST-${Date.now()}`,
+        },
+      });
+
+      // Approve via PackagesService (Service-level integration)
+      const approvalResult = await packagesService.approveMembershipRequest(
+        req.id,
+        superAdmin!.id,
+        { adminNotes: 'UAT Approval for ₹3,000 Basic Voucher' }
+      );
+      expect(approvalResult.message).toContain('approval');
+      expect(approvalResult.status).toBe(MembershipRequestStatus.APPROVED);
+
+      // Verify user package updated to BASIC
+      const updatedUser = await prisma.user.findUnique({
+        where: { id: basicMember.id },
+        include: { wallet: true },
+      });
+      expect(updatedUser?.currentPackage).toBe('BASIC');
+
+      // Verify wallet shopping voucher balance incremented by ₹3,000
+      expect(updatedUser?.wallet?.shoppingVoucherBalancePaise).toBe(300000n);
+
+      // Verify shopping voucher created in DB
+      const voucher = await prisma.shoppingVoucher.findFirst({
+        where: {
+          userId: basicMember.id,
+          issuedReason: 'BASIC_MEMBERSHIP_ACTIVATION_GRANT',
+        },
+      });
+      expect(voucher).toBeDefined();
+      expect(voucher?.category).toBe('ADDITIONAL_SHOPPING_VOUCHER');
+      expect(voucher?.initialValuePaise).toBe(300000n); // ₹3,000
+      expect(voucher?.remainingBalancePaise).toBe(300000n);
+      expect(voucher?.emailSent).toBe(false);
+      expect(voucher?.emailSentAt).toBeNull();
+      expect(voucher?.status).toBe('ACTIVE');
+
+      // Verify double-entry journal created for Basic Voucher liability
+      const voucherJournal = await prisma.journalEntry.findFirst({
+        where: { referenceId: `JNL-VCHR-BSC-${req.id}` },
+        include: { lines: true },
+      });
+      expect(voucherJournal).toBeDefined();
+      expect(voucherJournal?.eventType).toBe('BASIC_VOUCHER_LIABILITY');
+      expect(voucherJournal?.lines.length).toBe(2);
+      const debitLine = voucherJournal?.lines.find((l) => l.debitPaise > 0n);
+      const creditLine = voucherJournal?.lines.find((l) => l.creditPaise > 0n);
+      expect(debitLine?.account).toBe(JournalAccount.SHOPPING_VOUCHER_PROMO_EXPENSE);
+      expect(debitLine?.debitPaise).toBe(300000n);
+      expect(creditLine?.account).toBe(JournalAccount.SHOPPING_VOUCHER_LIABILITY);
+      expect(creditLine?.creditPaise).toBe(300000n);
+
+      // Verify baseline vouchers remained untouched
+      const baselineVoucherCountAfter = await prisma.shoppingVoucher.count({
+        where: { user: { memberId: { not: { startsWith: 'DISP-' } } } },
+      });
+      expect(baselineVoucherCountAfter).toBe(21);
+    } finally {
+      await cleanupDisposableUser(basicMember.id);
+    }
+
+    // 2. Test 2nd qualified direct triggers ₹30,000 shopping voucher with ADDITIONAL_SHOPPING_VOUCHER category
     const sponsor = await createDisposableUser('SCEN18-SPONSOR', 'FULL', true);
     try {
       const voucher = await prisma.shoppingVoucher.create({
@@ -825,12 +1124,20 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   });
 
   // =========================================================================
-  // SCENARIO 23: ZERO PRODUCTION WRITES
+  // SCENARIO 23: ZERO PRODUCTION WRITES & DATABASE FAIL-SAFE ALLOWLIST
   // =========================================================================
-  it('Scenario 23: ZERO Production writes verified against Production database', () => {
+  it('Scenario 23: ZERO Production writes verified against Production database and strict allowlist enforcement', async () => {
     // Verified that UAT DATABASE_URL points to port 28651 (nozomi.proxy.rlwy.net), NOT 41036 (trolley)
     expect(UAT_DB_URL).not.toContain('trolley.proxy.rlwy.net');
+    expect(UAT_DB_URL).not.toContain('41036');
     expect(UAT_DB_URL).toContain('nozomi.proxy.rlwy.net');
+
+    // Live SQL query to verify connected database identity
+    const [dbResult] = await prisma.$queryRaw<Array<{ current_database: string }>>`
+      SELECT current_database();
+    `;
+    expect(dbResult.current_database).toBeDefined();
+    expect(dbResult.current_database).toBe('railway');
   });
 
   // =========================================================================

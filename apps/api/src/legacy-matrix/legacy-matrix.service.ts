@@ -264,9 +264,18 @@ export class LegacyMatrixService {
           activeDirects,
         },
         levelBreakdown: LEGACY_MATRIX_RATES.map((r) => ({
-          ...r,
+          level: r.level,
+          relativeLevel: r.level,
+          globalDepth: r.level,
+          capacity: r.positions,
+          occupied: 0,
           currentOccupied: 0,
+          amountPerPositionINR: r.amountINR,
+          destination: r.destination,
           simulatedEarningsINR: 0,
+          projectedEarningsINR: 0,
+          qualifiedEarningsINR: 0,
+          actuallyCreditedINR: 0,
         })),
         totalSimulatedEarningsINR: 0,
         totalDownlineMembers: 0,
@@ -295,29 +304,38 @@ export class LegacyMatrixService {
       currentLayerIds = children.map((c) => c.id);
     }
 
-    let totalSimulatedEarningsINR = 0;
-    let evClubEarningsINR = 0;
-    let earningsWalletINR = 0;
+    let totalProjectedEarningsINR = 0;
+    let evClubProjectedINR = 0;
+    let earningsWalletProjectedINR = 0;
 
     const levelBreakdown = LEGACY_MATRIX_RATES.map((rate) => {
       const occupied = levelCounts[rate.level] || 0;
       const simulatedEarnings = occupied * rate.amountINR;
-      totalSimulatedEarningsINR += simulatedEarnings;
+      totalProjectedEarningsINR += simulatedEarnings;
       if (rate.destination === 'EV_CLUB_WALLET') {
-        evClubEarningsINR += simulatedEarnings;
+        evClubProjectedINR += simulatedEarnings;
       } else {
-        earningsWalletINR += simulatedEarnings;
+        earningsWalletProjectedINR += simulatedEarnings;
       }
 
       return {
         level: rate.level,
+        relativeLevel: rate.level,
+        globalDepth: placement.depth + rate.level,
         capacity: rate.positions,
         occupied,
         amountPerPositionINR: rate.amountINR,
         destination: rate.destination,
         simulatedEarningsINR: simulatedEarnings,
+        projectedEarningsINR: simulatedEarnings,
+        qualifiedEarningsINR: isQualified ? simulatedEarnings : 0,
+        actuallyCreditedINR: 0,
       };
     });
+
+    const totalQualifiedEarningsINR = isQualified ? totalProjectedEarningsINR : 0;
+    const evClubQualifiedINR = isQualified ? evClubProjectedINR : 0;
+    const earningsWalletQualifiedINR = isQualified ? earningsWalletProjectedINR : 0;
 
     return {
       hasPlacement: true,
@@ -353,13 +371,35 @@ export class LegacyMatrixService {
       levelBreakdown,
       metrics: {
         totalDownlineMembers: totalDownline,
-        totalSimulatedEarningsINR,
-        evClubEarningsINR,
-        earningsWalletINR,
+        isQualified,
+        activeDirectsCount,
+        // Projected Income: Theoretical potential based on occupied tree positions
+        totalProjectedEarningsINR,
+        projectedEarningsINR: totalProjectedEarningsINR,
+        // Qualified Income: Unlocked only after 3 active directs (BASIC or FULL)
+        totalQualifiedEarningsINR,
+        qualifiedEarningsINR: totalQualifiedEarningsINR,
+        // Actually Credited Income: Strict simulation mode, 0 live liabilities credited
+        actuallyCreditedINR: 0,
+        actuallyCreditedPaise: '0',
+        // Destination Breakdown: Odd levels (EV Club) vs Even levels (Earnings Wallet)
+        evClubProjectedINR,
+        evClubQualifiedINR,
+        earningsWalletProjectedINR,
+        earningsWalletQualifiedINR,
+        // Backwards-compatible metric fields
+        totalSimulatedEarningsINR: totalProjectedEarningsINR,
+        evClubEarningsINR: evClubProjectedINR,
+        earningsWalletINR: earningsWalletProjectedINR,
         maxPotentialEarningsINR: LEGACY_MATRIX_RATES.reduce(
           (sum, r) => sum + r.positions * r.amountINR,
           0
         ),
+        accountingStatus: isQualified
+          ? 'QUALIFIED_SIMULATION_ONLY'
+          : 'UNQUALIFIED_PENDING_3_ACTIVE_DIRECTS',
+        accountingNotice:
+          'In accordance with compliance policy, Legacy Matrix income is displayed for simulation and projection purposes only. No unapproved payable liabilities are credited to live withdrawable wallets.',
       },
     };
   }
