@@ -459,4 +459,25 @@ export class EmailService {
     );
     return true;
   }
+
+  /**
+   * Feature 5: Voucher Issuance Notification
+   * Sandbox email notification for newly granted vouchers.
+   */
+  async sendVoucherNotification(
+    toEmail: string,
+    recipientName: string,
+    voucherDetails: {
+      voucherCode: string;
+      category: string;
+      valueINR: number;
+      expiresAt: string;
+    }
+  ): Promise<boolean> {
+    const maskedEmail = this.maskEmail(toEmail);
+    this.logger.log(
+      `📧 [UAT Email Sandbox] Voucher Issued Notification -> To: ${recipientName} <${maskedEmail}> | Code: ${voucherDetails.voucherCode} | Category: ${voucherDetails.category} | Value: ₹${voucherDetails.valueINR} | Expiry: ${voucherDetails.expiresAt}`
+    );
+    return true;
+  }
 }

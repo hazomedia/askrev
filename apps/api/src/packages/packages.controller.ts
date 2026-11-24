@@ -78,6 +78,13 @@ export class PackagesController {
     return this.packagesService.rejectMembershipRequest(id, admin.id, dto);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  @Get('admin/commission-holds')
+  async getAdminCommissionHolds() {
+    return this.packagesService.getAdminCommissionHolds();
+  }
+
   // =========================================================================
   // MERCHANT PAYMENT CONFIGURATION ENDPOINTS
   // =========================================================================

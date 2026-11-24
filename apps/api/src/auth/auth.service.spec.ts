@@ -337,6 +337,24 @@ describe('AuthService & TotpService Security Enhancements', () => {
   });
 
   describe('Phase 1: Member Registration & Mandatory Sponsor Validation', () => {
+    it('should reject registration with 503 when REGISTRATION_PAUSED is true', async () => {
+      const origEnv = process.env.REGISTRATION_PAUSED;
+      try {
+        process.env.REGISTRATION_PAUSED = 'true';
+        await expect(
+          authService.register({
+            email: 'newuser@askrevdrive.com',
+            password: 'SecurePassword@2026',
+            fullName: 'New Member',
+            phone: '+919876543210',
+            sponsorMemberId: 'ASKR-SUPERADMIN',
+          })
+        ).rejects.toThrow('New member registrations will resume soon');
+      } finally {
+        process.env.REGISTRATION_PAUSED = origEnv;
+      }
+    });
+
     it('should reject registration when sponsor referral code does not exist', async () => {
       mockPrisma.user.findUnique.mockImplementation(({ where }) => {
         if (where.memberId === 'NONEXISTENT') return Promise.resolve(null);

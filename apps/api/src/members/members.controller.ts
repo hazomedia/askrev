@@ -115,6 +115,27 @@ export class MembersController {
     return this.membersService.getBinaryMatchHistory(targetUserId);
   }
 
+  @Get('binary/flush-history')
+  async getBinaryFlushHistory(
+    @CurrentUser() user: any,
+    @Query('userId') queryUserId?: string
+  ) {
+    const isAdmin =
+      user.role === UserRole.SUPER_ADMIN ||
+      user.role === UserRole.ADMIN_OPERATIONS ||
+      user.role === UserRole.FINANCE_MANAGER;
+
+    const targetUserId = isAdmin && queryUserId ? queryUserId : user.id;
+    return this.membersService.getBinaryFlushHistory(targetUserId);
+  }
+
+  @Get('admin/binary-flushes')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getAdminBinaryFlushes() {
+    return this.membersService.getAdminBinaryFlushes();
+  }
+
   @Get('admin/binary-report')
   @UseGuards(RolesGuard)
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)

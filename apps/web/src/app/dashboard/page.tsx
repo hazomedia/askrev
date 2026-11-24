@@ -51,7 +51,15 @@ import {
   Smartphone,
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { fetchApi, getStoredUser, logoutSession, fetchActiveBanners, dismissPopupCampaign } from '../../lib/api';
+import {
+  fetchApi,
+  getStoredUser,
+  logoutSession,
+  fetchActiveBanners,
+  dismissPopupCampaign,
+  fetchMyMatrixOverviewApi,
+  fetchBinaryFlushHistoryApi,
+} from '../../lib/api';
 import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
 import WelcomePopupModal from '../../components/WelcomePopupModal';
@@ -79,6 +87,10 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // UAT Matrix & Flush Data States
+  const [matrixOverview, setMatrixOverview] = useState<any>(null);
+  const [binaryFlushData, setBinaryFlushData] = useState<any>(null);
 
   // Top Banner & Welcome Popup States
   const [topBanner, setTopBanner] = useState<any>(null);
@@ -251,10 +263,32 @@ function DashboardContent() {
 
     const bookParam = searchParams.get('book');
     if (bookParam === 'true') {
-      setSelectedRequestType('BASIC_ACTIVATION');
+      const stored = getStoredUser();
+      const currentPkg = user?.currentPackage || stored?.currentPackage;
+      if (currentPkg === 'BASIC') {
+        setSelectedRequestType('BASIC_TO_FULL_UPGRADE');
+      } else if (currentPkg === 'FULL') {
+        setSelectedRequestType(null);
+      } else {
+        setSelectedRequestType('BASIC_ACTIVATION');
+      }
       setPaymentModalOpen(true);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadData();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', loadData);
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', loadData);
+    };
+  }, []);
 
   const runCanonicalSimulation = async () => {
     setSimLoading(true);
@@ -403,6 +437,8 @@ function DashboardContent() {
         paymentConfigData,
         paymentMethodsData,
         bannersData,
+        matrixData,
+        flushData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -417,9 +453,16 @@ function DashboardContent() {
         fetchApi<any>('/packages/payment-config').catch(() => null),
         fetchApi<any>('/payments/methods').catch(() => null),
         fetchActiveBanners().catch(() => ({ topBanner: null, slides: [], popupCampaign: null })),
+        fetchMyMatrixOverviewApi().catch(() => null),
+        fetchBinaryFlushHistoryApi().catch(() => null),
       ]);
 
       setUser(profileData);
+      if (profileData && typeof window !== 'undefined') {
+        localStorage.setItem('askrev_user', JSON.stringify(profileData));
+      }
+      setMatrixOverview(matrixData);
+      setBinaryFlushData(flushData);
       setDirectTeam(teamData);
       setBinaryTree(binaryData);
       setInspectedBinaryTree(binaryData);
@@ -604,7 +647,13 @@ function DashboardContent() {
   const openBookingPaymentModal = (
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE'
   ) => {
-    setSelectedRequestType(requestType);
+    const stored = getStoredUser();
+    const currentPkg = user?.currentPackage || stored?.currentPackage;
+    const effectiveType =
+      currentPkg === 'BASIC' && requestType === 'BASIC_ACTIVATION'
+        ? 'BASIC_TO_FULL_UPGRADE'
+        : requestType;
+    setSelectedRequestType(effectiveType);
     setPaymentUtr('');
     setGatewayOrder(null);
 
@@ -1465,6 +1514,67 @@ function DashboardContent() {
                   </div>
                 </div>
 
+                {/* FEATURE 3: BASIC MEMBER BINARY MATCH FLUSH-OUT FLASH CARD */}
+                {(user.currentPackage === 'BASIC' || !user.isFullQualified) && Number(binaryFlushData?.cumulativeFlushedPairs || 0) > 0 && (
+                  <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-rose-700 rounded-2xl p-5 text-white shadow-lg border border-amber-400/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black tracking-wider uppercase">
+                          Binary Match Flush Alert
+                        </span>
+                        <span className="text-xs text-amber-100 font-semibold">
+                          {binaryFlushData.cumulativeFlushedPairs} Pairs Flushed
+                        </span>
+                      </div>
+                      <h3 className="text-lg sm:text-xl font-black tracking-tight text-white">
+                        ₹{Number(binaryFlushData.cumulativeFlushedINR || 0).toLocaleString('en-IN')} in Matching Rewards Missed!
+                      </h3>
+                      <p className="text-xs text-amber-100 max-w-2xl leading-relaxed">
+                        Upgrade to EV ULTRA and Unlock Your Future Matching Income! Flushed matches were consumed and cannot be retrospectively credited. Upgrade to EV ULTRA today to earn ₹3,000 per 1:1 match prospectively.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                      className="shrink-0 px-6 py-3 rounded-xl bg-white text-orange-950 hover:bg-amber-50 font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                    >
+                      <Sparkles className="w-4 h-4 text-orange-600" />
+                      <span>Upgrade to EV ULTRA</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* FEATURE 4: SPONSOR BONUS ON HOLD CARD */}
+                {(() => {
+                  const heldINR = Number(walletOverview?.heldCommissionsINR ?? (walletOverview?.heldCommissionsPaise ? Number(walletOverview.heldCommissionsPaise) / 100 : 0));
+                  if (heldINR <= 0) return null;
+                  return (
+                    <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-blue-950 rounded-2xl p-5 text-white shadow-lg border border-purple-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-purple-400/20 text-purple-200 text-[10px] font-black tracking-wider uppercase">
+                            Sponsor Bonus Reserve
+                          </span>
+                          <span className="text-xs text-purple-200 font-medium">Simulation Mode</span>
+                        </div>
+                        <h3 className="text-lg sm:text-xl font-black tracking-tight text-white flex items-center gap-2">
+                          <span>Sponsor Bonus on Hold:</span>
+                          <span className="text-amber-300">₹{heldINR.toLocaleString('en-IN')}</span>
+                        </h3>
+                        <p className="text-xs text-purple-200 max-w-2xl leading-relaxed">
+                          Upgrade to EV ULTRA. Unlock Your Held Bonus! When you upgrade to EV ULTRA, your qualified held sponsor bonus is immediately unlocked and credited to your available wallet balance. (Payouts simulated).
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                        className="shrink-0 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                      >
+                        <Lock className="w-4 h-4 text-slate-900" />
+                        <span>Upgrade Now</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+
 
 
                 {/* =========================================================================
@@ -1751,6 +1861,191 @@ function DashboardContent() {
                             : 'Upgrade to EV ULTRA (₹30,000)'}
                       </span>
                     </button>
+                  </div>
+                )}
+
+                {/* =========================================================================
+                    FEATURE 1 & 7: EV LEGACY GLOBAL 3x8 MATRIX OVERVIEW CARD
+                    ========================================================================= */}
+                <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-5 sm:p-6 space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
+                          EV Legacy 3×8 Matrix
+                        </span>
+                        {matrixOverview?.sequence && (
+                          <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                            Sequence #{matrixOverview.sequence}
+                          </span>
+                        )}
+                        {matrixOverview?.layer && (
+                          <span className="text-xs font-semibold text-slate-500">
+                            Layer {matrixOverview.layer}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-base font-black text-[#0C2348]">
+                        Global 3×8 Matrix Downline & Level Income
+                      </h3>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
+                        matrixOverview?.isQualified
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}>
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{matrixOverview?.activeDirectsCount ?? 0} / 3 Active Directs</span>
+                        <span>•</span>
+                        <span>{matrixOverview?.isQualified ? 'Qualified (8 Levels)' : 'Need 3 Active Directs'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Matrix Qualification Progress */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="text-xs text-slate-600 space-y-0.5">
+                      <div className="font-semibold text-slate-800">
+                        Qualification Rule: 3 Active Direct Referrals (EV PRO or EV ULTRA)
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        {matrixOverview?.isQualified
+                          ? '✓ You meet the 3 active directs rule. All 8 Matrix levels are unlocked for level income.'
+                          : `Currently ${matrixOverview?.activeDirectsCount || 0} active direct(s). You need ${Math.max(0, 3 - (matrixOverview?.activeDirectsCount || 0))} more active direct referral(s) to unlock full 8-level payouts.`}
+                      </p>
+                    </div>
+                    <div className="w-full sm:w-48 shrink-0">
+                      <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#165DAD] to-indigo-600 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, ((matrixOverview?.activeDirectsCount || 0) / 3) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="text-right text-[10px] font-bold text-slate-500 mt-1">
+                        {Math.min(3, matrixOverview?.activeDirectsCount || 0)} / 3 Qualified
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 8-Level Matrix Breakdown Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3">Level</th>
+                          <th className="py-2.5 px-3">Unit Rate</th>
+                          <th className="py-2.5 px-3">Max Capacity</th>
+                          <th className="py-2.5 px-3">Placed Members</th>
+                          <th className="py-2.5 px-3">Potential Income</th>
+                          <th className="py-2.5 px-3">Earned Level Income</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {matrixOverview?.levelStats ? (
+                          matrixOverview.levelStats.map((lvl: any) => (
+                            <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-2 px-3 font-bold text-[#0C2348]">Level {lvl.level}</td>
+                              <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.unitRateINR}</td>
+                              <td className="py-2 px-3 text-slate-500 font-mono">{lvl.maxCapacity?.toLocaleString('en-IN')}</td>
+                              <td className="py-2 px-3 font-mono font-bold text-slate-800">{lvl.memberCount || 0}</td>
+                              <td className="py-2 px-3 font-mono text-slate-600">₹{(lvl.potentialIncomeINR || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹{(lvl.earnedIncomeINR || 0).toLocaleString('en-IN')}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          [
+                            { level: 1, rate: 200, cap: 3 },
+                            { level: 2, rate: 200, cap: 9 },
+                            { level: 3, rate: 200, cap: 27 },
+                            { level: 4, rate: 200, cap: 81 },
+                            { level: 5, rate: 300, cap: 243 },
+                            { level: 6, rate: 300, cap: 729 },
+                            { level: 7, rate: 300, cap: 2187 },
+                            { level: 8, rate: 300, cap: 6561 },
+                          ].map((lvl) => (
+                            <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-2 px-3 font-bold text-[#0C2348]">Level {lvl.level}</td>
+                              <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.rate}</td>
+                              <td className="py-2 px-3 text-slate-500 font-mono">{lvl.cap.toLocaleString('en-IN')}</td>
+                              <td className="py-2 px-3 font-mono font-bold text-slate-800">0</td>
+                              <td className="py-2 px-3 font-mono text-slate-600">₹0</td>
+                              <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹0</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                      <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
+                        <tr>
+                          <td className="py-2.5 px-3">Total (1–8)</td>
+                          <td className="py-2.5 px-3">—</td>
+                          <td className="py-2.5 px-3 font-mono">9,840</td>
+                          <td className="py-2.5 px-3 font-mono">{matrixOverview?.downlineCount || 0}</td>
+                          <td className="py-2.5 px-3 font-mono text-indigo-900">₹{(matrixOverview?.totalPotentialINR || 0).toLocaleString('en-IN')}</td>
+                          <td className="py-2.5 px-3 font-mono text-emerald-800">₹{(matrixOverview?.totalEarnedINR || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* FEATURE 3 & 7: BINARY MATCH FLUSH-OUT AUDIT HISTORY TABLE */}
+                {binaryFlushData?.flushes && binaryFlushData.flushes.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 sm:p-6 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
+                            Non-Payable Flushes
+                          </span>
+                          <span className="text-xs text-slate-500 font-medium">
+                            Cumulative Flushed: {binaryFlushData.cumulativeFlushedPairs} Pairs (₹{Number(binaryFlushData.cumulativeFlushedINR).toLocaleString('en-IN')} Notional)
+                          </span>
+                        </div>
+                        <h3 className="text-base font-bold text-[#253247] mt-1">
+                          Binary Match Flush-Out History (EV PRO / BASIC)
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                        className="px-3.5 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold flex items-center gap-1 shadow-xs"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Upgrade to Stop Flushes</span>
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Flush Date</th>
+                            <th className="py-2.5 px-3">Flushed Pairs</th>
+                            <th className="py-2.5 px-3">Notional Missed Reward</th>
+                            <th className="py-2.5 px-3">Previous Carry (L / R)</th>
+                            <th className="py-2.5 px-3">New Carry-Forward (L / R)</th>
+                            <th className="py-2.5 px-3">Payout Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {binaryFlushData.flushes.map((f: any) => (
+                            <tr key={f.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-2 px-3 font-mono">{new Date(f.matchDate || f.createdAt).toLocaleDateString('en-IN')}</td>
+                              <td className="py-2 px-3 font-bold text-amber-700 font-mono">{f.flushedPairs} Pairs</td>
+                              <td className="py-2 px-3 font-mono font-bold text-rose-600">₹{(f.notionalMissedINR || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-2 px-3 font-mono text-slate-600">{f.previousCarryLeft}L / {f.previousCarryRight}R</td>
+                              <td className="py-2 px-3 font-mono text-emerald-700 font-bold">{f.newCarryLeft}L / {f.newCarryRight}R</td>
+                              <td className="py-2 px-3">
+                                <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
+                                  ₹0 Flushed (Unqualified)
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
@@ -3350,7 +3645,7 @@ function DashboardContent() {
                     </p>
                   </div>
                   <Link
-                    href="/bikes"
+                    href="https://www.askrevdrive.com/scooters"
                     className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs transition-colors flex items-center gap-1.5 self-start md:self-auto min-h-[44px]"
                   >
                     <Bike className="w-4 h-4" />
@@ -3370,6 +3665,7 @@ function DashboardContent() {
                       <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
                         <tr>
                           <th className="py-3 px-4">Voucher Code</th>
+                          <th className="py-3 px-4">Category</th>
                           <th className="py-3 px-4">Initial Value</th>
                           <th className="py-3 px-4">Used Amount</th>
                           <th className="py-3 px-4">Remaining Balance</th>
@@ -3384,6 +3680,15 @@ function DashboardContent() {
                             <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
                               <td className="py-3 px-4 font-mono font-medium text-[#165DAD]">
                                 {v.voucherCode}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                  v.category === 'EV_VEHICLE_VOUCHER'
+                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                                }`}>
+                                  {v.category === 'EV_VEHICLE_VOUCHER' ? 'EV Vehicle Voucher' : 'Shopping Voucher'}
+                                </span>
                               </td>
                               <td className="py-3 px-4 font-medium">₹{v.initialValueINR.toLocaleString('en-IN')}</td>
                               <td className="py-3 px-4 text-slate-500">
