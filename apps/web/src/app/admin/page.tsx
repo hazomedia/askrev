@@ -3054,11 +3054,11 @@ export default function AdminPage() {
                     </div>
 
                     <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sandbox Emails Sent</div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live Emails Sent</div>
                       <div className="text-xl font-black text-blue-700 mt-1">
                         {allVouchersData.filter((v: any) => v.emailSent).length} / {allVouchersData.length}
                       </div>
-                      <div className="text-[10px] text-slate-500 font-medium mt-0.5">Voucher Notifications</div>
+                      <div className="text-[10px] text-slate-500 font-medium mt-0.5">Sandbox Logged: {allVouchersData.length}</div>
                     </div>
                   </div>
                 </div>
@@ -3400,9 +3400,9 @@ export default function AdminPage() {
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    v.emailSent ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                    v.emailSent ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                                   }`}>
-                                    {v.emailSent ? '✓ SENT (SANDBOX)' : 'PENDING'}
+                                    {v.emailSent ? '✓ LIVE DELIVERED' : 'SANDBOX LOGGED'}
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3 font-mono text-slate-500">

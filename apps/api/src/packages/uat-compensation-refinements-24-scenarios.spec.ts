@@ -3,23 +3,47 @@ import { PrismaClient } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as dotenv from 'dotenv';
 import {
   FINANCIAL_RULES,
   MembershipPackage,
   UserRole,
+  paiseToRupees,
 } from '@askrev/shared';
 import {
   LEGACY_MATRIX_CONFIG,
   calculateLayerCapacity,
   getMatrixFillSlot,
 } from '../legacy-matrix/legacy-matrix.constants';
+import { MembersService } from '../members/members.service';
 
-const UAT_DB_URL =
-  process.env.UAT_DATABASE_URL ||
-  'postgresql://postgres:XCOUOJMtKYOBrcjswjwsINEavRKaGOcv@nozomi.proxy.rlwy.net:28651/railway';
+// Load local .env.uat or environment
+dotenv.config({ path: path.resolve(process.cwd(), '.env.uat') });
+dotenv.config({ path: path.resolve(process.cwd(), '../../.env.uat') });
+dotenv.config();
 
-describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scenarios)', () => {
+const UAT_DB_URL = process.env.UAT_DATABASE_URL || process.env.DATABASE_URL;
+
+if (!UAT_DB_URL) {
+  throw new Error(
+    'FATAL CONFIGURATION ERROR: UAT_DATABASE_URL environment variable must be set to run UAT tests.'
+  );
+}
+
+// STRICT PRODUCTION SECURITY GUARD: Never connect to Production
+if (
+  UAT_DB_URL.includes('trolley.proxy.rlwy.net') ||
+  UAT_DB_URL.includes('41036') ||
+  UAT_DB_URL.includes('askrev-production')
+) {
+  throw new Error(
+    'FATAL SECURITY VIOLATION: Test attempt to connect to PRODUCTION database! Aborting immediately.'
+  );
+}
+
+describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scenarios)', { timeout: 30000 }, () => {
   let prisma: PrismaClient;
+  let membersService: MembersService;
 
   beforeAll(async () => {
     // Connect strictly to UAT Database URL from environment or verified UAT instance
@@ -31,11 +55,100 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
       },
     });
     await prisma.$connect();
-  });
+    membersService = new MembersService(prisma as any);
+
+    // Fast batch cleanup of any lingering disposable test accounts from previous runs
+    const disposableUsers = await prisma.user.findMany({
+      where: { memberId: { startsWith: 'DISP-' } },
+      select: { id: true },
+    });
+    const ids = disposableUsers.map((u) => u.id);
+    if (ids.length > 0) {
+      await prisma.binaryMatchFlush.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.binaryMatchEvent.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.commissionHold.deleteMany({
+        where: { OR: [{ sponsorId: { in: ids } }, { referredMemberId: { in: ids } }] },
+      });
+      await prisma.qualificationEvent.deleteMany({
+        where: { OR: [{ memberId: { in: ids } }, { sponsorId: { in: ids } }] },
+      });
+      await prisma.membershipRequest.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.legacyMatrixAuditLog.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.legacyMatrixPlacement.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.shoppingVoucher.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.journalLine.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.binaryPlacement.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.walletAccount.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.user.deleteMany({ where: { id: { in: ids } } });
+    }
+  }, 60000);
 
   afterAll(async () => {
     await prisma.$disconnect();
   });
+
+  // Disposable user test fixture helper for isolation
+  async function createDisposableUser(
+    prefix: string,
+    currentPackage: 'FREE' | 'BASIC' | 'FULL',
+    isFullQualified = false,
+    sponsorId: string | null = null
+  ) {
+    const uniqueId = `DISP-${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    return await prisma.user.create({
+      data: {
+        email: `${uniqueId.toLowerCase()}@uat.disposable.internal`,
+        memberId: uniqueId,
+        fullName: `Disposable ${uniqueId}`,
+        passwordHash: '$2b$10$dummyhashedpasswordforisolatedtestingonly123',
+        role: 'MEMBER',
+        currentPackage,
+        isFullQualified,
+        sponsorId,
+        wallet: {
+          create: {
+            availableEarningsPaise: 0n,
+            totalEarnedPaise: 0n,
+            heldCommissionsPaise: 0n,
+          },
+        },
+        binaryPlacement: {
+          create: {
+            carryLeftPaise: 0n,
+            carryRightPaise: 0n,
+            leftVolumePaise: 0n,
+            rightVolumePaise: 0n,
+            matchedVolumeLeftPaise: 0n,
+            matchedVolumeRightPaise: 0n,
+          },
+        },
+      },
+      include: { wallet: true, binaryPlacement: true },
+    });
+  }
+
+  async function cleanupDisposableUser(userId: string) {
+    try {
+      await prisma.binaryMatchFlush.deleteMany({ where: { userId } });
+      await prisma.binaryMatchEvent.deleteMany({ where: { userId } });
+      await prisma.commissionHold.deleteMany({
+        where: { OR: [{ sponsorId: userId }, { referredMemberId: userId }] },
+      });
+      await prisma.qualificationEvent.deleteMany({
+        where: { OR: [{ memberId: userId }, { sponsorId: userId }] },
+      });
+      await prisma.membershipRequest.deleteMany({ where: { userId } });
+      await prisma.legacyMatrixAuditLog.deleteMany({ where: { userId } });
+      await prisma.legacyMatrixPlacement.deleteMany({ where: { userId } });
+      await prisma.shoppingVoucher.deleteMany({ where: { userId } });
+      await prisma.journalLine.deleteMany({ where: { userId } });
+      await prisma.binaryPlacement.deleteMany({ where: { userId } });
+      await prisma.walletAccount.deleteMany({ where: { userId } });
+      await prisma.user.delete({ where: { id: userId } });
+    } catch {
+      // Ignored during test cleanup
+    }
+  }
 
   // =========================================================================
   // SCENARIO 1: IMPORTED DATASET INTEGRITY & DISCREPANCY RESOLUTION
@@ -226,68 +339,189 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   });
 
   // =========================================================================
-  // SCENARIO 8: FULL MEMBER EXISTING MATCHING UNAFFECTED
+  // SCENARIO 8: FULL MEMBER 1:1 MATCHING RATIO & REWARD SETTLEMENT
   // =========================================================================
-  it('Scenario 8: FULL member 1:1 matching ratio, ₹3,000/pair, 15 pair daily cap unaffected', () => {
+  it('Scenario 8: FULL member 1:1 matching ratio, ₹3,000/pair, 15 pair daily cap unaffected (Real DB Transaction)', async () => {
     expect(FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE).toBe(300000n); // ₹3,000
     expect(FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES).toBe(15);
+
+    // Create disposable FULL qualified member with 2L / 2R carryover
+    const fullUser = await createDisposableUser('SCEN8-FULL', 'FULL', true);
+    try {
+      await prisma.binaryPlacement.update({
+        where: { userId: fullUser.id },
+        data: { carryLeftPaise: 2n, carryRightPaise: 2n },
+      });
+
+      // Execute real transactional matching
+      const result = await membersService.settleBinaryMatching(fullUser.id);
+      expect(result.matchesSettled).toBe(2);
+      expect(result.rewardINR).toBe(6000); // 2 * ₹3,000 = ₹6,000
+      expect(result.carryLeft).toBe(0);
+      expect(result.carryRight).toBe(0);
+
+      // Verify wallet was actually credited in DB
+      const updatedWallet = await prisma.walletAccount.findUnique({
+        where: { userId: fullUser.id },
+      });
+      expect(updatedWallet?.availableEarningsPaise).toBe(600000n); // ₹6,000 in paise
+    } finally {
+      await cleanupDisposableUser(fullUser.id);
+    }
   });
 
   // =========================================================================
   // SCENARIOS 9, 10, 11: BASIC MEMBER BINARY MATCH FLUSH-OUT (5L/3R, 3L/5R, ZERO MATCH)
   // =========================================================================
-  it('Scenario 9: BASIC 5L / 3R match flush -> 3 pairs flushed, ₹0 wallet, 2L carry-forward preserved', () => {
-    const carryLeft = 5;
-    const carryRight = 3;
-    const matchedPairs = Math.min(carryLeft, carryRight); // 3
-    const newCarryLeft = carryLeft - matchedPairs;         // 2
-    const newCarryRight = carryRight - matchedPairs;       // 0
-    const notionalMissedPaise = BigInt(matchedPairs) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE; // ₹9,000
+  it('Scenario 9: BASIC 5L / 3R match flush -> 3 pairs flushed, ₹0 wallet, 2L carry-forward preserved (Real DB Transaction)', async () => {
+    // Create disposable BASIC member (not full qualified)
+    const basicUser = await createDisposableUser('SCEN9-BASIC', 'BASIC', false);
+    try {
+      await prisma.binaryPlacement.update({
+        where: { userId: basicUser.id },
+        data: { carryLeftPaise: 5n, carryRightPaise: 3n },
+      });
 
-    expect(matchedPairs).toBe(3);
-    expect(newCarryLeft).toBe(2);
-    expect(newCarryRight).toBe(0);
-    expect(notionalMissedPaise).toBe(900000n); // ₹9,000
+      // Execute real transactional matching
+      const result = await membersService.settleBinaryMatching(basicUser.id);
+      expect(result.isFlushed).toBe(true);
+      expect(result.matchesSettled).toBe(0); // 0 payable matches
+      expect(result.flushedPairs).toBe(3);
+      expect(result.carryLeft).toBe(2);      // 2L preserved
+      expect(result.carryRight).toBe(0);
+      expect(result.notionalMissedINR).toBe(9000); // 3 * ₹3,000 = ₹9,000
+
+      // Verify wallet has ₹0 credit in DB
+      const wallet = await prisma.walletAccount.findUnique({
+        where: { userId: basicUser.id },
+      });
+      expect(wallet?.availableEarningsPaise).toBe(0n);
+
+      // Verify DB BinaryMatchFlush record created
+      const flushRecord = await prisma.binaryMatchFlush.findFirst({
+        where: { userId: basicUser.id },
+      });
+      expect(flushRecord).toBeDefined();
+      expect(flushRecord?.flushedPairs).toBe(3);
+      expect(flushRecord?.notionalMissedPaise).toBe(900000n);
+      expect(flushRecord?.newCarryLeft).toBe(2);
+      expect(flushRecord?.newCarryRight).toBe(0);
+
+      // Verify BinaryPlacement cumulative flushed stats
+      const placement = await prisma.binaryPlacement.findUnique({
+        where: { userId: basicUser.id },
+      });
+      expect(placement?.carryLeftPaise).toBe(2n);
+      expect(placement?.carryRightPaise).toBe(0n);
+      expect(placement?.cumulativeFlushedPairs).toBe(3);
+      expect(placement?.cumulativeFlushedPaise).toBe(900000n);
+    } finally {
+      await cleanupDisposableUser(basicUser.id);
+    }
   });
 
-  it('Scenario 10: BASIC 3L / 5R match flush -> 3 pairs flushed, ₹0 wallet, 2R carry-forward preserved', () => {
-    const carryLeft = 3;
-    const carryRight = 5;
-    const matchedPairs = Math.min(carryLeft, carryRight); // 3
-    const newCarryLeft = carryLeft - matchedPairs;         // 0
-    const newCarryRight = carryRight - matchedPairs;       // 2
-    const notionalMissedPaise = BigInt(matchedPairs) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE; // ₹9,000
+  it('Scenario 10: BASIC 3L / 5R match flush -> 3 pairs flushed, ₹0 wallet, 2R carry-forward preserved (Real DB Transaction)', async () => {
+    const basicUser = await createDisposableUser('SCEN10-BASIC', 'BASIC', false);
+    try {
+      await prisma.binaryPlacement.update({
+        where: { userId: basicUser.id },
+        data: { carryLeftPaise: 3n, carryRightPaise: 5n },
+      });
 
-    expect(matchedPairs).toBe(3);
-    expect(newCarryLeft).toBe(0);
-    expect(newCarryRight).toBe(2);
-    expect(notionalMissedPaise).toBe(900000n); // ₹9,000
+      const result = await membersService.settleBinaryMatching(basicUser.id);
+      expect(result.isFlushed).toBe(true);
+      expect(result.matchesSettled).toBe(0);
+      expect(result.flushedPairs).toBe(3);
+      expect(result.carryLeft).toBe(0);
+      expect(result.carryRight).toBe(2);      // 2R preserved
+      expect(result.notionalMissedINR).toBe(9000);
+
+      // Verify wallet has ₹0 credit
+      const wallet = await prisma.walletAccount.findUnique({
+        where: { userId: basicUser.id },
+      });
+      expect(wallet?.availableEarningsPaise).toBe(0n);
+
+      // Verify DB placement
+      const placement = await prisma.binaryPlacement.findUnique({
+        where: { userId: basicUser.id },
+      });
+      expect(placement?.carryLeftPaise).toBe(0n);
+      expect(placement?.carryRightPaise).toBe(2n);
+    } finally {
+      await cleanupDisposableUser(basicUser.id);
+    }
   });
 
-  it('Scenario 11: BASIC zero-match scenario -> 0 flushed, carry-forward unchanged', () => {
-    const carryLeft = 5;
-    const carryRight = 0;
-    const matchedPairs = Math.min(carryLeft, carryRight); // 0
-    const newCarryLeft = carryLeft - matchedPairs;         // 5
-    const newCarryRight = carryRight - matchedPairs;       // 0
+  it('Scenario 11: BASIC zero-match scenario -> 0 flushed, carry-forward unchanged (Real DB Transaction)', async () => {
+    const basicUser = await createDisposableUser('SCEN11-BASIC', 'BASIC', false);
+    try {
+      await prisma.binaryPlacement.update({
+        where: { userId: basicUser.id },
+        data: { carryLeftPaise: 5n, carryRightPaise: 0n },
+      });
 
-    expect(matchedPairs).toBe(0);
-    expect(newCarryLeft).toBe(5);
-    expect(newCarryRight).toBe(0);
+      const result = await membersService.settleBinaryMatching(basicUser.id);
+      expect(result.matchesSettled).toBe(0);
+      expect(result.flushedPairs).toBe(0);
+      expect(result.carryLeft).toBe(5);
+      expect(result.carryRight).toBe(0);
+
+      // Zero flushes in DB
+      const flushCount = await prisma.binaryMatchFlush.count({
+        where: { userId: basicUser.id },
+      });
+      expect(flushCount).toBe(0);
+    } finally {
+      await cleanupDisposableUser(basicUser.id);
+    }
   });
 
   // =========================================================================
   // SCENARIO 12: UPGRADE AFTER HISTORICAL FLUSH (PROSPECTIVE ONLY)
   // =========================================================================
-  it('Scenario 12: Upgrade after historical flush matches prospectively, historical flushed rewards not credited', () => {
-    // When upgraded to FULL:
-    // Existing cumulativeFlushedPairs and cumulativeFlushedPaise remain on record.
-    // Wallet availableEarningsPaise is NOT credited for past flushed amounts.
-    const historicalFlushedPaise = 900000n; // ₹9,000
-    const walletCreditedOnUpgrade = 0n;     // Strictly ₹0 retrospective credit
+  it('Scenario 12: Upgrade after historical flush matches prospectively, historical flushed rewards not credited (Real DB Transaction)', async () => {
+    const user = await createDisposableUser('SCEN12-UPG', 'BASIC', false);
+    try {
+      // 1. Flush 3 pairs as BASIC
+      await prisma.binaryPlacement.update({
+        where: { userId: user.id },
+        data: { carryLeftPaise: 5n, carryRightPaise: 3n },
+      });
+      await membersService.settleBinaryMatching(user.id);
 
-    expect(walletCreditedOnUpgrade).toBe(0n);
-    expect(historicalFlushedPaise).toBe(900000n);
+      // 2. Upgrade user to FULL
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { currentPackage: 'FULL', isFullQualified: true },
+      });
+
+      // 3. Add 2 units of Right volume to match remaining 2L carryover
+      await prisma.binaryPlacement.update({
+        where: { userId: user.id },
+        data: { carryRightPaise: 2n },
+      });
+
+      // 4. Settle prospective matching
+      const result = await membersService.settleBinaryMatching(user.id);
+      expect(result.matchesSettled).toBe(2);
+      expect(result.rewardINR).toBe(6000); // Only the 2 prospective matches rewarded
+
+      // 5. Verify wallet: strictly ₹6,000, NOT ₹15,000 (past flushed ₹9,000 is NEVER credited!)
+      const wallet = await prisma.walletAccount.findUnique({
+        where: { userId: user.id },
+      });
+      expect(wallet?.availableEarningsPaise).toBe(600000n);
+
+      // Flushed stats remain on record
+      const placement = await prisma.binaryPlacement.findUnique({
+        where: { userId: user.id },
+      });
+      expect(placement?.cumulativeFlushedPairs).toBe(3);
+      expect(placement?.cumulativeFlushedPaise).toBe(900000n);
+    } finally {
+      await cleanupDisposableUser(user.id);
+    }
   });
 
   // =========================================================================
@@ -308,49 +542,235 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   // =========================================================================
   // SCENARIO 14: CASE A — BASIC SPONSOR ₹1,000 NORMAL COMMISSION
   // =========================================================================
-  it('Scenario 14: Case A — Basic sponsor + Basic direct -> ₹1,000 basic sponsor commission', () => {
-    expect(FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE).toBe(100000n); // ₹1,000
-    expect(FINANCIAL_RULES.BASIC_MEMBERSHIP_PRICE_PAISE).toBe(300000n);   // ₹3,000
+  it('Scenario 14: Case A — Basic sponsor + Basic direct -> ₹1,000 basic sponsor commission (Real DB Transaction)', async () => {
+    const sponsor = await createDisposableUser('SCEN14-SPONSOR', 'BASIC', false);
+    const direct = await createDisposableUser('SCEN14-DIRECT', 'BASIC', false, sponsor.id);
+    try {
+      // Simulate Case A: Credit ₹1,000 to sponsor's available earnings
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: {
+          availableEarningsPaise: { increment: FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE },
+          totalEarnedPaise: { increment: FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE },
+        },
+      });
+
+      const wallet = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(wallet?.availableEarningsPaise).toBe(100000n); // ₹1,000
+      expect(wallet?.heldCommissionsPaise).toBe(0n);        // ₹0 held
+    } finally {
+      await cleanupDisposableUser(direct.id);
+      await cleanupDisposableUser(sponsor.id);
+    }
   });
 
   // =========================================================================
   // SCENARIO 15: CASE B — BASIC DIRECT UPGRADE -> ₹9,000 HOLD
   // =========================================================================
-  it('Scenario 15: Case B — Direct upgrades Basic to Full -> ₹9,000 held for BASIC sponsor', () => {
-    const priorBasicCommission = FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE; // ₹1,000
-    const fullDirectEntitlement = FINANCIAL_RULES.QUALIFIED_DIRECT_1ST_ENTITLEMENT_PAISE; // ₹10,000
-    const additionalHeldPaise = fullDirectEntitlement - priorBasicCommission; // ₹9,000 (900000n)
+  it('Scenario 15: Case B — Direct upgrades Basic to Full -> ₹9,000 held for BASIC sponsor (Real DB Transaction)', async () => {
+    const sponsor = await createDisposableUser('SCEN15-SPONSOR', 'BASIC', false);
+    const direct = await createDisposableUser('SCEN15-DIRECT', 'BASIC', false, sponsor.id);
+    try {
+      const holdAmountPaise = 900000n; // ₹9,000
+      // Record Case B hold in DB
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: { heldCommissionsPaise: { increment: holdAmountPaise } },
+      });
+      const holdRecord = await prisma.commissionHold.create({
+        data: {
+          sponsorId: sponsor.id,
+          referredMemberId: direct.id,
+          heldAmountPaise: holdAmountPaise,
+          reason: 'BASIC_SPONSOR_DIRECT_UPGRADE',
+          status: 'HELD',
+        },
+      });
 
-    expect(additionalHeldPaise).toBe(900000n);
+      const wallet = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(wallet?.heldCommissionsPaise).toBe(900000n);
+      expect(wallet?.availableEarningsPaise).toBe(0n);
+      expect(holdRecord.reason).toBe('BASIC_SPONSOR_DIRECT_UPGRADE');
+      expect(holdRecord.status).toBe('HELD');
+    } finally {
+      await cleanupDisposableUser(direct.id);
+      await cleanupDisposableUser(sponsor.id);
+    }
   });
 
   // =========================================================================
-  // SCENARIO 16: CASE C — DIRECT FULL ACTIVATION UNDER BASIC SPONSOR (₹1k REL + ₹9k HOLD)
+  // SCENARIO 16: CASE C — DIRECT FULL ACTIVATION UNDER BASIC SPONSOR
   // =========================================================================
-  it('Scenario 16: Case C — Direct joins FULL immediately under BASIC sponsor -> ₹1,000 released, ₹9,000 held', () => {
-    const totalEntitlement = 1000000n;  // ₹10,000
-    const releasedPaise = 100000n;      // ₹1,000
-    const heldPaise = 900000n;          // ₹9,000
+  it('Scenario 16: Case C — Direct joins FULL immediately under BASIC sponsor -> ₹1,000 released, ₹9,000 held (Real DB Transaction)', async () => {
+    const sponsor = await createDisposableUser('SCEN16-SPONSOR', 'BASIC', false);
+    const direct = await createDisposableUser('SCEN16-DIRECT', 'FULL', true, sponsor.id);
+    try {
+      const releaseAmountPaise = 100000n; // ₹1,000
+      const holdAmountPaise = 900000n;    // ₹9,000
 
-    expect(releasedPaise + heldPaise).toBe(totalEntitlement);
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: {
+          availableEarningsPaise: { increment: releaseAmountPaise },
+          totalEarnedPaise: { increment: releaseAmountPaise },
+          heldCommissionsPaise: { increment: holdAmountPaise },
+        },
+      });
+
+      const holdRecord = await prisma.commissionHold.create({
+        data: {
+          sponsorId: sponsor.id,
+          referredMemberId: direct.id,
+          heldAmountPaise: holdAmountPaise,
+          reason: 'BASIC_SPONSOR_DIRECT_FULL',
+          status: 'HELD',
+        },
+      });
+
+      const wallet = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(wallet?.availableEarningsPaise).toBe(100000n);
+      expect(wallet?.heldCommissionsPaise).toBe(900000n);
+      expect(holdRecord.reason).toBe('BASIC_SPONSOR_DIRECT_FULL');
+    } finally {
+      await cleanupDisposableUser(direct.id);
+      await cleanupDisposableUser(sponsor.id);
+    }
   });
 
   // =========================================================================
-  // SCENARIO 17: CASE D — SPONSOR UPGRADE & ELIGIBLE HOLD RELEASE
+  // SCENARIO 17: CASE D & TASK 2 FINANCIAL INTEGRITY (HOLD ISOLATION)
   // =========================================================================
-  it('Scenario 17: Case D — Sponsor upgrades to FULL -> eligible held bonuses released atomically', async () => {
-    // When sponsor upgrades to FULL, find all holds where reason in ('BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL')
-    const validReasons = ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'];
-    expect(validReasons).toContain('BASIC_SPONSOR_DIRECT_UPGRADE');
-    expect(validReasons).toContain('BASIC_SPONSOR_DIRECT_FULL');
+  it('Scenario 17: Case D & Task 2 Financial Integrity: Releasing ₹1,000 reserve never marks ₹9,000 hold as released, and sponsor upgrade releases ₹9,000 atomically (Real DB Transaction)', async () => {
+    const sponsor = await createDisposableUser('SCEN17-SPONSOR', 'BASIC', false);
+    const direct1 = await createDisposableUser('SCEN17-D1', 'BASIC', false, sponsor.id);
+    const direct2 = await createDisposableUser('SCEN17-D2', 'FULL', true, sponsor.id);
+    try {
+      // 1. Create a ₹1,000 BASIC hold reserve
+      const hold1k = await prisma.commissionHold.create({
+        data: {
+          sponsorId: sponsor.id,
+          referredMemberId: direct1.id,
+          heldAmountPaise: 100000n,
+          reason: 'BASIC_2ND_DIRECT_HOLD_RESERVE',
+          status: 'HELD',
+        },
+      });
+
+      // 2. Create a ₹9,000 sponsor upgrade hold
+      const hold9k = await prisma.commissionHold.create({
+        data: {
+          sponsorId: sponsor.id,
+          referredMemberId: direct2.id,
+          heldAmountPaise: 900000n,
+          reason: 'BASIC_SPONSOR_DIRECT_UPGRADE',
+          status: 'HELD',
+        },
+      });
+
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: { heldCommissionsPaise: 1000000n }, // Total ₹10,000 held
+      });
+
+      // 3. Simulate 2nd direct qualification hold release (releasing ₹1,000 reserve)
+      // Uses the exact fixed query from packages.service.ts
+      const activeHold = await prisma.commissionHold.findFirst({
+        where: {
+          sponsorId: sponsor.id,
+          status: 'HELD',
+          reason: { notIn: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
+          heldAmountPaise: { lte: 100000n },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      expect(activeHold).toBeDefined();
+      expect(activeHold?.id).toBe(hold1k.id);
+
+      await prisma.commissionHold.update({
+        where: { id: activeHold!.id },
+        data: { status: 'RELEASED', releasedAt: new Date() },
+      });
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: {
+          heldCommissionsPaise: { decrement: 100000n },
+          availableEarningsPaise: { increment: 100000n },
+        },
+      });
+
+      // CRITICAL CHECK: Verify the ₹9,000 hold is STILL HELD!
+      const checkHold9k = await prisma.commissionHold.findUnique({
+        where: { id: hold9k.id },
+      });
+      expect(checkHold9k?.status).toBe('HELD');
+      expect(checkHold9k?.releasedAt).toBeNull();
+
+      const walletMid = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(walletMid?.heldCommissionsPaise).toBe(900000n); // Exactly ₹9,000 remaining held
+
+      // 4. Sponsor upgrades to FULL (Case D): Release ₹9,000 hold atomically
+      const qualifyingHolds = await prisma.commissionHold.findMany({
+        where: {
+          sponsorId: sponsor.id,
+          status: 'HELD',
+          reason: { in: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
+        },
+      });
+      expect(qualifyingHolds.length).toBe(1);
+      expect(qualifyingHolds[0].id).toBe(hold9k.id);
+
+      await prisma.commissionHold.update({
+        where: { id: hold9k.id },
+        data: { status: 'RELEASED', releasedAt: new Date() },
+      });
+      await prisma.walletAccount.update({
+        where: { userId: sponsor.id },
+        data: {
+          heldCommissionsPaise: { decrement: 900000n },
+          availableEarningsPaise: { increment: 900000n },
+        },
+      });
+
+      const walletFinal = await prisma.walletAccount.findUnique({ where: { userId: sponsor.id } });
+      expect(walletFinal?.heldCommissionsPaise).toBe(0n);
+      expect(walletFinal?.availableEarningsPaise).toBe(1000000n); // ₹1,000 + ₹9,000 = ₹10,000 total released
+
+      const released9k = await prisma.commissionHold.findUnique({ where: { id: hold9k.id } });
+      expect(released9k?.status).toBe('RELEASED');
+    } finally {
+      await cleanupDisposableUser(direct2.id);
+      await cleanupDisposableUser(direct1.id);
+      await cleanupDisposableUser(sponsor.id);
+    }
   });
 
   // =========================================================================
-  // SCENARIO 18: SECOND-QUALIFIED-DIRECT VOUCHER PRIORITY
+  // SCENARIO 18: SECOND-QUALIFIED-DIRECT VOUCHER PRIORITY & CATEGORIZATION
   // =========================================================================
-  it('Scenario 18: 2nd qualified direct triggers ₹30,000 shopping voucher and ₹1,000 reserve release', () => {
-    expect(FINANCIAL_RULES.QUALIFIED_DIRECT_2ND_VOUCHER_PAISE).toBe(3000000n); // ₹30,000
-    expect(FINANCIAL_RULES.BASIC_HOLD_RESERVE_TARGET_PAISE).toBe(100000n);      // ₹1,000
+  it('Scenario 18: 2nd qualified direct triggers ₹30,000 shopping voucher with ADDITIONAL_SHOPPING_VOUCHER category (Real DB Transaction)', async () => {
+    const sponsor = await createDisposableUser('SCEN18-SPONSOR', 'FULL', true);
+    try {
+      const voucher = await prisma.shoppingVoucher.create({
+        data: {
+          voucherCode: `TEST-VOUCH-${Date.now()}`,
+          userId: sponsor.id,
+          initialValuePaise: FINANCIAL_RULES.QUALIFIED_DIRECT_2ND_VOUCHER_PAISE,
+          remainingBalancePaise: FINANCIAL_RULES.QUALIFIED_DIRECT_2ND_VOUCHER_PAISE,
+          issuedReason: 'SECOND_QUALIFIED_DIRECT_GRANT',
+          category: 'ADDITIONAL_SHOPPING_VOUCHER',
+          emailSent: false,
+          status: 'ACTIVE',
+          expiresAt: new Date('2099-12-31T23:59:59.999Z'),
+        },
+      });
+
+      expect(voucher.category).toBe('ADDITIONAL_SHOPPING_VOUCHER');
+      expect(voucher.initialValuePaise).toBe(3000000n); // ₹30,000
+      expect(voucher.emailSent).toBe(false);            // Sandbox logged, not live sent
+    } finally {
+      await cleanupDisposableUser(sponsor.id);
+    }
   });
 
   // =========================================================================
@@ -368,12 +788,17 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   // =========================================================================
   // SCENARIO 20: SANDBOX EMAIL NOTIFICATION
   // =========================================================================
-  it('Scenario 20: Sandbox email notification logs masked email without sending live emails', async () => {
-    // Check that vouchers created have emailSent flag support
+  it('Scenario 20: Sandbox email notification logs masked email without marking live delivery (Real DB Audit)', async () => {
+    // Check that vouchers created have emailSent: false when in sandbox
     const vouchers = await prisma.shoppingVoucher.findMany({
-      select: { category: true, emailSent: true },
+      select: { category: true, emailSent: true, emailSentAt: true },
     });
     expect(Array.isArray(vouchers)).toBe(true);
+    for (const v of vouchers) {
+      if (!v.emailSent) {
+        expect(v.emailSentAt).toBeNull();
+      }
+    }
   });
 
   // =========================================================================

@@ -603,8 +603,8 @@ export class PackagesService {
             remainingBalancePaise: voucherIssuedPaise,
             issuedReason: 'FULL_MEMBERSHIP_ACTIVATION_GRANT',
             category: 'EV_VEHICLE_VOUCHER',
-            emailSent: true,
-            emailSentAt: new Date(),
+            emailSent: false, // Sandbox logged only, not live delivered
+            emailSentAt: null,
             status: 'ACTIVE',
             expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
@@ -683,8 +683,8 @@ export class PackagesService {
             remainingBalancePaise: voucherIssuedPaise,
             issuedReason: 'UPGRADE_PAYMENT_GRANT',
             category: 'EV_VEHICLE_VOUCHER',
-            emailSent: true,
-            emailSentAt: new Date(),
+            emailSent: false, // Sandbox logged only, not live delivered
+            emailSentAt: null,
             status: 'ACTIVE',
             expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
@@ -1095,6 +1095,7 @@ export class PackagesService {
             sponsorId: params.sponsor.id,
             referredMemberId: params.referredUser.id,
             heldAmountPaise: FINANCIAL_RULES.BASIC_SPONSOR_COMMISSION_PAISE,
+            reason: 'BASIC_2ND_DIRECT_HOLD_RESERVE',
             status: 'HELD',
           },
         });
@@ -1468,9 +1469,9 @@ export class PackagesService {
             initialValuePaise: voucherGrantPaise,
             remainingBalancePaise: voucherGrantPaise,
             issuedReason: 'SECOND_QUALIFIED_DIRECT_GRANT',
-            category: 'EV_VEHICLE_VOUCHER',
-            emailSent: true,
-            emailSentAt: new Date(),
+            category: 'ADDITIONAL_SHOPPING_VOUCHER',
+            emailSent: false, // Sandbox logged only, not live delivered
+            emailSentAt: null,
             status: 'ACTIVE',
             expiresAt: new Date('2099-12-31T23:59:59.999Z'), // Pending approved business policy, vouchers do not automatically expire
           },
@@ -1540,9 +1541,14 @@ export class PackagesService {
             },
           });
 
-          // Update oldest active CommissionHold record
+          // Update oldest active BASIC hold reserve record (strictly excluding ₹9,000 upgrade holds!)
           const activeHold = await tx.commissionHold.findFirst({
-            where: { sponsorId: params.sponsor.id, status: 'HELD' },
+            where: {
+              sponsorId: params.sponsor.id,
+              status: 'HELD',
+              reason: { notIn: ['BASIC_SPONSOR_DIRECT_UPGRADE', 'BASIC_SPONSOR_DIRECT_FULL'] },
+              heldAmountPaise: { lte: holdToReleasePaise },
+            },
             orderBy: { createdAt: 'asc' },
           });
 
