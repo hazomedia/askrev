@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { BinaryLeg } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -43,6 +43,11 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
+    if (process.env.REGISTRATION_PAUSED === 'true') {
+      throw new ServiceUnavailableException(
+        "We're currently upgrading the ASKR EV experience. New member registrations will resume soon. Existing members can continue using their accounts normally."
+      );
+    }
     if (dto.initialPackage && dto.initialPackage !== MembershipPackage.FREE) {
       throw new ForbiddenException(
         'Direct paid package selection during public registration is disabled. Register as FREE and submit an activation request for admin approval.'

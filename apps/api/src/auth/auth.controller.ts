@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Patch, Param, UseGuards, Req, Res, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Param, UseGuards, Req, Res, HttpCode, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
@@ -93,12 +93,28 @@ export class AuthController {
     return this.authService.verifyEmail(dto);
   }
 
+  @Get('registration-status')
+  getRegistrationStatus() {
+    const isPaused = process.env.REGISTRATION_PAUSED === 'true';
+    return {
+      registrationPaused: isPaused,
+      message: isPaused
+        ? "We're currently upgrading the ASKR EV experience. New member registrations will resume soon. Existing members can continue using their accounts normally."
+        : null,
+    };
+  }
+
   @Post('register')
   async register(
     @Body() dto: RegisterDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ) {
+    if (process.env.REGISTRATION_PAUSED === 'true') {
+      throw new ServiceUnavailableException(
+        "We're currently upgrading the ASKR EV experience. New member registrations will resume soon. Existing members can continue using their accounts normally."
+      );
+    }
     const result = await this.authService.register(dto);
     const csrfToken = crypto.randomBytes(32).toString('hex');
     const cookieOpts = this.getCookieOptions(req);
