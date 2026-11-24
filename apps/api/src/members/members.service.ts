@@ -703,7 +703,7 @@ export class MembersService {
         dailyCapRemaining: Math.max(0, FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES - (isSameDay ? todaySettledMatches + payableMatches : payableMatches)),
         event: matchEvent,
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
   }
 
   /**
