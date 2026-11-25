@@ -1664,6 +1664,68 @@ function DashboardContent() {
                     0
                   );
 
+                  // Flush Out Calculations
+                  const flushedPairs = Number(
+                    binaryFlushData?.cumulativeFlushedPairs ??
+                    user?.binaryPlacement?.cumulativeFlushedPairs ??
+                    binaryTree?.node?.cumulativeFlushedPairs ??
+                    0
+                  );
+                  const flushedAmountINR = Number(
+                    binaryFlushData?.cumulativeFlushedINR ??
+                    (user?.binaryPlacement?.cumulativeFlushedPaise
+                      ? Number(user.binaryPlacement.cumulativeFlushedPaise) / 100
+                      : 0)
+                  );
+
+                  // Sponsor Holds Calculations
+                  const activeHoldsList = Array.isArray(myCommissionHolds)
+                    ? myCommissionHolds.filter((h: any) => h.status === 'HELD')
+                    : [];
+                  const totalHoldAmountINR = Number(
+                    walletOverview?.heldCommissionsINR ??
+                    user?.wallet?.heldCommissionsINR ??
+                    activeHoldsList.reduce((acc: number, h: any) => acc + Number(h.heldAmountINR ?? h.heldINR ?? 0), 0)
+                  );
+
+                  const directReserveHolds = activeHoldsList.filter(
+                    (h: any) =>
+                      h.holdType === 'SECOND_DIRECT_RESERVE' ||
+                      h.reason === 'BASIC_HOLD_RESERVE' ||
+                      h.reason === 'BASIC_2ND_DIRECT_HOLD_RESERVE' ||
+                      h.reason === 'DIRECT_QUALIFICATION_RESERVE' ||
+                      Number(h.heldAmountINR ?? h.heldINR ?? 0) === 1000
+                  );
+                  let directReserveINR = directReserveHolds.reduce(
+                    (acc: number, h: any) => acc + Number(h.heldAmountINR ?? h.heldINR ?? 0),
+                    0
+                  );
+
+                  const upgradeHolds = activeHoldsList.filter(
+                    (h: any) =>
+                      h.holdType === 'UPGRADE_COMMISSION_HOLD' ||
+                      h.reason === 'UPGRADE_HOLD' ||
+                      h.reason === 'SPONSOR_UPGRADE_HOLD' ||
+                      h.reason === 'BASIC_SPONSOR_DIRECT_UPGRADE' ||
+                      h.reason === 'BASIC_SPONSOR_DIRECT_FULL' ||
+                      Number(h.heldAmountINR ?? h.heldINR ?? 0) === 9000
+                  );
+                  let upgradeHoldINR = upgradeHolds.reduce(
+                    (acc: number, h: any) => acc + Number(h.heldAmountINR ?? h.heldINR ?? 0),
+                    0
+                  );
+
+                  if (totalHoldAmountINR > 0 && directReserveINR === 0 && upgradeHoldINR === 0) {
+                    if (totalHoldAmountINR >= 1000 && totalHoldAmountINR < 9000) {
+                      directReserveINR = 1000;
+                    } else if (totalHoldAmountINR === 9000) {
+                      upgradeHoldINR = 9000;
+                    } else if (totalHoldAmountINR === 10000) {
+                      directReserveINR = 1000;
+                      upgradeHoldINR = 9000;
+                    }
+                  }
+
                   return (
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -1775,6 +1837,193 @@ function DashboardContent() {
                             <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
                               Leadership Pool
                             </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* =========================================================================
+                          PERMANENT INCOME AUDIT SUMMARY CARDS (BINARY FLUSH OUT & SPONSOR HOLDS)
+                          Always visible for FREE, BASIC, and FULL members (including zero balances)
+                          ========================================================================= */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Card 1 — Binary Flush Out */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5">
+                          <div>
+                            {/* Card Header */}
+                            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                              <div className="flex items-center gap-2">
+                                <Zap className="w-4 h-4 text-amber-600" />
+                                <span className="font-bold text-[#253247] text-sm">Binary Flush Out</span>
+                              </div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                Non-Payable Historical
+                              </span>
+                            </div>
+
+                            {/* Primary Metrics Row */}
+                            <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                  Total Flushed Pairs
+                                </div>
+                                <div className="text-2xl font-black text-slate-800 mt-0.5">
+                                  {flushedPairs} {flushedPairs === 1 ? 'Pair' : 'Pairs'}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                  Total Non-Payable Flushed Amount
+                                </div>
+                                <div className="text-xl font-bold text-amber-700 mt-0.5">
+                                  ₹{flushedAmountINR.toLocaleString('en-IN')}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Secondary Stats Grid */}
+                            <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                                  Historical Audit Status
+                                </span>
+                                <span className="font-semibold text-slate-700 text-xs mt-0.5 block">
+                                  {flushedPairs > 0
+                                    ? `${flushedPairs} ${flushedPairs === 1 ? 'Pair' : 'Pairs'} Flushed`
+                                    : '0 Flushed (Capping Intact)'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                                  Wallet Liability Impact
+                                </span>
+                                <span className="font-semibold text-emerald-700 text-xs flex items-center gap-1 mt-0.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>₹0 (Excluded from GL 2000)</span>
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Policy & Reassurance Notice */}
+                            <div className="mt-3 bg-amber-50/60 rounded-xl p-2.5 text-[11px] text-amber-900 border border-amber-100/80 flex items-start gap-2">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                              <span>
+                                Flushed matching volume represents non-payable pairs from BASIC members or volume exceeding daily capping limits. These are historical non-payable audit values and <strong>never</strong> create wallet liabilities or payable debt. Historical flush-outs remain permanently visible on record even after upgrading to EV ULTRA.
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Card Footer with View Flush History Action */}
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-[11px] text-slate-400">Deterministic Flush Audit</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('overview');
+                                setTimeout(() => {
+                                  document.getElementById('binary-flush-history-section')?.scrollIntoView({ behavior: 'smooth' });
+                                }, 80);
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#165DAD] hover:text-[#124b8d] transition-colors cursor-pointer"
+                            >
+                              <span>View Flush History</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Card 2 — Sponsor Bonus Holds */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5">
+                          <div>
+                            {/* Card Header */}
+                            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                              <div className="flex items-center gap-2">
+                                <Lock className="w-4 h-4 text-indigo-600" />
+                                <span className="font-bold text-[#253247] text-sm">Sponsor Bonus Holds</span>
+                              </div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                Active Holding Reserve
+                              </span>
+                            </div>
+
+                            {/* Primary Metrics Row */}
+                            <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                  Total Outstanding Hold Amount
+                                </div>
+                                <div className="text-2xl font-black text-indigo-700 mt-0.5">
+                                  ₹{totalHoldAmountINR.toLocaleString('en-IN')}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                  Active Hold Records
+                                </div>
+                                <div className="text-xl font-bold text-slate-800 mt-0.5">
+                                  {activeHoldsList.length} {activeHoldsList.length === 1 ? 'Record' : 'Records'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Sub-breakdowns: ₹1,000 Direct Qualification vs ₹9,000 Sponsor Upgrade with Release Conditions */}
+                            <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 flex flex-col justify-between">
+                                <div>
+                                  <div className="text-[10px] uppercase font-semibold text-slate-500">
+                                    ₹1,000 Direct Qualification Reserve
+                                  </div>
+                                  <div className="text-sm font-bold text-slate-800 mt-0.5">
+                                    ₹{directReserveINR.toLocaleString('en-IN')}
+                                  </div>
+                                </div>
+                                <div className="text-[10px] text-indigo-700 font-medium mt-1.5 pt-1.5 border-t border-slate-200/60 leading-tight">
+                                  Release Condition: Released upon qualifying 2nd direct referral (EV PRO or EV ULTRA).
+                                </div>
+                              </div>
+
+                              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 flex flex-col justify-between">
+                                <div>
+                                  <div className="text-[10px] uppercase font-semibold text-slate-500">
+                                    ₹9,000 Sponsor Upgrade Hold
+                                  </div>
+                                  <div className="text-sm font-bold text-slate-800 mt-0.5">
+                                    ₹{upgradeHoldINR.toLocaleString('en-IN')}
+                                  </div>
+                                </div>
+                                <div className="text-[10px] text-purple-700 font-medium mt-1.5 pt-1.5 border-t border-slate-200/60 leading-tight">
+                                  Release Condition: Released upon upgrading your own membership to EV ULTRA.
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Wallet Balance Reconciliation Row (GL 2200) */}
+                            <div className="mt-3 bg-emerald-50/70 rounded-xl p-2.5 text-[11px] text-emerald-900 border border-emerald-100 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 font-medium">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>Wallet Held Balance (GL 2200):</span>
+                              </div>
+                              <span className="font-bold font-mono">
+                                ₹{totalHoldAmountINR.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Card Footer with View Hold Details Action */}
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-[11px] text-slate-400">Reconciled Hold Reserves</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('wallets');
+                                setTimeout(() => {
+                                  document.getElementById('held-commissions-section')?.scrollIntoView({ behavior: 'smooth' });
+                                }, 80);
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#165DAD] hover:text-[#124b8d] transition-colors cursor-pointer"
+                            >
+                              <span>View Hold Details</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -2124,30 +2373,32 @@ function DashboardContent() {
                 })()}
 
                 {/* FEATURE 3 & 7: BINARY MATCH FLUSH-OUT AUDIT HISTORY TABLE */}
-                {binaryFlushData?.flushes && binaryFlushData.flushes.length > 0 && (
-                  <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 sm:p-6 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
-                            Non-Payable Matching History
-                          </span>
-                          <span className="text-xs text-slate-500 font-medium">
-                            Cumulative: {binaryFlushData.cumulativeFlushedPairs} Pairs (Notional Matching Value: ₹{Number(binaryFlushData.cumulativeFlushedINR).toLocaleString('en-IN')})
-                          </span>
-                        </div>
-                        <h3 className="text-base font-bold text-[#253247] mt-1">
-                          Non-Payable Matching History (EV PRO / BASIC)
-                        </h3>
+                <div id="binary-flush-history-section" className="bg-white rounded-2xl border border-amber-200/90 shadow-sm p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
+                          Non-Payable Matching History
+                        </span>
+                        <span className="text-xs text-slate-500 font-medium">
+                          Cumulative: {Number(binaryFlushData?.cumulativeFlushedPairs || 0)} Pairs (Notional Value: ₹{Number(binaryFlushData?.cumulativeFlushedINR || 0).toLocaleString('en-IN')})
+                        </span>
                       </div>
+                      <h3 className="text-base font-bold text-[#253247] mt-1">
+                        Non-Payable Matching History Audit Log
+                      </h3>
+                    </div>
+                    {user?.currentPackage !== 'FULL' && (
                       <button
                         onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
-                        className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 shadow-xs border border-slate-300"
+                        className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 shadow-xs border border-slate-300 cursor-pointer"
                       >
                         <span>View Membership Options</span>
                       </button>
-                    </div>
+                    )}
+                  </div>
 
+                  {binaryFlushData?.flushes && binaryFlushData.flushes.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
@@ -2178,8 +2429,16 @@ function DashboardContent() {
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="py-6 text-center text-xs text-slate-500">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
+                      <p className="font-semibold text-slate-700">No Historical Binary Match Flushes</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+                        Matching volume flushes when matches are calculated for Basic members or when the daily 15-pair capping limit is exceeded. Historical flush records remain permanently on file even after upgrading to EV ULTRA.
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 {/* =========================================================================
                     TASK 7 & REQUIREMENT 8 — RECENT DIRECT REFERRALS TABLE
@@ -3585,18 +3844,18 @@ function DashboardContent() {
                 </div>
 
                 {/* Held Commissions Breakdown */}
-                {Array.isArray(myCommissionHolds) && myCommissionHolds.length > 0 && (
-                  <div className="bg-white rounded-xl border border-amber-200/80 p-5 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-amber-600" />
-                        <h3 className="text-sm font-bold text-[#253247]">Held Commissions Breakdown</h3>
-                      </div>
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                        {myCommissionHolds.filter((h: any) => h.status === 'HELD').length} Active Hold{myCommissionHolds.filter((h: any) => h.status === 'HELD').length === 1 ? '' : 's'}
-                      </span>
+                <div id="held-commissions-section" className="bg-white rounded-xl border border-amber-200/80 p-5 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      <h3 className="text-sm font-bold text-[#253247]">Held Commissions Breakdown</h3>
                     </div>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                      {(myCommissionHolds || []).filter((h: any) => h.status === 'HELD').length} Active Hold{(myCommissionHolds || []).filter((h: any) => h.status === 'HELD').length === 1 ? '' : 's'}
+                    </span>
+                  </div>
 
+                  {Array.isArray(myCommissionHolds) && myCommissionHolds.length > 0 ? (
                     <div className="overflow-x-auto border border-slate-200 rounded-lg">
                       <table className="w-full text-left text-xs whitespace-nowrap">
                         <thead className="bg-[#F7F9FC] text-slate-500 font-semibold border-b border-slate-200">
@@ -3612,11 +3871,13 @@ function DashboardContent() {
                           {myCommissionHolds.map((h: any) => (
                             <tr key={h.id} className="hover:bg-slate-50/80">
                               <td className="p-3 font-semibold text-slate-900">
-                                {h.holdType === 'SECOND_DIRECT_RESERVE' ? '2nd Direct Hold Reserve' : 'Upgrade Commission Hold'}
+                                {h.holdType === 'SECOND_DIRECT_RESERVE' || h.reason === 'BASIC_HOLD_RESERVE' || h.reason === 'BASIC_2ND_DIRECT_HOLD_RESERVE'
+                                  ? '2nd Direct Hold Reserve'
+                                  : 'Upgrade Commission Hold'}
                               </td>
                               <td className="p-3 font-bold text-amber-600">₹{(h.heldAmountINR ?? h.heldINR ?? 0).toLocaleString('en-IN')}</td>
                               <td className="p-3 font-mono text-slate-600">
-                                {h.referredMember?.memberId ? `${h.referredMember.memberId} (${h.referredMember.fullName})` : '—'}
+                                {h.referredMemberId ? `${h.referredMemberId} (${h.referredMemberName || 'Member'})` : h.referredMember?.memberId ? `${h.referredMember.memberId} (${h.referredMember.fullName})` : '—'}
                               </td>
                               <td className="p-3 text-slate-600 text-[11px]">{h.releaseCondition}</td>
                               <td className="p-3">
@@ -3632,8 +3893,16 @@ function DashboardContent() {
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="py-6 text-center text-xs text-slate-500">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
+                      <p className="font-semibold text-slate-700">No Active or Historical Commission Holds</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+                        Direct sponsor commissions are held for 2nd direct referrals (₹1,000 reserve) or direct upgrades prior to qualifying for EV ULTRA (₹9,000 hold).
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 {/* Authoritative Wallet Ledger Transactions Table with Clean Rows & Expandable Details */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

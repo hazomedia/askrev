@@ -1283,8 +1283,23 @@ export class MembersService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const cumulativeFlushedPairs = placement?.cumulativeFlushedPairs || 0;
-    const cumulativeFlushedPaise = placement?.cumulativeFlushedPaise || 0n;
+    let cumulativeFlushedPairs = placement?.cumulativeFlushedPairs || 0;
+    let cumulativeFlushedPaise = placement?.cumulativeFlushedPaise || 0n;
+
+    if (flushes.length > 0) {
+      let sumPairs = 0;
+      let sumPaise = 0n;
+      for (const f of flushes) {
+        sumPairs += f.flushedPairs;
+        sumPaise += f.notionalMissedPaise;
+      }
+      if (sumPairs > cumulativeFlushedPairs) {
+        cumulativeFlushedPairs = sumPairs;
+      }
+      if (sumPaise > cumulativeFlushedPaise) {
+        cumulativeFlushedPaise = sumPaise;
+      }
+    }
 
     return {
       cumulativeFlushedPairs,

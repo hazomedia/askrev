@@ -1210,7 +1210,7 @@ export default function AdminPage() {
                         <div className="mt-3 bg-amber-50/60 rounded-lg p-2.5 text-[11px] text-amber-900 border border-amber-100 flex items-start gap-2">
                           <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                           <span>
-                            Flushed matching volume represents pairs exceeding daily capping limits. These are historical non-payable audit values and <strong>never</strong> create wallet liabilities or payable debt.
+                            Flushed matching volume represents non-payable pairs from BASIC members or volume exceeding daily capping limits. These are historical non-payable audit values and <strong>never</strong> create wallet liabilities or payable debt.
                           </span>
                         </div>
                       </div>
@@ -1296,7 +1296,7 @@ export default function AdminPage() {
                         <div className="mt-3 bg-emerald-50/70 rounded-lg p-2.5 text-[11px] text-emerald-900 border border-emerald-100 flex items-center justify-between">
                           <div className="flex items-center gap-1.5 font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>Wallet Held Balance (GL 2010):</span>
+                            <span>Wallet Held Balance (GL 2200):</span>
                           </div>
                           <span className="font-bold font-mono text-emerald-800">
                             {walletHeldDisplay}
