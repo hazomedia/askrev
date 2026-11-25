@@ -80,6 +80,9 @@ const isDryRun = hasDryRunFlag || (!isLiveProduction && !isRehearsalLive);
 const rehearsalUrlArgIdx = process.argv.indexOf('--rehearsal-db-url');
 const explicitRehearsalUrl = rehearsalUrlArgIdx !== -1 ? process.argv[rehearsalUrlArgIdx + 1] : null;
 
+const prodUrlArgIdx = process.argv.indexOf('--prod-db-url');
+const explicitProdUrl = prodUrlArgIdx !== -1 ? process.argv[prodUrlArgIdx + 1] : null;
+
 // Determine environment file
 let envFile = process.env.ENV_FILE || (isLiveProduction ? '.env' : '.env.uat');
 const envPath = path.resolve(envFile);
@@ -100,7 +103,7 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const dbUrl = explicitRehearsalUrl || process.env.DATABASE_URL || '';
+const dbUrl = explicitRehearsalUrl || explicitProdUrl || process.env.DATABASE_URL || '';
 
 console.log('================================================================================');
 console.log('     ASKR EV — HARDENED PRODUCTION DIRECTIONAL BINARY MIGRATION ENGINE');
