@@ -1,10 +1,23 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
+  BadRequestException,
+  InternalServerErrorException,
+  Optional,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipPackage, UserRole, paiseToRupees, JournalAccount } from '@askrev/shared';
 import { getJwtAccessSecret } from '../auth/jwt-secrets';
-import { InitiateSupportSessionDto, ExitSupportSessionDto } from './dto/support.dto';
+import {
+  InitiateSupportSessionDto,
+  ExchangeSupportSessionDto,
+  ExitSupportSessionDto,
+} from './dto/support.dto';
 
 @Injectable()
 export class AdminService {
@@ -673,22 +686,36 @@ export class AdminService {
   }
 
   /**
-   * TASK 3: Admin "View as Member" Support Session Initiation
-   * Issues a short-lived 15-minute read-only JWT support token to inspect member portal.
-   * Does NOT alter member's sessionVersion, password, or real tokens.
+   * SECURITY CORRECTIONS 1, 2, 3, 8, 9:
+   * 1. Restrict View as Member strictly to SUPER_ADMIN.
+   * 2. Mandatory Super Admin password reauthentication + verified member consent code.
+   * 3. Server-side AdminSupportSession record with explicit permissions & expiry.
+   * 8. Mandatory Security Audit Logging (fail-closed inside atomic transaction).
+   * 9. Returns a single-use, 60-second authorization exchange code (NO JWT bearer in browser storage).
    */
-  async initiateSupportSession(adminUser: any, dto: InitiateSupportSessionDto) {
-    const isAuthorized = [
-      UserRole.SUPER_ADMIN,
-      UserRole.ADMIN_OPERATIONS,
-    ].includes(adminUser.role as any);
-
-    if (!isAuthorized) {
+  async initiateSupportSession(adminUser: any, dto: InitiateSupportSessionDto, ipAddress: string) {
+    // 1. Strict SUPER_ADMIN restriction (Operations Admin and others strictly prohibited)
+    if (adminUser.role !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException(
-        'INSUFFICIENT_PERMISSIONS: Only Super Admin and Operations Admin can initiate member support sessions.'
+        'INSUFFICIENT_PERMISSIONS: Administrative support session initiation is strictly restricted to SUPER_ADMIN.'
       );
     }
 
+    // 2. Administrator fresh reauthentication
+    const superAdminRecord = await this.prisma.user.findUnique({
+      where: { id: adminUser.id },
+    });
+    if (!superAdminRecord) {
+      throw new UnauthorizedException('ADMIN_REAUTH_FAILED: Administrator account not found.');
+    }
+    const isPasswordValid = await bcrypt.compare(dto.adminPassword, superAdminRecord.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException(
+        'ADMIN_REAUTH_REQUIRED: Invalid administrator password. Fresh reauthentication is required to initiate support mode.'
+      );
+    }
+
+    // 3. Find target member
     const cleanMemberId = dto.targetMemberId.trim().toUpperCase();
     const targetUser = await this.prisma.user.findUnique({
       where: { memberId: cleanMemberId },
@@ -697,64 +724,189 @@ export class AdminService {
         sponsor: { select: { memberId: true, fullName: true } },
       },
     });
-
     if (!targetUser) {
       throw new NotFoundException(`Target member with ID "${cleanMemberId}" was not found.`);
     }
 
+    // 4. Verify Member Consent
+    // Checks for a valid, unconsumed consent code granted by this target member
+    const cleanConsentCode = dto.consentCode.trim();
+    const validConsent = await this.prisma.memberSupportConsent.findFirst({
+      where: {
+        memberId: targetUser.memberId,
+        consentCode: cleanConsentCode,
+        isConsumed: false,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!validConsent) {
+      throw new ForbiddenException(
+        'MEMBER_CONSENT_UNVERIFIED: Valid member support consent code is required. The member must generate support consent from their dashboard.'
+      );
+    }
+
+    // 5. Generate secure single-use exchange code (60-second validity)
+    const exchangeCode = crypto.randomBytes(32).toString('hex');
+    const exchangeCodeHash = crypto.createHash('sha256').update(exchangeCode).digest('hex');
+    const sessionTokenId = crypto.randomUUID();
+    const sessionTokenHash = crypto.createHash('sha256').update(sessionTokenId).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute support session
+
+    // 6. Mandatory atomic transaction: Server-side Support Session + Audit Log + Consent Consumption
+    // If audit logging fails, session creation is completely rejected (fail-closed)
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Create server-side session record
+        await tx.adminSupportSession.create({
+          data: {
+            id: sessionTokenId,
+            sessionTokenHash,
+            exchangeCodeHash,
+            adminUserId: adminUser.id,
+            adminEmail: adminUser.email,
+            targetUserId: targetUser.id,
+            targetMemberId: targetUser.memberId,
+            permissions: ['READ_ONLY'],
+            scope: 'admin_support:read_only',
+            reason: dto.reason.trim(),
+            consentReference: dto.consentReference.trim(),
+            consentVerifiedAt: new Date(),
+            consentProof: `CONSENT_CODE:${validConsent.id}`,
+            expiresAt,
+            isRevoked: false,
+          },
+        });
+
+        // Mark consent code as consumed
+        await tx.memberSupportConsent.update({
+          where: { id: validConsent.id },
+          data: {
+            isConsumed: true,
+            consumedAt: new Date(),
+            consumedByAdmin: adminUser.email,
+          },
+        });
+
+        // Mandatory Security Audit Trail
+        await tx.auditLog.create({
+          data: {
+            action: 'ADMIN_SUPPORT_ACCESS_INITIATED',
+            actorId: adminUser.id,
+            entityType: 'User',
+            entityId: targetUser.id,
+            metadata: {
+              supportSessionId: sessionTokenId,
+              adminUserId: adminUser.id,
+              adminEmail: adminUser.email,
+              targetMemberId: targetUser.memberId,
+              targetFullName: targetUser.fullName,
+              consentReference: dto.consentReference.trim(),
+              consentCodeId: validConsent.id,
+              reason: dto.reason.trim(),
+              sessionDuration: '15m',
+              expiresAt: expiresAt.toISOString(),
+              ipAddress,
+            },
+          },
+        });
+      });
+    } catch (err: any) {
+      throw new InternalServerErrorException(
+        `AUDIT_LOG_FAILURE: Support session initiation aborted because mandatory audit trail could not be persisted: ${err.message}`
+      );
+    }
+
+    return {
+      message: 'Support authorization exchange created successfully',
+      exchangeCode,
+      expiresInSeconds: 60,
+      targetMemberId: targetUser.memberId,
+    };
+  }
+
+  /**
+   * SECURITY CORRECTION 4 & 9:
+   * Single-use authorization exchange for isolated support session.
+   * Signs token with dedicated scope 'admin_support:read_only' and role 'ADMIN_SUPPORT'.
+   */
+  async exchangeSupportSession(dto: ExchangeSupportSessionDto) {
+    const exchangeCodeHash = crypto.createHash('sha256').update(dto.exchangeCode.trim()).digest('hex');
+
+    const session = await this.prisma.adminSupportSession.findUnique({
+      where: { exchangeCodeHash },
+    });
+
+    if (!session) {
+      throw new UnauthorizedException('EXCHANGE_INVALID: Authorization exchange code is invalid.');
+    }
+
+    if (session.exchangeConsumedAt) {
+      throw new UnauthorizedException('EXCHANGE_CONSUMED: Single-use authorization exchange code has already been consumed.');
+    }
+
+    if (session.isRevoked) {
+      throw new UnauthorizedException('SUPPORT_SESSION_REVOKED: This support session has been revoked.');
+    }
+
+    const now = new Date();
+    if (session.expiresAt < now) {
+      throw new UnauthorizedException('EXCHANGE_EXPIRED: Support authorization exchange has expired.');
+    }
+
+    // Enforce 60-second exchange window from creation
+    const sessionAgeMs = now.getTime() - session.createdAt.getTime();
+    if (sessionAgeMs > 60 * 1000) {
+      throw new UnauthorizedException('EXCHANGE_EXPIRED: Exchange code exceeded 60-second time window.');
+    }
+
+    // Mark exchange code consumed immediately
+    await this.prisma.adminSupportSession.update({
+      where: { id: session.id },
+      data: { exchangeConsumedAt: now },
+    });
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: session.targetUserId },
+      include: {
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('Target member not found.');
+    }
+
+    if (!this.jwtService) {
+      throw new BadRequestException('JWT service unavailable.');
+    }
+
+    // DEDICATED READ-ONLY SCOPE TOKEN (NOT ordinary member token)
     const payload = {
       sub: targetUser.id,
       email: targetUser.email,
-      role: targetUser.role,
-      sessionVersion: targetUser.sessionVersion, // Preserves current version without incrementing
+      memberId: targetUser.memberId,
+      role: 'ADMIN_SUPPORT',
+      scope: 'admin_support:read_only',
       isSupportMode: true,
-      adminUserId: adminUser.id,
-      adminEmail: adminUser.email,
-      supportReason: dto.reason.trim(),
-      consentReference: dto.consentReference.trim(),
+      supportSessionId: session.id,
+      adminUserId: session.adminUserId,
+      adminEmail: session.adminEmail,
+      supportReason: session.reason,
+      sessionVersion: targetUser.sessionVersion, // Preserves member version
       jti: crypto.randomUUID(),
     };
-
-    if (!this.jwtService) {
-      throw new BadRequestException('Security token service is currently unavailable.');
-    }
 
     const supportToken = await this.jwtService.signAsync(payload, {
       secret: getJwtAccessSecret(),
       expiresIn: '15m',
     });
 
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-    // Mandatory Security Audit Logging
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          action: 'ADMIN_SUPPORT_ACCESS_INITIATED',
-          actorId: adminUser.id,
-          entityType: 'User',
-          entityId: targetUser.id,
-          metadata: {
-            targetMemberId: targetUser.memberId,
-            targetFullName: targetUser.fullName,
-            targetEmail: targetUser.email,
-            adminUserId: adminUser.id,
-            adminEmail: adminUser.email,
-            adminRole: adminUser.role,
-            reason: dto.reason.trim(),
-            consentReference: dto.consentReference.trim(),
-            sessionDuration: '15m',
-            sessionExpiresAt: expiresAt,
-          },
-        },
-      });
-    } catch {}
-
     return {
-      message: 'Support mode session generated successfully',
       supportToken,
-      expiresInSeconds: 15 * 60,
-      expiresAt,
+      expiresAt: session.expiresAt.toISOString(),
+      adminEmail: session.adminEmail,
+      reason: session.reason,
       targetUser: {
         id: targetUser.id,
         memberId: targetUser.memberId,
@@ -764,48 +916,56 @@ export class AdminService {
         isFullQualified: targetUser.isFullQualified,
         sponsor: targetUser.sponsor,
       },
-      supportMeta: {
-        adminEmail: adminUser.email,
-        reason: dto.reason.trim(),
-        consentReference: dto.consentReference.trim(),
-      },
     };
   }
 
   /**
-   * Terminate active support session and record audit log
+   * SECURITY CORRECTION 5:
+   * Terminate active support session immediately server-side.
+   * Marks session revoked in DB so subsequent requests fail instantly.
    */
-  async exitSupportSession(user: any, dto: ExitSupportSessionDto) {
-    let tokenTargetUserId = user.id;
-    let adminActorId = (user as any).adminUserId || user.id;
+  async exitSupportSession(user: any, dto: ExitSupportSessionDto, tokenFromCookie?: string) {
+    const rawToken = dto.supportToken || tokenFromCookie;
+    let sessionId = dto.supportSessionId || (user as any)?.supportSessionId;
 
-    if (dto?.supportToken) {
+    if (!sessionId && rawToken && this.jwtService) {
       try {
-        const decoded = this.jwtService.verify(dto.supportToken, {
+        const decoded = this.jwtService.verify(rawToken, {
           secret: getJwtAccessSecret(),
         }) as any;
-        if (decoded?.sub) tokenTargetUserId = decoded.sub;
-        if (decoded?.adminUserId) adminActorId = decoded.adminUserId;
+        if (decoded?.supportSessionId) sessionId = decoded.supportSessionId;
       } catch {}
     }
 
-    try {
+    if (sessionId) {
+      await this.prisma.adminSupportSession.updateMany({
+        where: { id: sessionId },
+        data: {
+          isRevoked: true,
+          revokedAt: new Date(),
+          revokedBy: user?.id || 'SUPER_ADMIN',
+          revocationReason: 'USER_EXIT_SUPPORT_MODE',
+        },
+      });
+
+      // Record audit log for termination
       await this.prisma.auditLog.create({
         data: {
           action: 'ADMIN_SUPPORT_ACCESS_TERMINATED',
-          actorId: adminActorId,
-          entityType: 'User',
-          entityId: tokenTargetUserId,
+          actorId: (user as any)?.adminUserId || user?.id || 'SUPER_ADMIN',
+          entityType: 'AdminSupportSession',
+          entityId: sessionId,
           metadata: {
+            supportSessionId: sessionId,
             terminatedAt: new Date().toISOString(),
             reason: 'ADMIN_SUPPORT_SESSION_CLOSED',
           },
         },
       });
-    } catch {}
+    }
 
     return {
-      message: 'Support session terminated successfully',
+      message: 'Support session terminated and revoked successfully server-side.',
       success: true,
     };
   }

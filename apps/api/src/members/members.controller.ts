@@ -216,5 +216,25 @@ export class MembersController {
   async requeueDeadLetterTasks(@Body() body?: { taskIds?: string[] }) {
     return this.instantMatchingService.requeueDeadLetterTasks(body?.taskIds);
   }
+
+  // =========================================================================
+  // MEMBER SUPPORT CONSENT (VERIFIED CONSENT GRANT)
+  // =========================================================================
+
+  @Post('support-consent/grant')
+  async grantSupportConsent(@CurrentUser() user: any) {
+    return this.membersService.grantSupportConsent(user);
+  }
+
+  @Get('support-consent/active')
+  async getActiveSupportConsent(@CurrentUser() user: any) {
+    return this.membersService.getActiveSupportConsent(user);
+  }
+
+  @Post('support-consent/revoke')
+  async revokeSupportConsent(@CurrentUser() user: any) {
+    return this.membersService.revokeSupportConsent(user);
+  }
 }
+
 

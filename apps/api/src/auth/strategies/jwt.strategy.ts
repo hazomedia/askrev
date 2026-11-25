@@ -19,12 +19,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         (req: Request) => {
           if (req && req.cookies) {
+            // 1. Support session cookie priority for support requests
+            if (req.cookies['askrev_support_token']) {
+              return req.cookies['askrev_support_token'];
+            }
+            // 2. Admin portal route isolation
             const urlPath = req.path || req.url || '';
             const origin = (req.headers?.origin || req.headers?.referer || '').toLowerCase();
             const isAdminRoute = urlPath.includes('/admin') || origin.includes('admin.');
             if (isAdminRoute && req.cookies['askrev_admin_access_token']) {
               return req.cookies['askrev_admin_access_token'];
             }
+            // 3. General member cookie
             return (
               req.cookies['askrev_access_token'] ||
               req.cookies['askrev_admin_access_token'] ||
@@ -51,6 +57,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       clientId?: string;
       sessionVersion?: number;
       isSupportMode?: boolean;
+      supportSessionId?: string;
       adminUserId?: string;
       adminEmail?: string;
       supportReason?: string;
@@ -63,13 +70,68 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       );
     }
 
-    // STRICT READ-ONLY LOCKDOWN FOR ADMIN SUPPORT SESSIONS:
-    // Any mutation attempt (POST, PUT, PATCH, DELETE) made with a support token is forbidden.
-    if (payload.isSupportMode) {
+    const isSupportSession = payload.isSupportMode === true || payload.scope === 'admin_support:read_only';
+
+    // =========================================================================
+    // SECURITY CORRECTIONS 3, 5, 6, 7 FOR ADMIN SUPPORT MODE:
+    // =========================================================================
+    if (isSupportSession) {
+      // 3 & 5. Verify against server-side session record (revocation check)
+      if (payload.supportSessionId) {
+        const sessionRecord = await this.prisma.adminSupportSession.findUnique({
+          where: { id: payload.supportSessionId },
+        });
+
+        if (!sessionRecord) {
+          throw new UnauthorizedException('SUPPORT_SESSION_INVALID: Server-side support session record not found.');
+        }
+
+        if (sessionRecord.isRevoked) {
+          throw new UnauthorizedException('SUPPORT_SESSION_TERMINATED: The administrative support session has been terminated.');
+        }
+
+        if (new Date() > sessionRecord.expiresAt) {
+          throw new UnauthorizedException('SUPPORT_SESSION_EXPIRED: The administrative support session has expired.');
+        }
+      } else {
+        throw new UnauthorizedException('SUPPORT_SESSION_INVALID: Missing support session identifier.');
+      }
+
+      // 6. Dedicated termination endpoint exemption & mutation lockdown
+      const rawPath = (req.path || req.url || '').split('?')[0];
+      const isExitEndpoint = rawPath.endsWith('/admin/support/exit-session') || rawPath.endsWith('/support/exit-session');
       const httpMethod = (req?.method || 'GET').toUpperCase();
-      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(httpMethod)) {
+
+      if (httpMethod !== 'GET' && !isExitEndpoint) {
         throw new ForbiddenException(
           'ADMIN_SUPPORT_READ_ONLY: Modifying member data during an administrative support session is strictly prohibited. All mutation operations (POST, PUT, PATCH, DELETE) are permanently blocked in support mode.'
+        );
+      }
+
+      // 7. Enforce explicit allowlist of safe read-only endpoints
+      const safeAllowlist = [
+        '/auth/me',
+        '/members/dashboard',
+        '/members/direct-team',
+        '/members/binary-tree',
+        '/matrix/overview',
+        '/matrix/my-placements',
+        '/matrix/my-earnings',
+        '/packages/catalog',
+        '/packages/my-status',
+        '/vouchers/my-vouchers',
+        '/vouchers/my-balance',
+        '/products',
+        '/banners/active',
+        '/banners/welcome-popup',
+        '/admin/support/exit-session',
+        '/support/exit-session',
+      ];
+
+      const isAllowed = safeAllowlist.some(endpoint => rawPath.endsWith(endpoint) || rawPath.includes(endpoint));
+      if (!isAllowed) {
+        throw new ForbiddenException(
+          `ADMIN_SUPPORT_READ_ONLY_ACCESS_DENIED: Endpoint '${rawPath}' is not permitted in read-only Admin Support Mode.`
         );
       }
     }
@@ -81,6 +143,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       token = authHeader.slice(7).trim();
     } else if (req.cookies) {
       token =
+        req.cookies['askrev_support_token'] ||
         req.cookies['askrev_access_token'] ||
         req.cookies['askrev_admin_access_token'] ||
         req.cookies['askrev_admin_session'] ||
@@ -117,7 +180,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     // MANDATORY sessionVersion validation on all member/admin access JWTs
-    // Tokens missing sessionVersion (such as legacy or forged tokens) must be strictly rejected.
     if (payload.sessionVersion === undefined || payload.sessionVersion === null || typeof payload.sessionVersion !== 'number') {
       throw new UnauthorizedException('Session version is missing or invalid. Please sign in again.');
     }
@@ -144,15 +206,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Session has been revoked. Please sign in again.');
     }
 
-    if (payload.isSupportMode) {
+    if (isSupportSession) {
       (user as any).isSupportMode = true;
+      (user as any).supportSessionId = payload.supportSessionId;
       (user as any).adminUserId = payload.adminUserId;
       (user as any).adminEmail = payload.adminEmail;
       (user as any).supportReason = payload.supportReason;
       (user as any).consentReference = payload.consentReference;
+      (user as any).scope = 'admin_support:read_only';
     }
 
     return user;
   }
 }
-

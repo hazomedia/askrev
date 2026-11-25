@@ -65,6 +65,10 @@ import {
   setSupportSession,
   clearSupportSession,
   exitAdminSupportSessionApi,
+  exchangeAdminSupportSessionApi,
+  grantMemberSupportConsentApi,
+  fetchActiveMemberSupportConsentApi,
+  revokeMemberSupportConsentApi,
 } from '../../lib/api';
 import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
@@ -212,6 +216,43 @@ function DashboardContent() {
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
+  // Member Support Consent States
+  const [memberConsentCode, setMemberConsentCode] = useState<string | null>(null);
+  const [memberConsentExpires, setMemberConsentExpires] = useState<string | null>(null);
+  const [consentLoading, setConsentLoading] = useState(false);
+  const [consentMsg, setConsentMsg] = useState<string | null>(null);
+
+  const handleGenerateConsentCode = async () => {
+    setConsentLoading(true);
+    setConsentMsg(null);
+    try {
+      const res = await grantMemberSupportConsentApi();
+      if (res?.consentCode) {
+        setMemberConsentCode(res.consentCode);
+        setMemberConsentExpires(res.expiresAt);
+        setConsentMsg('Support consent granted for 24 hours. Provide this 6-digit code to Super Admin.');
+      }
+    } catch (err: any) {
+      setConsentMsg(err.message || 'Failed to generate consent code.');
+    } finally {
+      setConsentLoading(false);
+    }
+  };
+
+  const handleRevokeConsentCode = async () => {
+    setConsentLoading(true);
+    try {
+      await revokeMemberSupportConsentApi();
+      setMemberConsentCode(null);
+      setMemberConsentExpires(null);
+      setConsentMsg('Support consent revoked.');
+    } catch (err: any) {
+      setConsentMsg(err.message || 'Failed to revoke consent.');
+    } finally {
+      setConsentLoading(false);
+    }
+  };
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordSaving(true);
@@ -341,33 +382,38 @@ function DashboardContent() {
   };
 
   useEffect(() => {
-    // 0. Detect Support Mode Token from query parameter or existing session
-    const supportTokenParam = searchParams.get('support_token');
+    // 0. Detect Single-Use Support Authorization Exchange Code or Existing In-Memory Support Session
+    const exchangeCodeParam = searchParams.get('exchange_code');
     const existingSupport = getSupportSession();
 
-    if (supportTokenParam) {
-      sessionStorage.setItem('askrev_support_token', supportTokenParam);
+    if (exchangeCodeParam) {
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
       setIsSupportMode(true);
-      fetchApi<any>('/auth/me')
-        .then((profile) => {
-          setSupportSession({
-            supportToken: supportTokenParam,
-            targetUser: profile,
-            adminEmail: profile?.adminEmail || '',
-            reason: profile?.supportReason || '',
-            consentReference: profile?.consentReference || '',
-            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          });
-          setUser(profile);
-          setSupportMeta({
-            adminEmail: profile?.adminEmail,
-            reason: profile?.supportReason,
-            consentReference: profile?.consentReference,
-            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          });
-          loadData();
+      exchangeAdminSupportSessionApi(exchangeCodeParam)
+        .then((res) => {
+          if (res?.success) {
+            setSupportSession({
+              targetUser: res.targetUser,
+              adminEmail: res.adminEmail || '',
+              reason: res.reason || '',
+              expiresAt: res.expiresAt,
+            });
+            setUser(res.targetUser);
+            setSupportMeta({
+              adminEmail: res.adminEmail,
+              reason: res.reason,
+              consentReference: 'VERIFIED_MEMBER_CONSENT',
+              expiresAt: res.expiresAt,
+            });
+            loadData();
+          } else {
+            throw new Error('Exchange failed');
+          }
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error('Support authorization exchange failed:', err);
           clearSupportSession();
           router.push('/auth/login?redirect=/dashboard');
         });
@@ -377,7 +423,7 @@ function DashboardContent() {
       setSupportMeta({
         adminEmail: existingSupport.adminEmail,
         reason: existingSupport.reason,
-        consentReference: existingSupport.consentReference,
+        consentReference: 'VERIFIED_MEMBER_CONSENT',
         expiresAt: existingSupport.expiresAt,
       });
       loadData();
@@ -5048,6 +5094,57 @@ function DashboardContent() {
                       {passwordSaving ? 'Updating Password...' : 'Update Password'}
                     </button>
                   </form>
+                </div>
+
+                {/* Admin Support Access & Verified Consent */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck className="w-4 h-4 text-amber-600" />
+                    <h3 className="text-sm font-bold text-[#0C2348]">Administrative Support Mode Consent</h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-4">
+                    To authorize an ASKR EV Super Administrator to inspect your account in read-only support mode, generate a temporary 6-digit consent code. Support sessions automatically expire after 15 minutes and cannot perform financial withdrawals or package updates.
+                  </p>
+
+                  {consentMsg && (
+                    <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                      {consentMsg}
+                    </div>
+                  )}
+
+                  {memberConsentCode ? (
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] text-slate-400 font-semibold uppercase">Active Consent Code</div>
+                        <div className="text-2xl font-mono font-black tracking-widest text-[#165DAD] mt-0.5">
+                          {memberConsentCode}
+                        </div>
+                        {memberConsentExpires && (
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            Expires: {new Date(memberConsentExpires).toLocaleString('en-IN')}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRevokeConsentCode}
+                        disabled={consentLoading}
+                        className="px-4 py-2 rounded-lg border border-red-200 hover:bg-red-50 text-red-600 text-xs font-semibold transition-colors disabled:opacity-50"
+                      >
+                        Revoke Consent
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleGenerateConsentCode}
+                      disabled={consentLoading || isSupportMode}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{consentLoading ? 'Generating Code...' : 'Generate 6-Digit Support Consent Code'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

@@ -1152,59 +1152,44 @@ export async function fetchAdminVouchersApi(): Promise<any> {
  */
 
 export interface SupportSessionData {
-  supportToken: string;
   targetUser: any;
   adminEmail: string;
   reason: string;
-  consentReference: string;
   expiresAt: string;
 }
 
+// In-memory support session storage (NOT persisted in localStorage or sessionStorage)
+let inMemorySupportSession: SupportSessionData | null = null;
+
 export function setSupportSession(data: SupportSessionData) {
-  if (typeof window === 'undefined') return;
-  sessionStorage.setItem('askrev_support_token', data.supportToken);
-  sessionStorage.setItem('askrev_support_meta', JSON.stringify({
-    adminEmail: data.adminEmail,
-    reason: data.reason,
-    consentReference: data.consentReference,
-    expiresAt: data.expiresAt,
-    targetUser: data.targetUser,
-  }));
-  if (data.targetUser) {
-    localStorage.setItem('askrev_user', JSON.stringify(data.targetUser));
+  inMemorySupportSession = data;
+  if (typeof window !== 'undefined') {
+    // Clean up any legacy bearer tokens from storage
+    sessionStorage.removeItem('askrev_support_token');
+    sessionStorage.removeItem('askrev_support_meta');
   }
 }
 
 export function getSupportSession(): (SupportSessionData & { isSupportMode: boolean }) | null {
-  if (typeof window === 'undefined') return null;
-  const token = sessionStorage.getItem('askrev_support_token');
-  if (!token) return null;
-  const metaStr = sessionStorage.getItem('askrev_support_meta');
-  let meta: any = {};
-  if (metaStr) {
-    try {
-      meta = JSON.parse(metaStr);
-    } catch {}
-  }
+  if (!inMemorySupportSession) return null;
   return {
-    supportToken: token,
+    ...inMemorySupportSession,
     isSupportMode: true,
-    targetUser: meta.targetUser || null,
-    adminEmail: meta.adminEmail || '',
-    reason: meta.reason || '',
-    consentReference: meta.consentReference || '',
-    expiresAt: meta.expiresAt || '',
   };
 }
 
 export function clearSupportSession() {
-  if (typeof window === 'undefined') return;
-  sessionStorage.removeItem('askrev_support_token');
-  sessionStorage.removeItem('askrev_support_meta');
+  inMemorySupportSession = null;
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem('askrev_support_token');
+    sessionStorage.removeItem('askrev_support_meta');
+  }
 }
 
 export async function initiateAdminSupportSessionApi(dto: {
   targetMemberId: string;
+  adminPassword: string;
+  consentCode: string;
   reason: string;
   consentReference: string;
 }): Promise<any> {
@@ -1214,11 +1199,18 @@ export async function initiateAdminSupportSessionApi(dto: {
   });
 }
 
-export async function exitAdminSupportSessionApi(supportToken?: string): Promise<any> {
+export async function exchangeAdminSupportSessionApi(exchangeCode: string): Promise<any> {
+  return fetchApi<any>('/admin/support/exchange', {
+    method: 'POST',
+    body: JSON.stringify({ exchangeCode }),
+  });
+}
+
+export async function exitAdminSupportSessionApi(): Promise<any> {
   try {
     return await fetchApi<any>('/admin/support/exit-session', {
       method: 'POST',
-      body: JSON.stringify({ supportToken }),
+      body: JSON.stringify({}),
     });
   } catch {
     return { success: true };
@@ -1230,6 +1222,23 @@ export async function exitAdminSupportSessionApi(supportToken?: string): Promise
 export async function fetchAdminSupportAuditLogsApi(page = 1, limit = 50): Promise<any> {
   return fetchApi<any>(`/admin/support/audit-logs?page=${page}&limit=${limit}`);
 }
+
+export async function grantMemberSupportConsentApi(): Promise<any> {
+  return fetchApi<any>('/members/support-consent/grant', {
+    method: 'POST',
+  });
+}
+
+export async function fetchActiveMemberSupportConsentApi(): Promise<any> {
+  return fetchApi<any>('/members/support-consent/active');
+}
+
+export async function revokeMemberSupportConsentApi(): Promise<any> {
+  return fetchApi<any>('/members/support-consent/revoke', {
+    method: 'POST',
+  });
+}
+
 
 
 

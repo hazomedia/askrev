@@ -966,6 +966,52 @@ model BinaryMatchFlush {
   @@index([matchDate])
 }
 
+model MemberSupportConsent {
+  id              String    @id @default(uuid())
+  userId          String
+  memberId        String
+  consentCode     String    @unique
+  expiresAt       DateTime
+  isConsumed      Boolean   @default(false)
+  consumedAt      DateTime?
+  consumedByAdmin String?
+  createdAt       DateTime  @default(now())
+
+  @@index([memberId])
+  @@index([consentCode])
+  @@index([isConsumed])
+}
+
+model AdminSupportSession {
+  id                 String    @id @default(uuid())
+  sessionTokenHash   String    @unique
+  exchangeCodeHash   String?   @unique
+  exchangeConsumedAt DateTime?
+  adminUserId        String
+  adminEmail         String
+  targetUserId       String
+  targetMemberId     String
+  permissions        String[]  @default(["READ_ONLY"])
+  scope              String    @default("admin_support:read_only")
+  reason             String
+  consentReference   String
+  consentVerifiedAt  DateTime  @default(now())
+  consentProof       String?
+  isRevoked          Boolean   @default(false)
+  revokedAt          DateTime?
+  revokedBy          String?
+  revocationReason   String?
+  expiresAt          DateTime
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([adminUserId])
+  @@index([targetUserId])
+  @@index([isRevoked])
+  @@index([expiresAt])
+}
+
+
 
 
 

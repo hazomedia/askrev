@@ -1403,4 +1403,77 @@ export class MembersService {
       notionalMissedINR: paiseToRupees(f.notionalMissedPaise),
     }));
   }
+
+  /**
+   * Member Support Consent Management:
+   * Generates a 6-digit numeric consent code with 24-hour expiry.
+   */
+  async grantSupportConsent(user: any) {
+    // Invalidate existing unconsumed consent codes
+    await this.prisma.memberSupportConsent.updateMany({
+      where: { memberId: user.memberId, isConsumed: false },
+      data: { isConsumed: true, consumedAt: new Date() },
+    });
+
+    // Generate random 6-digit code
+    const consentCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    const record = await this.prisma.memberSupportConsent.create({
+      data: {
+        userId: user.id,
+        memberId: user.memberId,
+        consentCode,
+        expiresAt,
+        isConsumed: false,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'MEMBER_SUPPORT_CONSENT_GRANTED',
+        actorId: user.id,
+        entityType: 'User',
+        entityId: user.id,
+        metadata: {
+          memberId: user.memberId,
+          consentCode,
+          expiresAt: expiresAt.toISOString(),
+        },
+      },
+    });
+
+    return {
+      success: true,
+      consentCode,
+      expiresAt: expiresAt.toISOString(),
+      message: 'Support consent granted for 24 hours. Share this 6-digit code with Super Admin.',
+    };
+  }
+
+  async getActiveSupportConsent(user: any) {
+    const active = await this.prisma.memberSupportConsent.findFirst({
+      where: {
+        memberId: user.memberId,
+        isConsumed: false,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      hasActiveConsent: !!active,
+      consentCode: active?.consentCode || null,
+      expiresAt: active?.expiresAt?.toISOString() || null,
+    };
+  }
+
+  async revokeSupportConsent(user: any) {
+    await this.prisma.memberSupportConsent.updateMany({
+      where: { memberId: user.memberId, isConsumed: false },
+      data: { isConsumed: true, consumedAt: new Date() },
+    });
+
+    return { success: true, message: 'Support consent revoked.' };
+  }
 }

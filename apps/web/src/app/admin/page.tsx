@@ -187,6 +187,8 @@ export default function AdminPage() {
 
   // TASK 3: Admin Support Mode ("View as Member") States
   const [supportModalTarget, setSupportModalTarget] = useState<any | null>(null);
+  const [supportAdminPassword, setSupportAdminPassword] = useState('');
+  const [supportConsentCode, setSupportConsentCode] = useState('');
   const [supportReason, setSupportReason] = useState('');
   const [supportConsentRef, setSupportConsentRef] = useState('');
   const [isInitiatingSupport, setIsInitiatingSupport] = useState(false);
@@ -198,6 +200,8 @@ export default function AdminPage() {
 
   const handleOpenSupportModal = (targetMember: any) => {
     setSupportModalTarget(targetMember);
+    setSupportAdminPassword('');
+    setSupportConsentCode('');
     setSupportReason('');
     setSupportConsentRef('');
     setSupportError(null);
@@ -212,24 +216,28 @@ export default function AdminPage() {
     try {
       const res = await initiateAdminSupportSessionApi({
         targetMemberId: supportModalTarget.memberId,
+        adminPassword: supportAdminPassword,
+        consentCode: supportConsentCode.trim(),
         reason: supportReason.trim(),
         consentReference: supportConsentRef.trim(),
       });
 
-      if (!res?.supportToken) {
-        throw new Error('Failed to obtain support token from server.');
+      if (!res?.exchangeCode) {
+        throw new Error('Failed to obtain single-use authorization exchange code.');
       }
 
-      // Open Member Portal in a new tab with support token
+      // Open Member Portal in a new tab with single-use exchange code
       const isProd = typeof window !== 'undefined' && window.location.hostname.includes('askrevdrive.com');
       const targetUrl = isProd
-        ? `https://askrevdrive.com/dashboard?support_token=${encodeURIComponent(res.supportToken)}`
-        : `/dashboard?support_token=${encodeURIComponent(res.supportToken)}`;
+        ? `https://askrevdrive.com/dashboard?exchange_code=${encodeURIComponent(res.exchangeCode)}`
+        : `/dashboard?exchange_code=${encodeURIComponent(res.exchangeCode)}`;
 
       window.open(targetUrl, '_blank');
 
-      setActionSuccess(`Support mode initiated for member ${supportModalTarget.memberId}. Opened in new browser tab.`);
+      setActionSuccess(`Support mode initiated for member ${supportModalTarget.memberId}. Single-use exchange opened in new tab.`);
       setSupportModalTarget(null);
+      setSupportAdminPassword('');
+      setSupportConsentCode('');
       setSupportReason('');
       setSupportConsentRef('');
     } catch (err: any) {
@@ -1703,14 +1711,16 @@ export default function AdminPage() {
                                   >
                                     Details
                                   </button>
-                                  <button
-                                    onClick={() => handleOpenSupportModal(m)}
-                                    title="View portal as member in read-only support mode"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200 hover:border-amber-600 text-[11px] font-bold transition-all shadow-2xs"
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                    <span>View</span>
-                                  </button>
+                                  {currentUser?.role === 'SUPER_ADMIN' && (
+                                    <button
+                                      onClick={() => handleOpenSupportModal(m)}
+                                      title="View portal as member in read-only support mode"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200 hover:border-amber-600 text-[11px] font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      <span>View</span>
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -4031,13 +4041,15 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleOpenSupportModal(selectedMemberDetails.profile)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-900 border border-amber-300 hover:border-amber-600 text-xs font-bold transition-all shadow-xs"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>View as Member</span>
-                </button>
+                {currentUser?.role === 'SUPER_ADMIN' && (
+                  <button
+                    onClick={() => handleOpenSupportModal(selectedMemberDetails.profile)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-900 border border-amber-300 hover:border-amber-600 text-xs font-bold transition-all shadow-xs"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View as Member</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedMemberDetails(null)}
                   className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700"
@@ -4317,6 +4329,37 @@ export default function AdminPage() {
             <form onSubmit={handleInitiateSupportSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#253247] mb-1">
+                  Administrator Reauthentication Password <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={supportAdminPassword}
+                  onChange={(e) => setSupportAdminPassword(e.target.value)}
+                  placeholder="Enter your current Super Admin password"
+                  className="w-full p-2.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Mandatory reauthentication required to issue support authorization.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#253247] mb-1">
+                  Verified Member Consent Code (6 digits) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  value={supportConsentCode}
+                  onChange={(e) => setSupportConsentCode(e.target.value.trim().toUpperCase())}
+                  placeholder="e.g. 948201"
+                  className="w-full p-2.5 text-xs font-mono font-bold tracking-widest text-[#165DAD] rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Single-use 6-character code granted by the member from their portal.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#253247] mb-1">
                   Support Inquiry Reason <span className="text-red-500">*</span>
                 </label>
                 <textarea
@@ -4350,6 +4393,8 @@ export default function AdminPage() {
                   type="button"
                   onClick={() => {
                     setSupportModalTarget(null);
+                    setSupportAdminPassword('');
+                    setSupportConsentCode('');
                     setSupportReason('');
                     setSupportConsentRef('');
                     setSupportError(null);
@@ -4360,7 +4405,13 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isInitiatingSupport || !supportReason.trim() || !supportConsentRef.trim()}
+                  disabled={
+                    isInitiatingSupport ||
+                    !supportAdminPassword ||
+                    supportConsentCode.length !== 6 ||
+                    supportReason.trim().length < 8 ||
+                    supportConsentRef.trim().length < 3
+                  }
                   className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
                 >
                   {isInitiatingSupport ? (
@@ -4370,8 +4421,8 @@ export default function AdminPage() {
                     </>
                   ) : (
                     <>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Launch Member Portal (Read-Only)</span>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Generate Authorization Exchange</span>
                     </>
                   )}
                 </button>
