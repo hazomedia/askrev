@@ -13,6 +13,7 @@ import {
   Bike,
   Scale,
   ShieldCheck,
+  ShieldAlert,
   Activity,
   Search,
   Filter,
@@ -52,6 +53,8 @@ import {
   fetchAdminBinaryFlushesApi,
   fetchAdminCommissionHoldsApi,
   fetchAdminVouchersApi,
+  initiateAdminSupportSessionApi,
+  fetchAdminSupportAuditLogsApi,
 } from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
@@ -182,6 +185,73 @@ export default function AdminPage() {
   const [loadingMatrix, setLoadingMatrix] = useState(false);
   const [matrixSubTab, setMatrixSubTab] = useState<'tree' | 'qualifications' | 'flushes' | 'holds' | 'vouchers'>('tree');
 
+  // TASK 3: Admin Support Mode ("View as Member") States
+  const [supportModalTarget, setSupportModalTarget] = useState<any | null>(null);
+  const [supportReason, setSupportReason] = useState('');
+  const [supportConsentRef, setSupportConsentRef] = useState('');
+  const [isInitiatingSupport, setIsInitiatingSupport] = useState(false);
+  const [supportError, setSupportError] = useState<string | null>(null);
+  const [supportAuditLogs, setSupportAuditLogs] = useState<any[]>([]);
+  const [supportAuditTotal, setSupportAuditTotal] = useState(0);
+  const [supportAuditPage, setSupportAuditPage] = useState(1);
+  const [auditSubTab, setAuditSubTab] = useState<'system' | 'support'>('system');
+
+  const handleOpenSupportModal = (targetMember: any) => {
+    setSupportModalTarget(targetMember);
+    setSupportReason('');
+    setSupportConsentRef('');
+    setSupportError(null);
+  };
+
+  const handleInitiateSupportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportModalTarget) return;
+    setIsInitiatingSupport(true);
+    setSupportError(null);
+
+    try {
+      const res = await initiateAdminSupportSessionApi({
+        targetMemberId: supportModalTarget.memberId,
+        reason: supportReason.trim(),
+        consentReference: supportConsentRef.trim(),
+      });
+
+      if (!res?.supportToken) {
+        throw new Error('Failed to obtain support token from server.');
+      }
+
+      // Open Member Portal in a new tab with support token
+      const isProd = typeof window !== 'undefined' && window.location.hostname.includes('askrevdrive.com');
+      const targetUrl = isProd
+        ? `https://askrevdrive.com/dashboard?support_token=${encodeURIComponent(res.supportToken)}`
+        : `/dashboard?support_token=${encodeURIComponent(res.supportToken)}`;
+
+      window.open(targetUrl, '_blank');
+
+      setActionSuccess(`Support mode initiated for member ${supportModalTarget.memberId}. Opened in new browser tab.`);
+      setSupportModalTarget(null);
+      setSupportReason('');
+      setSupportConsentRef('');
+    } catch (err: any) {
+      setSupportError(err.message || 'Failed to initiate support mode session.');
+    } finally {
+      setIsInitiatingSupport(false);
+    }
+  };
+
+  const fetchSupportAuditLogs = async (page = 1) => {
+    try {
+      const data = await fetchAdminSupportAuditLogsApi(page, 25);
+      if (data?.logs) {
+        setSupportAuditLogs(data.logs);
+        setSupportAuditTotal(data.total || 0);
+        setSupportAuditPage(page);
+      }
+    } catch (err: any) {
+      console.warn('Failed to load support audit logs:', err.message);
+    }
+  };
+
   const fetchMatrixAdminData = async () => {
     setLoadingMatrix(true);
     try {
@@ -207,28 +277,49 @@ export default function AdminPage() {
 
   // 1. Initial Authentication & Verification
   useEffect(() => {
-    const stored = getStoredUser();
-    if (
-      !stored ||
-      !['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(stored.role)
-    ) {
-      router.push('/auth/login');
-      return;
-    }
-    setCurrentUser(stored);
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get('tab');
+    const handleInitAuth = async () => {
+      let stored = getStoredUser();
       if (
-        tabParam === 'security' ||
-        tabParam === 'payment-settings' ||
-        tabParam === 'sponsor-holds' ||
-        (tabParam === 'banners' && stored.role === 'SUPER_ADMIN')
+        !stored ||
+        !['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(stored?.role)
       ) {
-        setActiveTab(tabParam as AdminTab);
+        // Smooth Page Refresh Auth Restoration:
+        // Attempt /auth/me profile restoration before redirecting to prevent premature logout
+        try {
+          const profile = await fetchCurrentUserProfile();
+          if (
+            profile &&
+            ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(profile.role)
+          ) {
+            stored = profile;
+            localStorage.setItem('askrev_user', JSON.stringify(profile));
+          } else {
+            router.push('/auth/login');
+            return;
+          }
+        } catch {
+          router.push('/auth/login');
+          return;
+        }
       }
-    }
-    loadAllData();
+
+      setCurrentUser(stored);
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab');
+        if (
+          tabParam === 'security' ||
+          tabParam === 'payment-settings' ||
+          tabParam === 'sponsor-holds' ||
+          (tabParam === 'banners' && stored.role === 'SUPER_ADMIN')
+        ) {
+          setActiveTab(tabParam as AdminTab);
+        }
+      }
+      loadAllData();
+    };
+
+    handleInitAuth();
   }, []);
 
   const loadAllData = async () => {
@@ -1605,12 +1696,22 @@ export default function AdminPage() {
                                 ₹{m.wallet?.shoppingVoucherINR?.toLocaleString('en-IN') ?? 0}
                               </td>
                               <td className="py-3 px-4 text-center">
-                                <button
-                                  onClick={() => handleOpenMemberDetails(m.id)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#165DAD] hover:text-white text-slate-700 text-[11px] font-semibold transition-colors"
-                                >
-                                  Details
-                                </button>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenMemberDetails(m.id)}
+                                    className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#165DAD] hover:text-white text-slate-700 text-[11px] font-semibold transition-colors"
+                                  >
+                                    Details
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenSupportModal(m)}
+                                    title="View portal as member in read-only support mode"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200 hover:border-amber-600 text-[11px] font-bold transition-all shadow-2xs"
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    <span>View</span>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))
@@ -3104,25 +3205,149 @@ export default function AdminPage() {
             {/* TAB 9: AUDIT & SECURITY */}
             {activeTab === 'audit' && (
               <div className="space-y-4">
-                {/* Suspicious Activity Warning Banner if any */}
-                {suspiciousActivity?.status === 'DUPLICATES_DETECTED' ? (
-                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs space-y-2">
-                    <div className="font-bold flex items-center gap-2 text-sm text-amber-800">
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
-                      <span>Suspicious Duplicate Payment Reference Alert!</span>
+                {/* Audit Sub-Tabs */}
+                <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                  <button
+                    onClick={() => setAuditSubTab('system')}
+                    className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                      auditSubTab === 'system'
+                        ? 'bg-[#165DAD] text-white shadow-xs'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    System Operations Audit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuditSubTab('support');
+                      fetchSupportAuditLogs(1);
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                      auditSubTab === 'support'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-white text-amber-800 border border-amber-200 hover:bg-amber-50'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Support Access History ({supportAuditTotal})</span>
+                  </button>
+                </div>
+
+                {auditSubTab === 'support' ? (
+                  /* Dedicated Support Access History View */
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-amber-600" />
+                          <span>Admin "View as Member" Support Access Audit Ledger</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Cryptographic audit logs of all short-lived member portal inspections, consent references, and durations.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => fetchSupportAuditLogs(supportAuditPage)}
+                        className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold inline-flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Refresh</span>
+                      </button>
                     </div>
-                    <div>
-                      Found {suspiciousActivity.duplicatePaymentReferences.length} duplicate payment references submitted across multiple bookings.
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-[#F7F9FC] border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
+                            <th className="py-3 px-4">Date & Time (IST)</th>
+                            <th className="py-3 px-4">Action</th>
+                            <th className="py-3 px-4">Admin Actor</th>
+                            <th className="py-3 px-4">Target Member</th>
+                            <th className="py-3 px-4">Consent Ref / Ticket</th>
+                            <th className="py-3 px-4">Inquiry Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {supportAuditLogs.length > 0 ? (
+                            supportAuditLogs.map((log: any) => {
+                              const meta = log.metadata || {};
+                              const isInitiated = log.action === 'ADMIN_SUPPORT_ACCESS_INITIATED';
+                              return (
+                                <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-4 whitespace-nowrap text-slate-600 font-mono text-[11px]">
+                                    {new Date(log.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                                  </td>
+                                  <td className="py-3 px-4 whitespace-nowrap">
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                        isInitiated
+                                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                      }`}
+                                    >
+                                      {isInitiated ? 'SESSION INITIATED' : 'SESSION TERMINATED'}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-800">
+                                    {meta.adminEmail || log.actorId || 'Administrator'}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {meta.targetMemberId ? (
+                                      <div>
+                                        <span className="font-mono font-bold text-[#165DAD]">
+                                          {meta.targetMemberId}
+                                        </span>
+                                        {meta.targetFullName && (
+                                          <div className="text-[11px] text-slate-600">
+                                            {meta.targetFullName}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="font-mono text-slate-500">{log.entityId}</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                                    {meta.consentReference || 'N/A'}
+                                  </td>
+                                  <td className="py-3 px-4 text-slate-700 max-w-xs truncate" title={meta.reason}>
+                                    {meta.reason || 'Read-only support inspection'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="py-8 text-center text-slate-400">
+                                No support access audit logs recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span className="font-semibold">
-                      Security Engine: Zero suspicious duplicate payment references detected. Platform clean.
-                    </span>
-                  </div>
-                )}
+                  <>
+                    {/* Suspicious Activity Warning Banner if any */}
+                    {suspiciousActivity?.status === 'DUPLICATES_DETECTED' ? (
+                      <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs space-y-2">
+                        <div className="font-bold flex items-center gap-2 text-sm text-amber-800">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          <span>Suspicious Duplicate Payment Reference Alert!</span>
+                        </div>
+                        <div>
+                          Found {suspiciousActivity.duplicatePaymentReferences.length} duplicate payment references submitted across multiple bookings.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600" />
+                        <span className="font-semibold">
+                          Security Engine: Zero suspicious duplicate payment references detected. Platform clean.
+                        </span>
+                      </div>
+                    )}
 
                 {/* Audit Logs Table */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -3148,6 +3373,8 @@ export default function AdminPage() {
                       className="text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white"
                     >
                       <option value="">All Actions</option>
+                      <option value="ADMIN_SUPPORT_ACCESS_INITIATED">Support Access Initiated</option>
+                      <option value="ADMIN_SUPPORT_ACCESS_TERMINATED">Support Access Terminated</option>
                       <option value="MEMBERSHIP_REQUEST_APPROVED">Membership Approved</option>
                       <option value="MEMBERSHIP_REQUEST_REJECTED">Membership Rejected</option>
                       <option value="BINARY_NODE_PLACED">Binary Placed</option>
@@ -3197,8 +3424,10 @@ export default function AdminPage() {
                     </table>
                   </div>
                 </div>
-              </div>
+              </>
             )}
+          </div>
+        )}
 
             {activeTab === 'security' && (
               <div className="space-y-6">
@@ -3801,12 +4030,21 @@ export default function AdminPage() {
                   {new Date(selectedMemberDetails.profile?.createdAt).toLocaleDateString('en-IN')}
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedMemberDetails(null)}
-                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleOpenSupportModal(selectedMemberDetails.profile)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-900 border border-amber-300 hover:border-amber-600 text-xs font-bold transition-all shadow-xs"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View as Member</span>
+                </button>
+                <button
+                  onClick={() => setSelectedMemberDetails(null)}
+                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Profile Overview Grid */}
@@ -4007,6 +4245,138 @@ export default function AdminPage() {
                 Close Profile
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1B: ADMIN "VIEW AS MEMBER" SUPPORT ACCESS DIALOG */}
+      {supportModalTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-5 animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <Eye className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#0C2348]">
+                    Initiate Member Support Mode
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Inspect member portal directly in a read-only support session
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setSupportModalTarget(null);
+                  setSupportReason('');
+                  setSupportConsentRef('');
+                  setSupportError(null);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target Member Banner */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+              <div>
+                <div className="font-bold text-[#0C2348] text-sm">
+                  {supportModalTarget.fullName}
+                </div>
+                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                  ID: <strong className="text-[#165DAD]">{supportModalTarget.memberId}</strong> • Email: {supportModalTarget.email}
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-[#165DAD] uppercase">
+                {supportModalTarget.currentPackage || 'MEMBER'}
+              </span>
+            </div>
+
+            {/* Security & Audit Notice */}
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Mandatory Security & Compliance Notice</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Support sessions are strictly <strong>READ-ONLY</strong> and automatically expire after 15 minutes. All inspections are permanently logged in the audit ledger. Financial mutations, package activations, and password updates are blocked.
+              </p>
+            </div>
+
+            {supportError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{supportError}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <form onSubmit={handleInitiateSupportSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#253247] mb-1">
+                  Support Inquiry Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={supportReason}
+                  onChange={(e) => setSupportReason(e.target.value)}
+                  placeholder="e.g. Investigating reported voucher balance inquiry or tree display issue..."
+                  className="w-full p-2.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Minimum 8 characters explaining the inquiry.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#253247] mb-1">
+                  Member Consent Reference / Ticket ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={supportConsentRef}
+                  onChange={(e) => setSupportConsentRef(e.target.value)}
+                  placeholder="e.g. TICKET-4921 or CALL-REF-20261125"
+                  className="w-full p-2.5 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Proof of user inquiry, support ticket, or customer authorization.</p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportModalTarget(null);
+                    setSupportReason('');
+                    setSupportConsentRef('');
+                    setSupportError(null);
+                  }}
+                  className="px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isInitiatingSupport || !supportReason.trim() || !supportConsentRef.trim()}
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {isInitiatingSupport ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Generating Session...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Launch Member Portal (Read-Only)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

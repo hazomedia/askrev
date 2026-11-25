@@ -274,6 +274,7 @@ describe('Pre-Production Security Hardening & Session Suite', () => {
     });
 
     it('should trigger safe MFA bootstrap enrollment for SUPER_ADMIN when MFA is not yet enabled', async () => {
+      process.env.ADMIN_TOTP_REQUIRED = 'true';
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'admin-uuid',
         email: 'admin@askrevdrive.com',

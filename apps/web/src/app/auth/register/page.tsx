@@ -20,6 +20,7 @@ function RegisterForm() {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [side, setSide] = useState<'LEFT' | 'RIGHT' | undefined>(undefined);
+  const [isReferralLocked, setIsReferralLocked] = useState(false);
   const [sponsorMemberId, setSponsorMemberId] = useState('');
   const [sponsorInfo, setSponsorInfo] = useState<{ memberId: string; fullName: string } | null>(null);
   const [sponsorChecking, setSponsorChecking] = useState(false);
@@ -61,18 +62,29 @@ function RegisterForm() {
 
   useEffect(() => {
     const refCode = searchParams.get('ref');
-    if (refCode) {
+    const sideParam = (searchParams.get('side') || searchParams.get('position'))?.toUpperCase().trim();
+
+    if (refCode && (sideParam === 'RIGHT' || sideParam === 'LEFT')) {
+      // PERMANENT REFERRAL PLACEMENT LOCK: both sponsor and leg locked to sponsor's directional link
+      setIsReferralLocked(true);
+      setSide(sideParam as 'LEFT' | 'RIGHT');
       const clean = refCode.toUpperCase().trim();
       setSponsorMemberId(clean);
       lookupSponsor(clean);
-    }
-    const sideParam = (searchParams.get('side') || searchParams.get('position'))?.toUpperCase().trim();
-    if (sideParam === 'RIGHT') {
-      setSide('RIGHT');
-    } else if (sideParam === 'LEFT') {
-      setSide('LEFT');
     } else {
-      setSide(undefined);
+      setIsReferralLocked(false);
+      if (refCode) {
+        const clean = refCode.toUpperCase().trim();
+        setSponsorMemberId(clean);
+        lookupSponsor(clean);
+      }
+      if (sideParam === 'RIGHT') {
+        setSide('RIGHT');
+      } else if (sideParam === 'LEFT') {
+        setSide('LEFT');
+      } else {
+        setSide(undefined);
+      }
     }
 
     // Check dynamic registration pause status from API
@@ -346,16 +358,28 @@ function RegisterForm() {
                   <label className="block text-xs font-semibold text-[#253247]">
                     Sponsor Referral Code <span className="text-red-500">*</span>
                   </label>
-                  <span className="text-[10px] text-slate-400 font-medium">Mandatory</span>
+                  {isReferralLocked ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-[#165DAD] font-bold bg-[#165DAD]/10 px-2 py-0.5 rounded-full">
+                      <Lock className="w-2.5 h-2.5" /> Locked via Referral Link
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-medium">Mandatory</span>
+                  )}
                 </div>
                 <div className="relative">
-                  <Share2 className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  {isReferralLocked ? (
+                    <Lock className="w-4 h-4 text-[#165DAD] absolute left-3 top-3" />
+                  ) : (
+                    <Share2 className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  )}
                   <input
                     type="text"
                     required
+                    readOnly={isReferralLocked}
                     disabled={loading || isRegistrationPaused}
                     value={sponsorMemberId}
                     onChange={(e) => {
+                      if (isReferralLocked) return;
                       const val = e.target.value.toUpperCase();
                       setSponsorMemberId(val);
                       if (val.length >= 6) {
@@ -365,18 +389,25 @@ function RegisterForm() {
                         setSponsorError(null);
                       }
                     }}
-                    onBlur={() => lookupSponsor(sponsorMemberId)}
+                    onBlur={() => {
+                      if (!isReferralLocked) lookupSponsor(sponsorMemberId);
+                    }}
                     placeholder="e.g. ASKR-ADMIN-01"
-                    className={`w-full pl-9 pr-9 py-2.5 rounded-lg border text-xs text-[#253247] font-mono uppercase placeholder:text-slate-400 focus:outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-400 ${sponsorInfo
-                      ? 'border-emerald-500 bg-emerald-50/20'
-                      : sponsorError
+                    className={`w-full pl-9 pr-9 py-2.5 rounded-lg border text-xs text-[#253247] font-mono uppercase placeholder:text-slate-400 focus:outline-none transition-colors ${
+                      isReferralLocked
+                        ? 'bg-slate-50/80 border-[#165DAD]/40 font-bold text-[#165DAD] cursor-not-allowed select-none'
+                        : sponsorInfo
+                        ? 'border-emerald-500 bg-emerald-50/20'
+                        : sponsorError
                         ? 'border-red-400 bg-red-50/20'
                         : 'border-slate-200 focus:border-[#165DAD]'
-                      }`}
+                    } disabled:bg-slate-100 disabled:text-slate-400`}
                   />
                   <div className="absolute right-3 top-2.5">
                     {sponsorChecking ? (
                       <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                    ) : isReferralLocked ? (
+                      <Lock className="w-4 h-4 text-[#165DAD]" />
                     ) : sponsorInfo ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     ) : sponsorError ? (
@@ -406,42 +437,72 @@ function RegisterForm() {
                 )}
               </div>
 
-              {/* Binary Placement Team Selector */}
+              {/* Binary Placement Team Selector / Locked Display */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-semibold text-[#253247]">
                     Placement Team (Power Leg) <span className="text-red-500">*</span>
                   </label>
-                  <span className="text-[10px] text-slate-400 font-medium">Mandatory</span>
+                  {isReferralLocked ? (
+                    <span className="text-[10px] text-[#165DAD] font-bold">Designated by Link</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-medium">Mandatory</span>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    disabled={loading || isRegistrationPaused}
-                    onClick={() => setSide('LEFT')}
-                    className={`py-2.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${side === 'LEFT'
-                        ? 'border-[#165DAD] bg-[#165DAD]/10 text-[#165DAD] ring-2 ring-[#165DAD]/20 font-bold'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                    <span>LEFT TEAM</span>
-                    {side === 'LEFT' && <CheckCircle2 className="w-3.5 h-3.5 text-[#165DAD] shrink-0" />}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={loading || isRegistrationPaused}
-                    onClick={() => setSide('RIGHT')}
-                    className={`py-2.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${side === 'RIGHT'
-                        ? 'border-[#165DAD] bg-[#165DAD]/10 text-[#165DAD] ring-2 ring-[#165DAD]/20 font-bold'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-                    <span>RIGHT TEAM</span>
-                    {side === 'RIGHT' && <CheckCircle2 className="w-3.5 h-3.5 text-[#165DAD] shrink-0" />}
-                  </button>
-                </div>
+
+                {isReferralLocked ? (
+                  /* Permanent Locked Leg Badge Card */
+                  <div className="p-3.5 rounded-xl border-2 border-[#165DAD] bg-gradient-to-r from-blue-50/90 to-indigo-50/50 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-[#165DAD] text-white flex items-center justify-center shadow-xs shrink-0">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#165DAD] uppercase tracking-wide">
+                            {side === 'LEFT' ? 'LEFT TEAM (Locked)' : 'RIGHT TEAM (Locked)'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#165DAD] text-white flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" /> LOCKED
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          Permanently designated by sponsor {sponsorInfo ? `(${sponsorInfo.fullName})` : ''} via direct directional referral link.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Standard Manual Selector for Direct Non-Directional Registrations */
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      disabled={loading || isRegistrationPaused}
+                      onClick={() => setSide('LEFT')}
+                      className={`py-2.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${side === 'LEFT'
+                          ? 'border-[#165DAD] bg-[#165DAD]/10 text-[#165DAD] ring-2 ring-[#165DAD]/20 font-bold'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                      <span>LEFT TEAM</span>
+                      {side === 'LEFT' && <CheckCircle2 className="w-3.5 h-3.5 text-[#165DAD] shrink-0" />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loading || isRegistrationPaused}
+                      onClick={() => setSide('RIGHT')}
+                      className={`py-2.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${side === 'RIGHT'
+                          ? 'border-[#165DAD] bg-[#165DAD]/10 text-[#165DAD] ring-2 ring-[#165DAD]/20 font-bold'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                      <span>RIGHT TEAM</span>
+                      {side === 'RIGHT' && <CheckCircle2 className="w-3.5 h-3.5 text-[#165DAD] shrink-0" />}
+                    </button>
+                  </div>
+                )}
                 <p className="mt-1 text-[10px] text-slate-500">
                   {side
                     ? `Your account will be permanently placed on your sponsor's ${side} power leg immediately upon registration.`

@@ -61,10 +61,15 @@ import {
   fetchMyMatrixOverviewApi,
   fetchBinaryFlushHistoryApi,
   fetchMyCommissionHoldsApi,
+  getSupportSession,
+  setSupportSession,
+  clearSupportSession,
+  exitAdminSupportSessionApi,
 } from '../../lib/api';
 import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
 import WelcomePopupModal from '../../components/WelcomePopupModal';
+import AdminSupportModeBanner from '../../components/AdminSupportModeBanner';
 
 type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
 
@@ -72,6 +77,13 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
+  const [isSupportMode, setIsSupportMode] = useState(false);
+  const [supportMeta, setSupportMeta] = useState<{
+    adminEmail?: string;
+    reason?: string;
+    consentReference?: string;
+    expiresAt?: string;
+  } | null>(null);
   const [directTeam, setDirectTeam] = useState<any>(null);
   const [binaryTree, setBinaryTree] = useState<any>(null);
   const [inspectedBinaryTree, setInspectedBinaryTree] = useState<any>(null);
@@ -329,9 +341,66 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    // 0. Detect Support Mode Token from query parameter or existing session
+    const supportTokenParam = searchParams.get('support_token');
+    const existingSupport = getSupportSession();
+
+    if (supportTokenParam) {
+      sessionStorage.setItem('askrev_support_token', supportTokenParam);
+      setIsSupportMode(true);
+      fetchApi<any>('/auth/me')
+        .then((profile) => {
+          setSupportSession({
+            supportToken: supportTokenParam,
+            targetUser: profile,
+            adminEmail: profile?.adminEmail || '',
+            reason: profile?.supportReason || '',
+            consentReference: profile?.consentReference || '',
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          });
+          setUser(profile);
+          setSupportMeta({
+            adminEmail: profile?.adminEmail,
+            reason: profile?.supportReason,
+            consentReference: profile?.consentReference,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          });
+          loadData();
+        })
+        .catch(() => {
+          clearSupportSession();
+          router.push('/auth/login?redirect=/dashboard');
+        });
+      return;
+    } else if (existingSupport) {
+      setIsSupportMode(true);
+      setSupportMeta({
+        adminEmail: existingSupport.adminEmail,
+        reason: existingSupport.reason,
+        consentReference: existingSupport.consentReference,
+        expiresAt: existingSupport.expiresAt,
+      });
+      loadData();
+      return;
+    }
+
+    // 1. Smooth Auth Restoration on Page Refresh:
+    // If askrev_user is absent in localStorage, attempt /auth/me before redirecting
     const stored = getStoredUser();
     if (!stored) {
-      router.push('/auth/login?redirect=/dashboard');
+      fetchApi<any>('/auth/me')
+        .then((profile) => {
+          if (profile && profile.id) {
+            setUser(profile);
+            localStorage.setItem('askrev_user', JSON.stringify(profile));
+            loadData();
+          } else {
+            router.push('/auth/login?redirect=/dashboard');
+          }
+        })
+        .catch(() => {
+          router.push('/auth/login?redirect=/dashboard');
+        });
       return;
     }
     loadData();
@@ -659,6 +728,10 @@ function DashboardContent() {
   const openBookingPaymentModal = (
     requestType: 'BASIC_ACTIVATION' | 'FULL_ACTIVATION' | 'BASIC_TO_FULL_UPGRADE'
   ) => {
+    if (isSupportMode) {
+      alert('ADMIN SUPPORT MODE: Package activations and financial upgrades are strictly disabled in support mode.');
+      return;
+    }
     const stored = getStoredUser();
     const currentPkg = user?.currentPackage || stored?.currentPackage;
     const effectiveType =
@@ -899,6 +972,10 @@ function DashboardContent() {
   };
 
   const handleInitiateWithdrawal = () => {
+    if (isSupportMode) {
+      alert('ADMIN SUPPORT MODE: Withdrawal requests are strictly disabled during support inspection.');
+      return;
+    }
     setWithdrawError(null);
     setWithdrawResult(null);
     setWithdrawValidationError(null);
@@ -1065,10 +1142,26 @@ function DashboardContent() {
 
   if (loading && !user) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center bg-white text-slate-500">
-        <div className="flex items-center gap-3">
-          <div className="animate-spin w-6 h-6 border-2 border-[#165DAD] border-t-transparent rounded-full" />
-          <span className="text-sm font-medium">Loading Member Portal...</span>
+      <div className="min-h-screen flex flex-col bg-white">
+        {isSupportMode && (
+          <AdminSupportModeBanner
+            member={user}
+            adminEmail={supportMeta?.adminEmail}
+            reason={supportMeta?.reason}
+            consentReference={supportMeta?.consentReference}
+            expiresAt={supportMeta?.expiresAt}
+            onExit={() => {
+              setIsSupportMode(false);
+              clearSupportSession();
+              window.location.href = 'https://admin.askrevdrive.com/admin';
+            }}
+          />
+        )}
+        <div className="min-h-[70vh] flex-1 flex items-center justify-center text-slate-500">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin w-6 h-6 border-2 border-[#165DAD] border-t-transparent rounded-full" />
+            <span className="text-sm font-medium">Loading Member Portal...</span>
+          </div>
         </div>
       </div>
     );
@@ -1121,6 +1214,21 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#253247]">
+      {/* PERSISTENT ADMIN SUPPORT MODE BANNER (Always visible across all tabs in read-only mode) */}
+      {isSupportMode && (
+        <AdminSupportModeBanner
+          member={user}
+          adminEmail={supportMeta?.adminEmail}
+          reason={supportMeta?.reason}
+          consentReference={supportMeta?.consentReference}
+          expiresAt={supportMeta?.expiresAt}
+          onExit={() => {
+            setIsSupportMode(false);
+            clearSupportSession();
+            window.location.href = 'https://admin.askrevdrive.com/admin';
+          }}
+        />
+      )}
       {/* =========================================================================
           TOP HEADER
           Features official ASKR EV branding, navigation, and user controls

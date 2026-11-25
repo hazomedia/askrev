@@ -1,10 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipPackage, UserRole, paiseToRupees, JournalAccount } from '@askrev/shared';
+import { getJwtAccessSecret } from '../auth/jwt-secrets';
+import { InitiateSupportSessionDto, ExitSupportSessionDto } from './dto/support.dto';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly jwtService?: JwtService,
+  ) {}
 
   /**
    * Comprehensive Operational & Financial Overview
@@ -661,6 +669,180 @@ export class AdminService {
       status: duplicateBookings.length === 0 ? 'CLEAN_NO_SUSPICIOUS_DUPLICATES' : 'DUPLICATES_DETECTED',
       duplicatePaymentReferences: duplicateBookings,
       scanTimestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * TASK 3: Admin "View as Member" Support Session Initiation
+   * Issues a short-lived 15-minute read-only JWT support token to inspect member portal.
+   * Does NOT alter member's sessionVersion, password, or real tokens.
+   */
+  async initiateSupportSession(adminUser: any, dto: InitiateSupportSessionDto) {
+    const isAuthorized = [
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN_OPERATIONS,
+    ].includes(adminUser.role as any);
+
+    if (!isAuthorized) {
+      throw new ForbiddenException(
+        'INSUFFICIENT_PERMISSIONS: Only Super Admin and Operations Admin can initiate member support sessions.'
+      );
+    }
+
+    const cleanMemberId = dto.targetMemberId.trim().toUpperCase();
+    const targetUser = await this.prisma.user.findUnique({
+      where: { memberId: cleanMemberId },
+      include: {
+        wallet: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException(`Target member with ID "${cleanMemberId}" was not found.`);
+    }
+
+    const payload = {
+      sub: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+      sessionVersion: targetUser.sessionVersion, // Preserves current version without incrementing
+      isSupportMode: true,
+      adminUserId: adminUser.id,
+      adminEmail: adminUser.email,
+      supportReason: dto.reason.trim(),
+      consentReference: dto.consentReference.trim(),
+      jti: crypto.randomUUID(),
+    };
+
+    if (!this.jwtService) {
+      throw new BadRequestException('Security token service is currently unavailable.');
+    }
+
+    const supportToken = await this.jwtService.signAsync(payload, {
+      secret: getJwtAccessSecret(),
+      expiresIn: '15m',
+    });
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    // Mandatory Security Audit Logging
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'ADMIN_SUPPORT_ACCESS_INITIATED',
+          actorId: adminUser.id,
+          entityType: 'User',
+          entityId: targetUser.id,
+          metadata: {
+            targetMemberId: targetUser.memberId,
+            targetFullName: targetUser.fullName,
+            targetEmail: targetUser.email,
+            adminUserId: adminUser.id,
+            adminEmail: adminUser.email,
+            adminRole: adminUser.role,
+            reason: dto.reason.trim(),
+            consentReference: dto.consentReference.trim(),
+            sessionDuration: '15m',
+            sessionExpiresAt: expiresAt,
+          },
+        },
+      });
+    } catch {}
+
+    return {
+      message: 'Support mode session generated successfully',
+      supportToken,
+      expiresInSeconds: 15 * 60,
+      expiresAt,
+      targetUser: {
+        id: targetUser.id,
+        memberId: targetUser.memberId,
+        fullName: targetUser.fullName,
+        email: targetUser.email,
+        currentPackage: targetUser.currentPackage,
+        isFullQualified: targetUser.isFullQualified,
+        sponsor: targetUser.sponsor,
+      },
+      supportMeta: {
+        adminEmail: adminUser.email,
+        reason: dto.reason.trim(),
+        consentReference: dto.consentReference.trim(),
+      },
+    };
+  }
+
+  /**
+   * Terminate active support session and record audit log
+   */
+  async exitSupportSession(user: any, dto: ExitSupportSessionDto) {
+    let tokenTargetUserId = user.id;
+    let adminActorId = (user as any).adminUserId || user.id;
+
+    if (dto?.supportToken) {
+      try {
+        const decoded = this.jwtService.verify(dto.supportToken, {
+          secret: getJwtAccessSecret(),
+        }) as any;
+        if (decoded?.sub) tokenTargetUserId = decoded.sub;
+        if (decoded?.adminUserId) adminActorId = decoded.adminUserId;
+      } catch {}
+    }
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'ADMIN_SUPPORT_ACCESS_TERMINATED',
+          actorId: adminActorId,
+          entityType: 'User',
+          entityId: tokenTargetUserId,
+          metadata: {
+            terminatedAt: new Date().toISOString(),
+            reason: 'ADMIN_SUPPORT_SESSION_CLOSED',
+          },
+        },
+      });
+    } catch {}
+
+    return {
+      message: 'Support session terminated successfully',
+      success: true,
+    };
+  }
+
+  /**
+   * Support Access Audit History
+   */
+  async getSupportAuditLogs(page = 1, limit = 50) {
+    const take = Math.min(Math.max(1, limit), 100);
+    const skip = (Math.max(1, page) - 1) * take;
+
+    const [logs, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where: {
+          action: {
+            in: ['ADMIN_SUPPORT_ACCESS_INITIATED', 'ADMIN_SUPPORT_ACCESS_TERMINATED'],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.auditLog.count({
+        where: {
+          action: {
+            in: ['ADMIN_SUPPORT_ACCESS_INITIATED', 'ADMIN_SUPPORT_ACCESS_TERMINATED'],
+          },
+        },
+      }),
+    ]);
+
+    return {
+      logs,
+      total,
+      page,
+      limit: take,
+      totalPages: Math.ceil(total / take),
     };
   }
 }

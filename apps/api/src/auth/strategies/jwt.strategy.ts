@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
@@ -19,7 +19,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         (req: Request) => {
           if (req && req.cookies) {
-            return req.cookies['askrev_access_token'] || req.cookies['askrev_admin_session'] || null;
+            const urlPath = req.path || req.url || '';
+            const origin = (req.headers?.origin || req.headers?.referer || '').toLowerCase();
+            const isAdminRoute = urlPath.includes('/admin') || origin.includes('admin.');
+            if (isAdminRoute && req.cookies['askrev_admin_access_token']) {
+              return req.cookies['askrev_admin_access_token'];
+            }
+            return (
+              req.cookies['askrev_access_token'] ||
+              req.cookies['askrev_admin_access_token'] ||
+              req.cookies['askrev_admin_session'] ||
+              null
+            );
           }
           return null;
         },
@@ -32,12 +43,35 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(
     req: Request,
-    payload: { sub: string; email?: string; role: string; scope?: string; clientId?: string; sessionVersion?: number }
+    payload: {
+      sub: string;
+      email?: string;
+      role: string;
+      scope?: string;
+      clientId?: string;
+      sessionVersion?: number;
+      isSupportMode?: boolean;
+      adminUserId?: string;
+      adminEmail?: string;
+      supportReason?: string;
+      consentReference?: string;
+    }
   ) {
     if (payload.scope === 'mfa_enrollment') {
       throw new UnauthorizedException(
         'INSUFFICIENT_SCOPE: This token is restricted strictly to MFA enrollment and cannot access application resources.'
       );
+    }
+
+    // STRICT READ-ONLY LOCKDOWN FOR ADMIN SUPPORT SESSIONS:
+    // Any mutation attempt (POST, PUT, PATCH, DELETE) made with a support token is forbidden.
+    if (payload.isSupportMode) {
+      const httpMethod = (req?.method || 'GET').toUpperCase();
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(httpMethod)) {
+        throw new ForbiddenException(
+          'ADMIN_SUPPORT_READ_ONLY: Modifying member data during an administrative support session is strictly prohibited. All mutation operations (POST, PUT, PATCH, DELETE) are permanently blocked in support mode.'
+        );
+      }
     }
 
     // Extract raw token for revocation check
@@ -46,7 +80,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (authHeader.startsWith('Bearer ')) {
       token = authHeader.slice(7).trim();
     } else if (req.cookies) {
-      token = req.cookies['askrev_access_token'] || req.cookies['askrev_admin_session'] || '';
+      token =
+        req.cookies['askrev_access_token'] ||
+        req.cookies['askrev_admin_access_token'] ||
+        req.cookies['askrev_admin_session'] ||
+        '';
     }
 
     if (token) {
@@ -104,6 +142,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Distributed session version check: if sessionVersion was bumped, revoke instantly
     if (user.sessionVersion !== payload.sessionVersion) {
       throw new UnauthorizedException('Session has been revoked. Please sign in again.');
+    }
+
+    if (payload.isSupportMode) {
+      (user as any).isSupportMode = true;
+      (user as any).adminUserId = payload.adminUserId;
+      (user as any).adminEmail = payload.adminEmail;
+      (user as any).supportReason = payload.supportReason;
+      (user as any).consentReference = payload.consentReference;
     }
 
     return user;

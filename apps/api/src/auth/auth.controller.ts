@@ -1,6 +1,7 @@
 import { Controller, Post, Body, Get, Patch, Param, UseGuards, Req, Res, HttpCode, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as crypto from 'crypto';
+import { UserRole } from '@askrev/shared';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
@@ -184,6 +185,27 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    const isPrivilegedRole = [
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN_OPERATIONS,
+      UserRole.FINANCE_MANAGER,
+    ].includes(result.user?.role as any);
+
+    if (isPrivilegedRole) {
+      res.cookie('askrev_admin_access_token', result.tokens.accessToken, {
+        ...cookieOpts,
+        httpOnly: true,
+        path: '/',
+        maxAge: 15 * 60 * 1000,
+      });
+      res.cookie('askrev_admin_refresh_token', result.tokens.refreshToken, {
+        ...cookieOpts,
+        httpOnly: true,
+        path: '/api/auth',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
+
     // Double-submit CSRF token (readable by JavaScript to attach as X-CSRF-Token)
     res.cookie('askrev_csrf_token', csrfToken, {
       ...cookieOpts,
@@ -206,7 +228,10 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ) {
-    const refreshToken = dto?.refreshToken || req.cookies?.['askrev_refresh_token'];
+    const refreshToken =
+      dto?.refreshToken ||
+      req.cookies?.['askrev_refresh_token'] ||
+      req.cookies?.['askrev_admin_refresh_token'];
     const result = await this.authService.refresh(refreshToken);
 
     const csrfToken = crypto.randomBytes(32).toString('hex');
@@ -225,6 +250,27 @@ export class AuthController {
       path: '/api/auth',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
+
+    const isPrivilegedRole = [
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN_OPERATIONS,
+      UserRole.FINANCE_MANAGER,
+    ].includes(result.user?.role as any);
+
+    if (isPrivilegedRole) {
+      res.cookie('askrev_admin_access_token', result.tokens.accessToken, {
+        ...cookieOpts,
+        httpOnly: true,
+        path: '/',
+        maxAge: 15 * 60 * 1000,
+      });
+      res.cookie('askrev_admin_refresh_token', result.tokens.refreshToken, {
+        ...cookieOpts,
+        httpOnly: true,
+        path: '/api/auth',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     res.cookie('askrev_csrf_token', csrfToken, {
       ...cookieOpts,
@@ -314,9 +360,11 @@ export class AuthController {
       : req.cookies?.['askrev_access_token'] || undefined;
 
     const cookieOpts = this.getCookieOptions(req);
-    // Clear all session cookies
+    // Clear all session cookies across member and admin contexts
     res.clearCookie('askrev_access_token', { ...cookieOpts, path: '/' });
     res.clearCookie('askrev_refresh_token', { ...cookieOpts, path: '/api/auth' });
+    res.clearCookie('askrev_admin_access_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_admin_refresh_token', { ...cookieOpts, path: '/api/auth' });
     res.clearCookie('askrev_csrf_token', { ...cookieOpts, path: '/' });
 
     return this.authService.logout(user.id, token);

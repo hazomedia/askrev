@@ -16,6 +16,18 @@ import { BinaryPlacementService } from '../members/binary-placement.service';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  // In-memory refresh rotation grace cache to safely coordinate concurrent in-flight
+  // requests or multi-tab refresh races within a 60-second window.
+  private refreshGraceCache = new Map<
+    string,
+    {
+      userId: string;
+      tokens: { accessToken: string; refreshToken: string };
+      user: any;
+      expiresAt: number;
+    }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -414,6 +426,18 @@ export class AuthService {
     }
 
     const hashedCandidate = hashToken(refreshToken);
+
+    // 1. Check Rotation Grace Cache (handles concurrent tabs / in-flight racing requests safely)
+    const graceKey = `${payload.sub}:${hashedCandidate}`;
+    const graceEntry = this.refreshGraceCache.get(graceKey);
+    if (graceEntry && graceEntry.expiresAt > Date.now() && graceEntry.userId === user.id) {
+      return {
+        message: 'Session refreshed',
+        tokens: graceEntry.tokens,
+        user: graceEntry.user,
+      };
+    }
+
     const matchesHashed = await bcrypt.compare(hashedCandidate, user.refreshTokenHash);
     const matchesLegacyRaw = !matchesHashed && (await bcrypt.compare(refreshToken, user.refreshTokenHash));
     if (!matchesHashed && !matchesLegacyRaw) {
@@ -433,14 +457,41 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const formattedProfile = this.formatUserProfile(user);
+
+    // Store in grace cache for 60 seconds to allow concurrent requests with the prior token to succeed safely
+    this.refreshGraceCache.set(graceKey, {
+      userId: user.id,
+      tokens,
+      user: formattedProfile,
+      expiresAt: Date.now() + 60 * 1000,
+    });
+
+    // Cleanup expired cache entries periodically
+    if (this.refreshGraceCache.size > 1000) {
+      const now = Date.now();
+      for (const [key, entry] of this.refreshGraceCache.entries()) {
+        if (entry.expiresAt <= now) {
+          this.refreshGraceCache.delete(key);
+        }
+      }
+    }
+
     return {
       message: 'Session refreshed',
       tokens,
-      user: this.formatUserProfile(user),
+      user: formattedProfile,
     };
   }
 
   async logout(userId: string, accessToken?: string) {
+    // Invalidate active grace cache entries for this user immediately on explicit logout
+    for (const [key, entry] of this.refreshGraceCache.entries()) {
+      if (entry.userId === userId) {
+        this.refreshGraceCache.delete(key);
+      }
+    }
+
     await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -1057,6 +1108,13 @@ export class AuthService {
   async revokeAllSessions(userId: string, currentAccessToken?: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');
+
+    // Invalidate active grace cache entries for this user
+    for (const [key, entry] of this.refreshGraceCache.entries()) {
+      if (entry.userId === userId) {
+        this.refreshGraceCache.delete(key);
+      }
+    }
 
     await this.prisma.user.update({
       where: { id: userId },

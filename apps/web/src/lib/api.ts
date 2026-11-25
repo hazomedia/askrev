@@ -50,10 +50,13 @@ export function getCsrfToken(): string | null {
 
 /**
  * Browser Session Security Handler:
- * Pure HttpOnly cookie authentication. Access and refresh tokens are strictly NEVER
- * stored in localStorage or sessionStorage for any user or administrative account.
+ * Pure HttpOnly cookie authentication for normal user/admin sessions.
+ * When in Admin Support Mode, returns the ephemeral support token from sessionStorage.
  */
 export function getAuthToken(): string | null {
+  if (typeof window !== 'undefined') {
+    return sessionStorage.getItem('askrev_support_token') || null;
+  }
   return null;
 }
 
@@ -161,10 +164,45 @@ export function getStoredUser(): any | null {
 }
 
 let pendingRefreshPromise: Promise<boolean> | null = null;
+let authBroadcastChannel: BroadcastChannel | null = null;
+if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+  try {
+    authBroadcastChannel = new BroadcastChannel('askrev_auth_channel');
+    authBroadcastChannel.onmessage = (event) => {
+      if (event?.data?.type === 'REFRESH_SUCCESS' && event?.data?.user) {
+        try {
+          localStorage.setItem('askrev_user', JSON.stringify(event.data.user));
+        } catch {}
+      } else if (event?.data?.type === 'SESSION_REVOKED') {
+        clearAuthSession();
+      }
+    };
+  } catch {}
+}
 
 export async function attemptTokenRefresh(): Promise<boolean> {
+  // Support session tokens do not use refresh rotation
+  if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    return false;
+  }
+
   if (pendingRefreshPromise) {
     return pendingRefreshPromise;
+  }
+
+  // Cross-tab coordination: check if another tab is already refreshing
+  if (typeof window !== 'undefined') {
+    const activeTime = parseInt(localStorage.getItem('askrev_refresh_active') || '0', 10);
+    const now = Date.now();
+    if (activeTime && now - activeTime < 4000) {
+      // Another tab is actively refreshing: wait up to 1.5 seconds for completion
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const postWaitStored = getStoredUser();
+      if (postWaitStored) {
+        return true;
+      }
+    }
+    localStorage.setItem('askrev_refresh_active', String(Date.now()));
   }
 
   pendingRefreshPromise = (async () => {
@@ -185,7 +223,12 @@ export async function attemptTokenRefresh(): Promise<boolean> {
       });
 
       if (!res.ok) {
-        clearAuthSession();
+        // Only clear session if explicitly unauthenticated (401),
+        // NEVER on transient network drops or server restarts (500, 502, 503, 504)
+        if (res.status === 401) {
+          clearAuthSession();
+          authBroadcastChannel?.postMessage({ type: 'SESSION_REVOKED' });
+        }
         return false;
       }
 
@@ -195,13 +238,17 @@ export async function attemptTokenRefresh(): Promise<boolean> {
       }
       if (data?.user) {
         localStorage.setItem('askrev_user', JSON.stringify(data.user));
+        authBroadcastChannel?.postMessage({ type: 'REFRESH_SUCCESS', user: data.user });
       }
       return true;
     } catch {
-      clearAuthSession();
+      // Network failure: do NOT immediately log out the user
       return false;
     } finally {
       pendingRefreshPromise = null;
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('askrev_refresh_active');
+      }
     }
   })();
 
@@ -1097,6 +1144,93 @@ export async function fetchMyCommissionHoldsApi(): Promise<any[]> {
 export async function fetchAdminVouchersApi(): Promise<any> {
   return fetchApi<any>('/vouchers/admin/all');
 }
+
+/**
+ * =============================================================================
+ * ADMIN SUPPORT MODE ("VIEW AS MEMBER") APIS & HELPERS
+ * =============================================================================
+ */
+
+export interface SupportSessionData {
+  supportToken: string;
+  targetUser: any;
+  adminEmail: string;
+  reason: string;
+  consentReference: string;
+  expiresAt: string;
+}
+
+export function setSupportSession(data: SupportSessionData) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem('askrev_support_token', data.supportToken);
+  sessionStorage.setItem('askrev_support_meta', JSON.stringify({
+    adminEmail: data.adminEmail,
+    reason: data.reason,
+    consentReference: data.consentReference,
+    expiresAt: data.expiresAt,
+    targetUser: data.targetUser,
+  }));
+  if (data.targetUser) {
+    localStorage.setItem('askrev_user', JSON.stringify(data.targetUser));
+  }
+}
+
+export function getSupportSession(): (SupportSessionData & { isSupportMode: boolean }) | null {
+  if (typeof window === 'undefined') return null;
+  const token = sessionStorage.getItem('askrev_support_token');
+  if (!token) return null;
+  const metaStr = sessionStorage.getItem('askrev_support_meta');
+  let meta: any = {};
+  if (metaStr) {
+    try {
+      meta = JSON.parse(metaStr);
+    } catch {}
+  }
+  return {
+    supportToken: token,
+    isSupportMode: true,
+    targetUser: meta.targetUser || null,
+    adminEmail: meta.adminEmail || '',
+    reason: meta.reason || '',
+    consentReference: meta.consentReference || '',
+    expiresAt: meta.expiresAt || '',
+  };
+}
+
+export function clearSupportSession() {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem('askrev_support_token');
+  sessionStorage.removeItem('askrev_support_meta');
+}
+
+export async function initiateAdminSupportSessionApi(dto: {
+  targetMemberId: string;
+  reason: string;
+  consentReference: string;
+}): Promise<any> {
+  return fetchApi<any>('/admin/support/initiate-session', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function exitAdminSupportSessionApi(supportToken?: string): Promise<any> {
+  try {
+    return await fetchApi<any>('/admin/support/exit-session', {
+      method: 'POST',
+      body: JSON.stringify({ supportToken }),
+    });
+  } catch {
+    return { success: true };
+  } finally {
+    clearSupportSession();
+  }
+}
+
+export async function fetchAdminSupportAuditLogsApi(page = 1, limit = 50): Promise<any> {
+  return fetchApi<any>(`/admin/support/audit-logs?page=${page}&limit=${limit}`);
+}
+
 
 
 
