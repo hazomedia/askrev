@@ -5003,14 +5003,19 @@ function DashboardContent() {
               </div>
             ) : paymentMethod === 'UPI' ? (
               (() => {
-                const isSimulationEnv =
-                  process.env.NEXT_PUBLIC_COMPLIANCE_MODE === 'SIMULATION_ONLY' ||
-                  process.env.NEXT_PUBLIC_APP_ENV === 'staging' ||
-                  (typeof window !== 'undefined' &&
-                    (window.location.hostname.includes('staging') ||
+                const isProductionHost = typeof window !== 'undefined' && (
+                  window.location.hostname === 'askrevdrive.com' ||
+                  window.location.hostname === 'www.askrevdrive.com' ||
+                  process.env.NEXT_PUBLIC_APP_ENV === 'production'
+                );
+                const isSimulationEnv = !isProductionHost && (
+                  process.env.NEXT_PUBLIC_COMPLIANCE_MODE === 'SIMULATION_ONLY' &&
+                  (process.env.NEXT_PUBLIC_APP_ENV === 'staging' ||
+                   (typeof window !== 'undefined' &&
+                     (window.location.hostname.includes('staging') ||
                       window.location.hostname.includes('localhost') ||
-                      window.location.hostname.includes('127.0.0.1') ||
-                      window.location.hostname.includes('vercel.app')));
+                      window.location.hostname.includes('127.0.0.1'))))
+                );
 
                 return isSimulationEnv ? (
                   <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-4">

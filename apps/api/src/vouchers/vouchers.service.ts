@@ -319,16 +319,19 @@ export class VouchersService {
       select: { entityId: true, metadata: true },
     });
 
-    // Map by voucher id or voucher code from metadata
+    // Map by voucher id or voucher code from metadata with strict valid evidence
     const deliveryStatusMap = new Map<string, string>();
+    const VALID_DELIVERY_STATUSES = new Set(['LIVE_SENT', 'SANDBOX_LOGGED', 'FAILED', 'NOT_ATTEMPTED']);
     for (const log of deliveryAuditLogs) {
       const meta = log.metadata as any;
-      const status = meta?.deliveryStatus || 'SANDBOX_LOGGED';
-      if (log.entityId) {
-        deliveryStatusMap.set(log.entityId, status);
-      }
-      if (meta?.voucherCode) {
-        deliveryStatusMap.set(meta.voucherCode, status);
+      const status = meta?.deliveryStatus;
+      if (status && VALID_DELIVERY_STATUSES.has(status)) {
+        if (log.entityId) {
+          deliveryStatusMap.set(log.entityId, status);
+        }
+        if (meta?.voucherCode) {
+          deliveryStatusMap.set(meta.voucherCode, status);
+        }
       }
     }
 

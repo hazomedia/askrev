@@ -3422,11 +3422,22 @@ export default function AdminPage() {
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    (v.emailDeliveryStatus === 'LIVE_SENT' || v.emailSent) ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {v.emailDeliveryStatus || (v.emailSent ? 'LIVE_SENT' : 'SANDBOX_LOGGED')}
-                                  </span>
+                                  {(() => {
+                                    const deliveryStatus = v.emailDeliveryStatus || (v.emailSent ? 'LIVE_SENT' : 'NOT_ATTEMPTED');
+                                    return (
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                        deliveryStatus === 'LIVE_SENT'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : deliveryStatus === 'SANDBOX_LOGGED'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : deliveryStatus === 'FAILED'
+                                              ? 'bg-rose-100 text-rose-800'
+                                              : 'bg-slate-100 text-slate-700'
+                                      }`}>
+                                        {deliveryStatus}
+                                      </span>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="py-2.5 px-3 font-mono text-slate-500">
                                   {v.emailSentAt ? new Date(v.emailSentAt).toLocaleString('en-IN') : '—'}

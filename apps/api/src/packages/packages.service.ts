@@ -213,6 +213,57 @@ export class PackagesService {
   // PHASE 3A: MEMBERSHIP ACTIVATION & UPGRADE REQUESTS
   // =========================================================================
 
+  /**
+   * Fail-closed environment identity and compliance guard for synthetic payments & references.
+   * Strictly forbids synthetic references in Production regardless of compliance mode.
+   * Requires BOTH explicit isolated UAT/staging identity AND COMPLIANCE_MODE === 'SIMULATION_ONLY'.
+   */
+  private assertUatSimulationEnvironmentForPayment(paymentRef?: string, paymentMode?: string): void {
+    const appEnv = (process.env.APP_ENV || '').toLowerCase();
+    const nodeEnv = (process.env.NODE_ENV || '').toLowerCase();
+    const railwayEnv = (process.env.RAILWAY_ENVIRONMENT_NAME || '').toLowerCase();
+    const vercelEnv = (process.env.VERCEL_ENV || '').toLowerCase();
+    const dbUrl = process.env.DATABASE_URL || '';
+    const complianceMode = process.env.COMPLIANCE_MODE;
+
+    // 1. Strict Production Detection: If ANY indicator points to Production, reject synthetic/simulation unconditionally
+    const isProduction =
+      appEnv === 'production' ||
+      railwayEnv === 'production' ||
+      vercelEnv === 'production' ||
+      dbUrl.includes('trolley.proxy.rlwy.net:41036') ||
+      (nodeEnv === 'production' && appEnv !== 'staging' && appEnv !== 'uat' && process.env.IS_UAT !== 'true');
+
+    if (isProduction) {
+      throw new BadRequestException(
+        'Synthetic payment simulation and synthetic references are strictly prohibited in the Production environment.'
+      );
+    }
+
+    // 2. Strict Isolated UAT/Test Verification: Must have an explicit non-production/UAT environment indicator
+    const isExplicitUat =
+      appEnv === 'staging' ||
+      appEnv === 'uat' ||
+      process.env.IS_UAT === 'true' ||
+      railwayEnv === 'staging' ||
+      nodeEnv === 'test' ||
+      nodeEnv === 'development' ||
+      dbUrl.includes('nozomi.proxy.rlwy.net:28651');
+
+    if (!isExplicitUat) {
+      throw new BadRequestException(
+        'Synthetic payment simulation is strictly prohibited outside the approved isolated UAT simulation environment.'
+      );
+    }
+
+    // 3. Strict Compliance Mode: Must be explicitly set to SIMULATION_ONLY (no fallback default)
+    if (complianceMode !== 'SIMULATION_ONLY') {
+      throw new BadRequestException(
+        'Synthetic payment simulation requires COMPLIANCE_MODE=SIMULATION_ONLY.'
+      );
+    }
+  }
+
   async createMembershipRequest(userId: string, dto: CreateMembershipRequestDto) {
     return await this.prisma.$transaction(async (tx) => {
       // Lock the User row inside the transaction to serialize concurrent request submissions
@@ -311,13 +362,7 @@ export class PackagesService {
         const utrRegex = /^([0-9]{12}|[A-Z0-9]{12,22})$/;
         const isSynthetic = /^([A-Z0-9_-]*(SIM|TEST)[A-Z0-9_-]*)$/i.test(rawRef || '');
         if (isSynthetic) {
-          const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
-          const isUatEnv = complianceMode === 'SIMULATION_ONLY' || process.env.NODE_ENV !== 'production';
-          if (!isUatEnv) {
-            throw new BadRequestException(
-              'Synthetic payment references are strictly rejected outside the approved isolated UAT simulation environment.'
-            );
-          }
+          this.assertUatSimulationEnvironmentForPayment(rawRef, paymentMode);
         } else if (!rawRef || !utrRegex.test(rawRef)) {
           throw new BadRequestException(
             'Invalid payment reference / UTR format. Standard UPI reference must be a 12-digit numeric or 12-22 alphanumeric transaction reference.'
@@ -351,13 +396,7 @@ export class PackagesService {
           );
         }
       } else {
-        const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
-        const isUatEnv = complianceMode === 'SIMULATION_ONLY' || process.env.NODE_ENV !== 'production';
-        if (!isUatEnv) {
-          throw new BadRequestException(
-            'Synthetic payment simulation is strictly prohibited outside the approved isolated UAT simulation environment.'
-          );
-        }
+        this.assertUatSimulationEnvironmentForPayment(dto.paymentReference, paymentMode);
         cleanPaymentRef =
           dto.paymentReference?.trim().toUpperCase() ||
           `SIM-REF-${Date.now().toString().slice(-8)}-${Math.floor(100 + Math.random() * 900)}`;
