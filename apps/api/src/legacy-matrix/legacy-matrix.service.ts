@@ -252,6 +252,24 @@ export class LegacyMatrixService {
     if (!placement) {
       return {
         hasPlacement: false,
+        sequence: null,
+        layer: null,
+        depth: null,
+        positionIndex: null,
+        isQualified,
+        activeDirectsCount,
+        requiredDirects: LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS,
+        downlineCount: 0,
+        totalPotentialINR: 0,
+        totalEarnedINR: 0,
+        levelStats: LEGACY_MATRIX_RATES.map((r) => ({
+          level: r.level,
+          unitRateINR: r.amountINR,
+          maxCapacity: r.positions,
+          memberCount: 0,
+          potentialIncomeINR: 0,
+          earnedIncomeINR: 0,
+        })),
         memberId: user.memberId,
         qualification: {
           activeDirectsCount,
@@ -339,6 +357,24 @@ export class LegacyMatrixService {
 
     return {
       hasPlacement: true,
+      sequence: placement.matrixSequence,
+      layer: placement.depth,
+      depth: placement.depth,
+      positionIndex: placement.positionIndex,
+      isQualified,
+      activeDirectsCount,
+      requiredDirects: LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS,
+      downlineCount: totalDownline,
+      totalPotentialINR: totalProjectedEarningsINR,
+      totalEarnedINR: totalQualifiedEarningsINR,
+      levelStats: levelBreakdown.map((lb) => ({
+        level: lb.level,
+        unitRateINR: lb.amountPerPositionINR,
+        maxCapacity: lb.capacity,
+        memberCount: lb.occupied,
+        potentialIncomeINR: lb.projectedEarningsINR,
+        earnedIncomeINR: lb.qualifiedEarningsINR,
+      })),
       placement: {
         id: placement.id,
         matrixSequence: placement.matrixSequence,

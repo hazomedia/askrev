@@ -1090,6 +1090,10 @@ export async function fetchAdminCommissionHoldsApi(): Promise<any[]> {
   return fetchApi<any[]>('/packages/admin/commission-holds');
 }
 
+export async function fetchMyCommissionHoldsApi(): Promise<any[]> {
+  return fetchApi<any[]>('/packages/my-holds');
+}
+
 export async function fetchAdminVouchersApi(): Promise<any> {
   return fetchApi<any>('/vouchers/admin/all');
 }

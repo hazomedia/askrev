@@ -120,37 +120,52 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
         where: { OR: [{ memberId: { in: ids } }, { sponsorId: { in: ids } }] },
       });
 
-      // Clean up test journal entries associated with disposable user membership requests
+      // Clean up test journal entries associated with disposable user membership requests and matching rewards
+      const userLines = await prisma.journalLine.findMany({
+        where: { userId: { in: ids } },
+        select: { journalEntryId: true },
+      });
+      const userEntryIds = userLines.map((l) => l.journalEntryId);
+
       const testReqs = await prisma.membershipRequest.findMany({
         where: { userId: { in: ids } },
         select: { id: true },
       });
       const testReqIds = testReqs.map((r) => r.id);
-      if (testReqIds.length > 0) {
-        const testRefPatterns = testReqIds.flatMap((id) => [
+      const testRefPatterns = [
+        ...testReqIds.flatMap((id) => [
           `JNL-REQ-${id}`,
           `JNL-VCHR-BSC-${id}`,
           `JNL-HOLD-${id}`,
           `JNL-REL-${id}`,
           `JNL-BASIC-FULL-${id}`,
           `JNL-HOLD-UPG-${id}`,
-        ]);
-        const entries = await prisma.journalEntry.findMany({
-          where: {
-            OR: [
-              { referenceId: { in: testRefPatterns } },
-              { referenceId: { startsWith: 'REQ-SCEN17-' } },
-              { referenceId: { startsWith: 'JNL-REQ-DISP-' } },
-              { referenceId: { startsWith: 'JNL-VCHR-BSC-DISP-' } },
-            ],
-          },
-          select: { id: true },
-        });
-        const entryIds = entries.map((e) => e.id);
-        if (entryIds.length > 0) {
-          await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: entryIds } } });
-          await prisma.journalEntry.deleteMany({ where: { id: { in: entryIds } } });
-        }
+        ]),
+        ...ids.flatMap((id) => [
+          `JNL-BIN-MATCH-${id}`,
+          `SPON-BASIC-HOLD-${id}`,
+          `SPON-BASIC-REL-${id}`,
+        ]),
+      ];
+      const entries = await prisma.journalEntry.findMany({
+        where: {
+          OR: [
+            { id: { in: userEntryIds } },
+            { referenceId: { in: testRefPatterns } },
+            { referenceId: { startsWith: 'REQ-SCEN17-' } },
+            { referenceId: { startsWith: 'JNL-REQ-DISP-' } },
+            { referenceId: { startsWith: 'JNL-VCHR-BSC-DISP-' } },
+            { referenceId: { startsWith: 'JNL-VCHR-2ND-REQ-' } },
+            { referenceId: { startsWith: 'JNL-BASIC-FULL-REQ-' } },
+            { referenceId: { startsWith: 'JNL-BIN-MATCH-' } },
+          ],
+        },
+        select: { id: true },
+      });
+      const entryIds = entries.map((e) => e.id);
+      if (entryIds.length > 0) {
+        await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: entryIds } } });
+        await prisma.journalEntry.deleteMany({ where: { id: { in: entryIds } } });
       }
 
       await prisma.membershipRequest.deleteMany({ where: { userId: { in: ids } } });
@@ -219,36 +234,51 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
         where: { OR: [{ memberId: userId }, { sponsorId: userId }] },
       });
 
-      // Clean up test journal entries associated with this user's requests
+      // Clean up test journal entries associated with this user
+      const userLines = await prisma.journalLine.findMany({
+        where: { userId },
+        select: { journalEntryId: true },
+      });
+      const userEntryIds = userLines.map((l) => l.journalEntryId);
+
       const testReqs = await prisma.membershipRequest.findMany({
         where: { userId },
         select: { id: true },
       });
       const testReqIds = testReqs.map((r) => r.id);
-      if (testReqIds.length > 0) {
-        const testRefPatterns = testReqIds.flatMap((id) => [
+      const testRefPatterns = [
+        ...testReqIds.flatMap((id) => [
           `JNL-REQ-${id}`,
           `JNL-VCHR-BSC-${id}`,
           `JNL-HOLD-${id}`,
           `JNL-REL-${id}`,
           `JNL-BASIC-FULL-${id}`,
           `JNL-HOLD-UPG-${id}`,
-        ]);
-        const entries = await prisma.journalEntry.findMany({
-          where: {
-            OR: [
-              { referenceId: { in: testRefPatterns } },
-              { referenceId: { startsWith: `SPON-BASIC-HOLD-${userId}` } },
-              { referenceId: { startsWith: `SPON-BASIC-REL-${userId}` } },
-            ],
-          },
-          select: { id: true },
-        });
-        const entryIds = entries.map((e) => e.id);
-        if (entryIds.length > 0) {
-          await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: entryIds } } });
-          await prisma.journalEntry.deleteMany({ where: { id: { in: entryIds } } });
-        }
+        ]),
+        `JNL-BIN-MATCH-${userId}`,
+        `SPON-BASIC-HOLD-${userId}`,
+        `SPON-BASIC-REL-${userId}`,
+      ];
+      const entries = await prisma.journalEntry.findMany({
+        where: {
+          OR: [
+            { id: { in: userEntryIds } },
+            { referenceId: { in: testRefPatterns } },
+            { referenceId: { startsWith: `JNL-BIN-MATCH-${userId}` } },
+            { referenceId: { startsWith: `SPON-BASIC-HOLD-${userId}` } },
+            { referenceId: { startsWith: `SPON-BASIC-REL-${userId}` } },
+            { referenceId: { startsWith: 'JNL-REQ-DISP-' } },
+            { referenceId: { startsWith: 'JNL-VCHR-BSC-DISP-' } },
+            { referenceId: { startsWith: 'JNL-VCHR-2ND-REQ-' } },
+            { referenceId: { startsWith: 'JNL-BASIC-FULL-REQ-' } },
+          ],
+        },
+        select: { id: true },
+      });
+      const entryIds = entries.map((e) => e.id);
+      if (entryIds.length > 0) {
+        await prisma.journalLine.deleteMany({ where: { journalEntryId: { in: entryIds } } });
+        await prisma.journalEntry.deleteMany({ where: { id: { in: entryIds } } });
       }
 
       await prisma.membershipRequest.deleteMany({ where: { userId } });
@@ -268,12 +298,13 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   // SCENARIO 1: IMPORTED DATASET INTEGRITY & DISCREPANCY RESOLUTION
   // =========================================================================
   it('Scenario 1: Verified imported dataset integrity and resolved reporting discrepancy', async () => {
-    const totalUsers = await prisma.user.count();
+    const baselineFilter = { NOT: [{ memberId: { startsWith: 'DISP-' } }, { memberId: { startsWith: 'UAT-' } }] };
+    const totalUsers = await prisma.user.count({ where: baselineFilter });
     expect(totalUsers).toBe(28);
 
-    const fullCount = await prisma.user.count({ where: { currentPackage: 'FULL' } });
-    const basicCount = await prisma.user.count({ where: { currentPackage: 'BASIC' } });
-    const freeCount = await prisma.user.count({ where: { currentPackage: 'FREE' } });
+    const fullCount = await prisma.user.count({ where: { currentPackage: 'FULL', ...baselineFilter } });
+    const basicCount = await prisma.user.count({ where: { currentPackage: 'BASIC', ...baselineFilter } });
+    const freeCount = await prisma.user.count({ where: { currentPackage: 'FREE', ...baselineFilter } });
 
     expect(fullCount).toBe(16);
     expect(basicCount).toBe(3);
@@ -289,9 +320,9 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
     expect(superAdmin?.currentPackage).toBe('FULL');
 
     // Role breakdown
-    const superAdmins = await prisma.user.count({ where: { role: 'SUPER_ADMIN' } });
-    const members = await prisma.user.count({ where: { role: 'MEMBER' } });
-    const freeUsers = await prisma.user.count({ where: { role: 'FREE_USER' } });
+    const superAdmins = await prisma.user.count({ where: { role: 'SUPER_ADMIN', ...baselineFilter } });
+    const members = await prisma.user.count({ where: { role: 'MEMBER', ...baselineFilter } });
+    const freeUsers = await prisma.user.count({ where: { role: 'FREE_USER', ...baselineFilter } });
 
     expect(superAdmins).toBe(1);
     expect(members).toBe(18); // 15 FULL + 3 BASIC
@@ -345,7 +376,9 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   // SCENARIO 3: THREE-CHILD POSITION CAPACITY STRICTLY ENFORCED
   // =========================================================================
   it('Scenario 3: Three-child position capacity (positions 1, 2, 3 only)', async () => {
-    const placements = await prisma.legacyMatrixPlacement.findMany();
+    const placements = await prisma.legacyMatrixPlacement.findMany({
+      where: { user: { NOT: [{ memberId: { startsWith: 'DISP-' } }, { memberId: { startsWith: 'UAT-' } }] } },
+    });
     expect(placements.length).toBe(28);
 
     for (const p of placements) {
@@ -397,6 +430,7 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
   it('Scenario 5: Simultaneous matrix placement serialization via atomic sequence locking', async () => {
     // Check that matrix sequences in database are consecutive without gaps from 1 to 28
     const sequences = await prisma.legacyMatrixPlacement.findMany({
+      where: { user: { NOT: [{ memberId: { startsWith: 'DISP-' } }, { memberId: { startsWith: 'UAT-' } }] } },
       select: { matrixSequence: true },
       orderBy: { matrixSequence: 'asc' },
     });
@@ -973,7 +1007,7 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
     try {
       // Count baseline vouchers before test
       const baselineVoucherCount = await prisma.shoppingVoucher.count({
-        where: { user: { memberId: { not: { startsWith: 'DISP-' } } } },
+        where: { user: { NOT: [{ memberId: { startsWith: 'DISP-' } }, { memberId: { startsWith: 'UAT-' } }] } },
       });
       expect(baselineVoucherCount).toBe(21); // Preserves existing 21 baseline vouchers
 
@@ -1040,7 +1074,7 @@ describe('ASKR EV — Final UAT Compensation Refinements (24 Required Test Scena
 
       // Verify baseline vouchers remained untouched
       const baselineVoucherCountAfter = await prisma.shoppingVoucher.count({
-        where: { user: { memberId: { not: { startsWith: 'DISP-' } } } },
+        where: { user: { NOT: [{ memberId: { startsWith: 'DISP-' } }, { memberId: { startsWith: 'UAT-' } }] } },
       });
       expect(baselineVoucherCountAfter).toBe(21);
     } finally {

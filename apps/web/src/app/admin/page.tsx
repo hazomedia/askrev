@@ -953,10 +953,17 @@ export default function AdminPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Ledger Equilibrium 100%</span>
-                      </span>
+                      {(overview?.system?.unbalancedJournalCount ?? 0) > 0 || (overview?.system?.reconciliationStatus && overview?.system?.reconciliationStatus !== 'RECONCILED') ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                          <span>Discrepancy Detected ({overview?.system?.unbalancedJournalCount || 1})</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Ledger Equilibrium 100%</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1151,7 +1158,7 @@ export default function AdminPage() {
                     <div className="space-y-2.5 pt-2 text-xs">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Unbalanced Journal Entries:</span>
-                        <span className="font-bold text-emerald-600">
+                        <span className={`font-bold ${(overview?.system?.unbalancedJournalCount ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                           {overview?.system?.unbalancedJournalCount ?? 0} (Strict 0)
                         </span>
                       </div>
@@ -3022,7 +3029,9 @@ export default function AdminPage() {
                       <div className="text-xl font-black text-indigo-900 mt-1">
                         {matrixReport?.report?.filter((r: any) => r.matrixSequence)?.length ?? 28} / {matrixReport?.totalMembers ?? 28}
                       </div>
-                      <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">100% Backfilled</div>
+                      <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                        {matrixReport?.report?.length ? `28 Baseline + ${matrixReport.report.length - 28} Test Cohort` : '100% Backfilled'}
+                      </div>
                     </div>
 
                     <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200">
@@ -3066,7 +3075,7 @@ export default function AdminPage() {
                 {/* Sub Tab Switcher */}
                 <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
                   {[
-                    { id: 'tree', label: 'Matrix Placements (1–28)' },
+                    { id: 'tree', label: `Matrix Placements (${matrixReport?.report?.length || 28})` },
                     { id: 'qualifications', label: '3-Active-Direct Qualifications' },
                     { id: 'flushes', label: `Binary Flush Audit (${binaryFlushes.length})` },
                     { id: 'holds', label: `Held Sponsor Bonuses (${commissionHolds.length})` },
@@ -3286,14 +3295,19 @@ export default function AdminPage() {
                 {/* SUBTAB 4: COMMISSION HOLDS */}
                 {matrixSubTab === 'holds' && (
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                    <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         <h3 className="text-sm font-bold text-[#253247]">Held Sponsor Commission Audit Logs</h3>
-                        <p className="text-xs text-slate-500">Commissions held for BASIC sponsors awaiting upgrade to EV ULTRA</p>
+                        <p className="text-xs text-slate-500">Commissions held for BASIC sponsors awaiting upgrade or 2nd direct reserve</p>
                       </div>
-                      <span className="text-xs font-mono font-bold bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md border border-purple-200">
-                        {commissionHolds.length} Holds
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md border border-amber-200">
+                          Active Liability: ₹{commissionHolds.filter((h: any) => h.status === 'HELD').reduce((acc: number, h: any) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')} ({commissionHolds.filter((h: any) => h.status === 'HELD').length})
+                        </span>
+                        <span className="text-xs font-mono font-bold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md border border-emerald-200">
+                          Released: ₹{commissionHolds.filter((h: any) => h.status === 'RELEASED').reduce((acc: number, h: any) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')} ({commissionHolds.filter((h: any) => h.status === 'RELEASED').length})
+                        </span>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -3381,14 +3395,14 @@ export default function AdminPage() {
                             allVouchersData.map((v: any) => (
                               <tr key={v.id} className="hover:bg-slate-50/70 transition-colors">
                                 <td className="py-2.5 px-3 font-mono font-bold text-[#165DAD]">{v.voucherCode}</td>
-                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{v.user?.memberId || '—'}</td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{v.memberId || v.user?.memberId || '—'}</td>
                                 <td className="py-2.5 px-3">
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                                     v.category === 'EV_VEHICLE_VOUCHER'
                                       ? 'bg-purple-50 text-purple-700 border-purple-200'
                                       : 'bg-blue-50 text-blue-700 border-blue-200'
                                   }`}>
-                                    {v.category === 'EV_VEHICLE_VOUCHER' ? 'EV Vehicle Voucher' : 'Shopping Voucher'}
+                                    {v.categoryLabel || (v.category === 'ADDITIONAL_SHOPPING_VOUCHER' ? 'Additional Shopping Voucher' : v.category === 'EV_VEHICLE_VOUCHER' ? 'EV Vehicle Voucher' : 'Shopping Voucher')}
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3 font-mono font-medium">₹{(v.initialValueINR || (Number(v.initialValuePaise || 0) / 100)).toLocaleString('en-IN')}</td>
@@ -3400,9 +3414,9 @@ export default function AdminPage() {
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    v.emailSent ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                    (v.emailDeliveryStatus === 'LIVE_SENT' || v.emailSent) ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                                   }`}>
-                                    {v.emailSent ? '✓ LIVE DELIVERED' : 'SANDBOX LOGGED'}
+                                    {v.emailDeliveryStatus || (v.emailSent ? 'LIVE_SENT' : 'SANDBOX_LOGGED')}
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3 font-mono text-slate-500">

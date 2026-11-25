@@ -45,6 +45,12 @@ export class PackagesController {
     return this.packagesService.getMyMembershipRequests(user.id);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('my-holds')
+  async getMyHolds(@CurrentUser() user: any) {
+    return this.packagesService.getMyCommissionHolds(user.id);
+  }
+
   // =========================================================================
   // ADMIN REVIEW ENDPOINTS
   // =========================================================================

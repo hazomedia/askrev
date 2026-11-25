@@ -310,12 +310,37 @@ export class VouchersService {
       totalOutstandingPaise += v.remainingBalancePaise;
       totalRedeemedPaise += redeemed;
 
+      const categoryLabel =
+        v.category === 'ADDITIONAL_SHOPPING_VOUCHER'
+          ? 'Additional Shopping Voucher'
+          : v.category === 'SHOPPING_VOUCHER'
+            ? 'EV Vehicle Voucher'
+            : v.category || 'Shopping Voucher';
+
+      // Distinguish Live Sent, Sandbox Logged, Not Attempted
+      let emailDeliveryStatus = 'NOT_ATTEMPTED';
+      if (v.emailSent) {
+        emailDeliveryStatus = 'LIVE_SENT';
+      } else if (v.voucherCode.includes('UAT') || v.issuedReason?.includes('GRANT')) {
+        emailDeliveryStatus = 'SANDBOX_LOGGED';
+      }
+
       return {
         id: v.id,
         voucherCode: v.voucherCode,
-        memberId: v.user.memberId,
-        memberName: v.user.fullName,
-        memberEmail: v.user.email,
+        userId: v.userId,
+        memberId: v.user?.memberId || 'N/A',
+        memberName: v.user?.fullName || 'Unknown Member',
+        memberEmail: v.user?.email || 'N/A',
+        user: {
+          memberId: v.user?.memberId || 'N/A',
+          fullName: v.user?.fullName || 'Unknown Member',
+          email: v.user?.email || 'N/A',
+        },
+        category: v.category,
+        categoryLabel,
+        emailSent: v.emailSent,
+        emailDeliveryStatus,
         initialValueINR: paiseToRupees(v.initialValuePaise),
         remainingBalanceINR: paiseToRupees(v.remainingBalancePaise),
         redeemedINR: paiseToRupees(redeemed),

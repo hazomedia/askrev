@@ -49,6 +49,7 @@ import {
   ArrowLeft,
   Download,
   Smartphone,
+  Clock,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -59,6 +60,7 @@ import {
   dismissPopupCampaign,
   fetchMyMatrixOverviewApi,
   fetchBinaryFlushHistoryApi,
+  fetchMyCommissionHoldsApi,
 } from '../../lib/api';
 import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
@@ -90,7 +92,10 @@ function DashboardContent() {
 
   // UAT Matrix & Flush Data States
   const [matrixOverview, setMatrixOverview] = useState<any>(null);
+  const [loadingMatrix, setLoadingMatrix] = useState(false);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
   const [binaryFlushData, setBinaryFlushData] = useState<any>(null);
+  const [myCommissionHolds, setMyCommissionHolds] = useState<any[]>([]);
 
   // Top Banner & Welcome Popup States
   const [topBanner, setTopBanner] = useState<any>(null);
@@ -439,6 +444,7 @@ function DashboardContent() {
         bannersData,
         matrixData,
         flushData,
+        myHoldsData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
         fetchApi<any>('/members/direct-team').catch(() => null),
@@ -453,8 +459,12 @@ function DashboardContent() {
         fetchApi<any>('/packages/payment-config').catch(() => null),
         fetchApi<any>('/payments/methods').catch(() => null),
         fetchActiveBanners().catch(() => ({ topBanner: null, slides: [], popupCampaign: null })),
-        fetchMyMatrixOverviewApi().catch(() => null),
+        fetchMyMatrixOverviewApi().catch((err) => {
+          setMatrixError(err.message || 'Matrix API error');
+          return null;
+        }),
         fetchBinaryFlushHistoryApi().catch(() => null),
+        fetchMyCommissionHoldsApi().catch(() => []),
       ]);
 
       setUser(profileData);
@@ -463,6 +473,7 @@ function DashboardContent() {
       }
       setMatrixOverview(matrixData);
       setBinaryFlushData(flushData);
+      setMyCommissionHolds(Array.isArray(myHoldsData) ? myHoldsData : []);
       setDirectTeam(teamData);
       setBinaryTree(binaryData);
       setInspectedBinaryTree(binaryData);
@@ -890,6 +901,11 @@ function DashboardContent() {
     setWithdrawError(null);
     setWithdrawResult(null);
     setWithdrawValidationError(null);
+    const availablePaise = Math.round(Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) * 100);
+    if (availablePaise < 100000) {
+      setWithdrawError('Minimum withdrawal threshold is ₹1,000. Current available balance is insufficient.');
+      return;
+    }
     if (user?.fullName && !withdrawAccountHolder) {
       setWithdrawAccountHolder(user.fullName);
     }
@@ -1545,14 +1561,42 @@ function DashboardContent() {
 
                 {/* FEATURE 4: SPONSOR BONUS ON HOLD CARD */}
                 {(() => {
-                  const heldINR = Number(walletOverview?.heldCommissionsINR ?? (walletOverview?.heldCommissionsPaise ? Number(walletOverview.heldCommissionsPaise) / 100 : 0));
+                  const heldINR = Number(
+                    walletOverview?.heldCommissionsINR ??
+                      (walletOverview?.heldCommissionsPaise
+                        ? Number(walletOverview.heldCommissionsPaise) / 100
+                        : 0)
+                  );
                   if (heldINR <= 0) return null;
+
+                  const activeHolds = (myCommissionHolds || []).filter((h: any) => h.status === 'HELD');
+                  const hasReserveOnly =
+                    activeHolds.length > 0 &&
+                    activeHolds.every(
+                      (h: any) =>
+                        h.holdType === 'SECOND_DIRECT_RESERVE' ||
+                        h.reason === 'BASIC_2ND_DIRECT_HOLD_RESERVE' ||
+                        h.reason === 'BASIC_HOLD_RESERVE'
+                    );
+                  const hasUpgradeOnly =
+                    activeHolds.length > 0 &&
+                    activeHolds.every(
+                      (h: any) =>
+                        h.holdType === 'UPGRADE_COMMISSION_HOLD' ||
+                        h.reason === 'BASIC_SPONSOR_DIRECT_UPGRADE' ||
+                        h.reason === 'BASIC_SPONSOR_DIRECT_FULL'
+                    );
+
                   return (
                     <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-blue-950 rounded-2xl p-5 text-white shadow-lg border border-purple-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="px-2.5 py-0.5 rounded-full bg-purple-400/20 text-purple-200 text-[10px] font-black tracking-wider uppercase">
-                            Sponsor Bonus Reserve
+                            {hasReserveOnly
+                              ? '₹1,000 Direct Qualification Reserve'
+                              : hasUpgradeOnly
+                                ? '₹9,000 Sponsor Upgrade Hold'
+                                : 'Sponsor Bonus Hold'}
                           </span>
                           <span className="text-xs text-purple-200 font-medium">Simulation Mode</span>
                         </div>
@@ -1561,16 +1605,30 @@ function DashboardContent() {
                           <span className="text-amber-300">₹{heldINR.toLocaleString('en-IN')}</span>
                         </h3>
                         <p className="text-xs text-purple-200 max-w-2xl leading-relaxed">
-                          Upgrade to EV ULTRA. Unlock Your Held Bonus! When you upgrade to EV ULTRA, your qualified held sponsor bonus is immediately unlocked and credited to your available wallet balance. (Payouts simulated).
+                          {hasReserveOnly
+                            ? 'Second Direct Referral Reserve: This ₹1,000 commission reserve will be automatically released into your available earnings upon qualifying your second direct member (EV PRO or EV ULTRA).'
+                            : hasUpgradeOnly
+                              ? 'Sponsor Upgrade Hold: This ₹9,000 commission is held until you upgrade your own package to EV ULTRA. Once upgraded, it unlocks immediately into available earnings.'
+                              : 'Includes ₹1,000 second-direct reserve (releases upon 2nd direct qualification) and ₹9,000 upgrade commission hold (releases upon your upgrade to EV ULTRA).'}
                         </p>
                       </div>
-                      <button
-                        onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
-                        className="shrink-0 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
-                      >
-                        <Lock className="w-4 h-4 text-slate-900" />
-                        <span>Upgrade Now</span>
-                      </button>
+                      {hasUpgradeOnly || !hasReserveOnly ? (
+                        <button
+                          onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                          className="shrink-0 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <Lock className="w-4 h-4 text-slate-900" />
+                          <span>Upgrade Now</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setActiveTab('team')}
+                          className="shrink-0 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <Users className="w-4 h-4 text-white" />
+                          <span>View Direct Team</span>
+                        </button>
+                      )}
                     </div>
                   );
                 })()}
@@ -1867,128 +1925,204 @@ function DashboardContent() {
                 {/* =========================================================================
                     FEATURE 1 & 7: EV LEGACY GLOBAL 3x8 MATRIX OVERVIEW CARD
                     ========================================================================= */}
-                <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-5 sm:p-6 space-y-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
-                          EV Legacy 3×8 Matrix
-                        </span>
-                        {matrixOverview?.sequence && (
-                          <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
-                            Sequence #{matrixOverview.sequence}
-                          </span>
-                        )}
-                        {matrixOverview?.layer && (
-                          <span className="text-xs font-semibold text-slate-500">
-                            Layer {matrixOverview.layer}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-base font-black text-[#0C2348]">
-                        Global 3×8 Matrix Downline & Level Income
-                      </h3>
-                    </div>
+                {(() => {
+                  const seq = matrixOverview?.sequence ?? matrixOverview?.placement?.matrixSequence;
+                  const layer = matrixOverview?.layer ?? matrixOverview?.placement?.depth;
+                  const isQual = Boolean(
+                    matrixOverview?.isQualified ??
+                      matrixOverview?.qualification?.isQualified ??
+                      matrixOverview?.metrics?.isQualified
+                  );
+                  const activeDirects =
+                    matrixOverview?.activeDirectsCount ??
+                    matrixOverview?.qualification?.activeDirectsCount ??
+                    matrixOverview?.metrics?.activeDirectsCount ??
+                    0;
+                  const downlines =
+                    matrixOverview?.downlineCount ??
+                    matrixOverview?.metrics?.totalDownlineMembers ??
+                    0;
+                  const potentialINR =
+                    matrixOverview?.totalPotentialINR ??
+                    matrixOverview?.metrics?.totalProjectedEarningsINR ??
+                    matrixOverview?.metrics?.projectedEarningsINR ??
+                    0;
+                  const earnedINR =
+                    matrixOverview?.totalEarnedINR ??
+                    matrixOverview?.metrics?.totalQualifiedEarningsINR ??
+                    matrixOverview?.metrics?.qualifiedEarningsINR ??
+                    0;
+                  const evClubProjected =
+                    matrixOverview?.metrics?.evClubProjectedINR ??
+                    matrixOverview?.metrics?.evClubEarningsINR ??
+                    0;
+                  const walletProjected =
+                    matrixOverview?.metrics?.earningsWalletProjectedINR ??
+                    matrixOverview?.metrics?.earningsWalletINR ??
+                    0;
 
-                    <div className="flex items-center gap-2">
-                      <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
-                        matrixOverview?.isQualified
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}>
-                        <Users className="w-3.5 h-3.5" />
-                        <span>{matrixOverview?.activeDirectsCount ?? 0} / 3 Active Directs</span>
-                        <span>•</span>
-                        <span>{matrixOverview?.isQualified ? 'Qualified (8 Levels)' : 'Need 3 Active Directs'}</span>
-                      </div>
-                    </div>
-                  </div>
+                  const rawLevels =
+                    matrixOverview?.levelStats ||
+                    (matrixOverview?.levelBreakdown
+                      ? matrixOverview.levelBreakdown.map((lb: any) => ({
+                          level: lb.level,
+                          unitRateINR: lb.amountPerPositionINR,
+                          maxCapacity: lb.capacity,
+                          memberCount: lb.occupied,
+                          potentialIncomeINR: lb.projectedEarningsINR,
+                          earnedIncomeINR: lb.qualifiedEarningsINR,
+                        }))
+                      : null);
 
-                  {/* Matrix Qualification Progress */}
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <div className="text-xs text-slate-600 space-y-0.5">
-                      <div className="font-semibold text-slate-800">
-                        Qualification Rule: 3 Active Direct Referrals (EV PRO or EV ULTRA)
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        {matrixOverview?.isQualified
-                          ? '✓ You meet the 3 active directs rule. All 8 Matrix levels are unlocked for level income.'
-                          : `Currently ${matrixOverview?.activeDirectsCount || 0} active direct(s). You need ${Math.max(0, 3 - (matrixOverview?.activeDirectsCount || 0))} more active direct referral(s) to unlock full 8-level payouts.`}
-                      </p>
-                    </div>
-                    <div className="w-full sm:w-48 shrink-0">
-                      <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-[#165DAD] to-indigo-600 rounded-full transition-all"
-                          style={{ width: `${Math.min(100, ((matrixOverview?.activeDirectsCount || 0) / 3) * 100)}%` }}
-                        />
-                      </div>
-                      <div className="text-right text-[10px] font-bold text-slate-500 mt-1">
-                        {Math.min(3, matrixOverview?.activeDirectsCount || 0)} / 3 Qualified
-                      </div>
-                    </div>
-                  </div>
+                  return (
+                    <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-5 sm:p-6 space-y-5">
+                      {matrixError && (
+                        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+                          <span>Legacy Matrix Notice: {matrixError}</span>
+                          <button
+                            onClick={() => window.location.reload()}
+                            className="underline font-bold text-red-800"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
+                              EV Legacy 3×8 Matrix
+                            </span>
+                            {seq && (
+                              <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                                Sequence #{seq}
+                              </span>
+                            )}
+                            {layer !== undefined && layer !== null && (
+                              <span className="text-xs font-semibold text-slate-500">
+                                Layer {layer}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-base font-black text-[#0C2348]">
+                            Global 3×8 Matrix Downline & Level Income
+                          </h3>
+                        </div>
 
-                  {/* 8-Level Matrix Breakdown Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5 px-3">Level</th>
-                          <th className="py-2.5 px-3">Unit Rate</th>
-                          <th className="py-2.5 px-3">Max Capacity</th>
-                          <th className="py-2.5 px-3">Placed Members</th>
-                          <th className="py-2.5 px-3">Potential Income</th>
-                          <th className="py-2.5 px-3">Earned Level Income</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {matrixOverview?.levelStats ? (
-                          matrixOverview.levelStats.map((lvl: any) => (
-                            <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-2 px-3 font-bold text-[#0C2348]">Level {lvl.level}</td>
-                              <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.unitRateINR}</td>
-                              <td className="py-2 px-3 text-slate-500 font-mono">{lvl.maxCapacity?.toLocaleString('en-IN')}</td>
-                              <td className="py-2 px-3 font-mono font-bold text-slate-800">{lvl.memberCount || 0}</td>
-                              <td className="py-2 px-3 font-mono text-slate-600">₹{(lvl.potentialIncomeINR || 0).toLocaleString('en-IN')}</td>
-                              <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹{(lvl.earnedIncomeINR || 0).toLocaleString('en-IN')}</td>
+                        <div className="flex items-center gap-2">
+                          <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
+                            isQual
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}>
+                            <Users className="w-3.5 h-3.5" />
+                            <span>{activeDirects} / 3 Active Directs</span>
+                            <span>•</span>
+                            <span>{isQual ? 'Qualified (8 Levels)' : 'Need 3 Active Directs'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Matrix Qualification Progress */}
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="text-xs text-slate-600 space-y-0.5">
+                          <div className="font-semibold text-slate-800">
+                            Qualification Rule: 3 Active Direct Referrals (EV PRO or EV ULTRA)
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {isQual
+                              ? '✓ You meet the 3 active directs rule. All 8 Matrix levels are unlocked for level income.'
+                              : `Currently ${activeDirects} active direct(s). You need ${Math.max(0, 3 - activeDirects)} more active direct referral(s) to unlock full 8-level payouts.`}
+                          </p>
+                        </div>
+                        <div className="w-full sm:w-48 shrink-0">
+                          <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-[#165DAD] to-indigo-600 rounded-full transition-all"
+                              style={{ width: `${Math.min(100, (activeDirects / 3) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-right text-[10px] font-bold text-slate-500 mt-1">
+                            {Math.min(3, activeDirects)} / 3 Qualified
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 8-Level Matrix Breakdown Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                            <tr>
+                              <th className="py-2.5 px-3">Level</th>
+                              <th className="py-2.5 px-3">Unit Rate</th>
+                              <th className="py-2.5 px-3">Max Capacity</th>
+                              <th className="py-2.5 px-3">Placed Members</th>
+                              <th className="py-2.5 px-3">Projected Income</th>
+                              <th className="py-2.5 px-3">Qualified Level Income</th>
                             </tr>
-                          ))
-                        ) : (
-                          [
-                            { level: 1, rate: 200, cap: 3 },
-                            { level: 2, rate: 200, cap: 9 },
-                            { level: 3, rate: 200, cap: 27 },
-                            { level: 4, rate: 200, cap: 81 },
-                            { level: 5, rate: 300, cap: 243 },
-                            { level: 6, rate: 300, cap: 729 },
-                            { level: 7, rate: 300, cap: 2187 },
-                            { level: 8, rate: 300, cap: 6561 },
-                          ].map((lvl) => (
-                            <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-2 px-3 font-bold text-[#0C2348]">Level {lvl.level}</td>
-                              <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.rate}</td>
-                              <td className="py-2 px-3 text-slate-500 font-mono">{lvl.cap.toLocaleString('en-IN')}</td>
-                              <td className="py-2 px-3 font-mono font-bold text-slate-800">0</td>
-                              <td className="py-2 px-3 font-mono text-slate-600">₹0</td>
-                              <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹0</td>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-700">
+                            {rawLevels && rawLevels.length > 0 ? (
+                              rawLevels.map((lvl: any) => (
+                                <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="py-2 px-3 font-bold text-[#0C2348]">
+                                    Level {lvl.level}
+                                    <span className="ml-1 text-[10px] font-normal text-slate-400">
+                                      {lvl.level % 2 === 1 ? '(EV Club)' : '(Wallet)'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.unitRateINR}</td>
+                                  <td className="py-2 px-3 text-slate-500 font-mono">{lvl.maxCapacity?.toLocaleString('en-IN')}</td>
+                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">{lvl.memberCount || 0}</td>
+                                  <td className="py-2 px-3 font-mono text-slate-600">₹{(lvl.potentialIncomeINR || 0).toLocaleString('en-IN')}</td>
+                                  <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹{(lvl.earnedIncomeINR || 0).toLocaleString('en-IN')}</td>
+                                </tr>
+                              ))
+                            ) : (
+                              [
+                                { level: 1, rate: 200, cap: 3 },
+                                { level: 2, rate: 200, cap: 9 },
+                                { level: 3, rate: 200, cap: 27 },
+                                { level: 4, rate: 200, cap: 81 },
+                                { level: 5, rate: 300, cap: 243 },
+                                { level: 6, rate: 300, cap: 729 },
+                                { level: 7, rate: 300, cap: 2187 },
+                                { level: 8, rate: 300, cap: 6561 },
+                              ].map((lvl) => (
+                                <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="py-2 px-3 font-bold text-[#0C2348]">Level {lvl.level}</td>
+                                  <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.rate}</td>
+                                  <td className="py-2 px-3 text-slate-500 font-mono">{lvl.cap.toLocaleString('en-IN')}</td>
+                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">0</td>
+                                  <td className="py-2 px-3 font-mono text-slate-600">₹0</td>
+                                  <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹0</td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                          <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
+                            <tr>
+                              <td className="py-2.5 px-3">Total (1–8)</td>
+                              <td className="py-2.5 px-3">—</td>
+                              <td className="py-2.5 px-3 font-mono">9,840</td>
+                              <td className="py-2.5 px-3 font-mono">{downlines}</td>
+                              <td className="py-2.5 px-3 font-mono text-indigo-900">₹{potentialINR.toLocaleString('en-IN')}</td>
+                              <td className="py-2.5 px-3 font-mono text-emerald-800">₹{earnedINR.toLocaleString('en-IN')}</td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                      <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
-                        <tr>
-                          <td className="py-2.5 px-3">Total (1–8)</td>
-                          <td className="py-2.5 px-3">—</td>
-                          <td className="py-2.5 px-3 font-mono">9,840</td>
-                          <td className="py-2.5 px-3 font-mono">{matrixOverview?.downlineCount || 0}</td>
-                          <td className="py-2.5 px-3 font-mono text-indigo-900">₹{(matrixOverview?.totalPotentialINR || 0).toLocaleString('en-IN')}</td>
-                          <td className="py-2.5 px-3 font-mono text-emerald-800">₹{(matrixOverview?.totalEarnedINR || 0).toLocaleString('en-IN')}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
+                            <tr className="bg-slate-100/60 text-[11px] font-normal text-slate-500">
+                              <td colSpan={6} className="py-2 px-3">
+                                <span>Simulated Allocation Breakdown: </span>
+                                <strong>Odd Levels (EV Club): ₹{evClubProjected.toLocaleString('en-IN')}</strong> •{' '}
+                                <strong>Even Levels (Earnings Wallet): ₹{walletProjected.toLocaleString('en-IN')}</strong> •{' '}
+                                <span className="text-slate-400">Actually Credited: ₹0 (Simulation Policy)</span>
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* FEATURE 3 & 7: BINARY MATCH FLUSH-OUT AUDIT HISTORY TABLE */}
                 {binaryFlushData?.flushes && binaryFlushData.flushes.length > 0 && (
@@ -1997,22 +2131,21 @@ function DashboardContent() {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
-                            Non-Payable Flushes
+                            Non-Payable Matching History
                           </span>
                           <span className="text-xs text-slate-500 font-medium">
-                            Cumulative Flushed: {binaryFlushData.cumulativeFlushedPairs} Pairs (₹{Number(binaryFlushData.cumulativeFlushedINR).toLocaleString('en-IN')} Notional)
+                            Cumulative: {binaryFlushData.cumulativeFlushedPairs} Pairs (Notional Matching Value: ₹{Number(binaryFlushData.cumulativeFlushedINR).toLocaleString('en-IN')})
                           </span>
                         </div>
                         <h3 className="text-base font-bold text-[#253247] mt-1">
-                          Binary Match Flush-Out History (EV PRO / BASIC)
+                          Non-Payable Matching History (EV PRO / BASIC)
                         </h3>
                       </div>
                       <button
                         onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
-                        className="px-3.5 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white text-xs font-semibold flex items-center gap-1 shadow-xs"
+                        className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 shadow-xs border border-slate-300"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Upgrade to Stop Flushes</span>
+                        <span>View Membership Options</span>
                       </button>
                     </div>
 
@@ -2022,7 +2155,7 @@ function DashboardContent() {
                           <tr>
                             <th className="py-2.5 px-3">Flush Date</th>
                             <th className="py-2.5 px-3">Flushed Pairs</th>
-                            <th className="py-2.5 px-3">Notional Missed Reward</th>
+                            <th className="py-2.5 px-3">Notional Matching Value</th>
                             <th className="py-2.5 px-3">Previous Carry (L / R)</th>
                             <th className="py-2.5 px-3">New Carry-Forward (L / R)</th>
                             <th className="py-2.5 px-3">Payout Status</th>
@@ -2033,12 +2166,12 @@ function DashboardContent() {
                             <tr key={f.id} className="hover:bg-slate-50/60 transition-colors">
                               <td className="py-2 px-3 font-mono">{new Date(f.matchDate || f.createdAt).toLocaleDateString('en-IN')}</td>
                               <td className="py-2 px-3 font-bold text-amber-700 font-mono">{f.flushedPairs} Pairs</td>
-                              <td className="py-2 px-3 font-mono font-bold text-rose-600">₹{(f.notionalMissedINR || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-2 px-3 font-mono font-bold text-slate-700">₹{(f.notionalMissedINR || 0).toLocaleString('en-IN')}</td>
                               <td className="py-2 px-3 font-mono text-slate-600">{f.previousCarryLeft}L / {f.previousCarryRight}R</td>
                               <td className="py-2 px-3 font-mono text-emerald-700 font-bold">{f.newCarryLeft}L / {f.newCarryRight}R</td>
                               <td className="py-2 px-3">
-                                <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
-                                  ₹0 Flushed (Unqualified)
+                                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-300">
+                                  Non-Payable (Historical Flush)
                                 </span>
                               </td>
                             </tr>
@@ -3393,14 +3526,22 @@ function DashboardContent() {
                         Authoritative ledger balance ready for withdrawal clearance.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleInitiateWithdrawal}
-                      className="mt-4 w-full py-2.5 px-4 bg-[#15803D] hover:bg-[#126F61] text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px]"
-                    >
-                      <ArrowDownToLine className="w-4 h-4" />
-                      <span>Withdraw Earnings</span>
-                    </button>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleInitiateWithdrawal}
+                        disabled={Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                        className="mt-4 w-full py-2.5 px-4 bg-[#15803D] hover:bg-[#126F61] text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ArrowDownToLine className="w-4 h-4" />
+                        <span>Withdraw Earnings</span>
+                      </button>
+                      {Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 ? (
+                        <p className="text-[10px] text-slate-400 mt-1.5 text-center">Min. threshold: ₹1,000</p>
+                      ) : !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified) ? (
+                        <p className="text-[10px] text-amber-600 mt-1.5 text-center font-medium">Email verification required</p>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -3411,7 +3552,11 @@ function DashboardContent() {
                       ₹{(walletOverview?.heldCommissionsINR ?? user.wallet?.heldCommissionsINR ?? 0).toLocaleString('en-IN')}
                     </div>
                     <p className="text-xs text-slate-500 mt-2">
-                      Commission hold reserve of ₹1,000 released upon 2nd qualified direct.
+                      {Array.isArray(myCommissionHolds) && myCommissionHolds.length > 0
+                        ? myCommissionHolds.some((h: any) => h.status === 'HELD' && h.holdType === 'UPGRADE_COMMISSION_HOLD')
+                          ? 'Commission held pending upgrade to EV ULTRA.'
+                          : 'Commission hold reserve released upon 2nd qualified direct.'
+                        : 'Commission hold reserve released upon 2nd qualified direct.'}
                     </p>
                   </div>
 
@@ -3439,6 +3584,58 @@ function DashboardContent() {
                     </p>
                   </div>
                 </div>
+
+                {/* Held Commissions Breakdown */}
+                {Array.isArray(myCommissionHolds) && myCommissionHolds.length > 0 && (
+                  <div className="bg-white rounded-xl border border-amber-200/80 p-5 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-600" />
+                        <h3 className="text-sm font-bold text-[#253247]">Held Commissions Breakdown</h3>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        {myCommissionHolds.filter((h: any) => h.status === 'HELD').length} Active Hold{myCommissionHolds.filter((h: any) => h.status === 'HELD').length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                      <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead className="bg-[#F7F9FC] text-slate-500 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="p-3">Hold Type</th>
+                            <th className="p-3">Amount</th>
+                            <th className="p-3">Source Member</th>
+                            <th className="p-3">Release Condition</th>
+                            <th className="p-3">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {myCommissionHolds.map((h: any) => (
+                            <tr key={h.id} className="hover:bg-slate-50/80">
+                              <td className="p-3 font-semibold text-slate-900">
+                                {h.holdType === 'SECOND_DIRECT_RESERVE' ? '2nd Direct Hold Reserve' : 'Upgrade Commission Hold'}
+                              </td>
+                              <td className="p-3 font-bold text-amber-600">₹{(h.heldAmountINR ?? h.heldINR ?? 0).toLocaleString('en-IN')}</td>
+                              <td className="p-3 font-mono text-slate-600">
+                                {h.referredMember?.memberId ? `${h.referredMember.memberId} (${h.referredMember.fullName})` : '—'}
+                              </td>
+                              <td className="p-3 text-slate-600 text-[11px]">{h.releaseCondition}</td>
+                              <td className="p-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                  h.status === 'RELEASED'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {h.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* Authoritative Wallet Ledger Transactions Table with Clean Rows & Expandable Details */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -3586,7 +3783,8 @@ function DashboardContent() {
                   <button
                     type="button"
                     onClick={handleInitiateWithdrawal}
-                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px]"
+                    disabled={Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ArrowDownToLine className="w-4 h-4" />
                     <span>Request Withdrawal</span>
@@ -4807,103 +5005,83 @@ function DashboardContent() {
                 </div>
               </div>
             ) : paymentMethod === 'UPI' ? (
-              Boolean(
-                (paymentMethods?.upi?.enabled && paymentMethods?.upi?.merchantUpiVpa) ||
-                (paymentMethods?.upi?.isEnabled && paymentMethods?.upi?.merchantUpiVpa) ||
-                (paymentConfig?.isConfigured && paymentConfig?.merchantUpiVpa)
-              ) && (paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa) ? (
-                <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-4">
-                  <div className="flex flex-col sm:flex-row items-center gap-4">
-                    <div className="w-32 h-32 bg-white p-2 rounded-xl border border-blue-200 shadow-xs flex items-center justify-center shrink-0">
-                      {qrCodeDataUrl ? (
-                        <img
-                          src={qrCodeDataUrl}
-                          alt="Scan UPI QR Code to Pay"
-                          className="w-28 h-28 object-contain"
-                        />
-                      ) : (
-                        <div className="w-28 h-28 flex items-center justify-center text-slate-400">
-                          <QrCode className="w-20 h-20 animate-pulse text-blue-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-1.5 text-center sm:text-left text-xs flex-1">
-                      <div className="flex items-center gap-1.5 justify-center sm:justify-start">
-                        <span className="font-bold text-[#253247]">Verified Company UPI ID</span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          Verified
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 justify-center sm:justify-start">
-                        <code className="font-mono font-bold text-sm text-[#165DAD] bg-white px-2 py-0.5 rounded border border-blue-200">
-                          {paymentMethods?.upi?.merchantUpiVpa || paymentConfig?.merchantUpiVpa}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={handleCopyUpi}
-                          className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
-                          title="Copy UPI ID"
-                        >
-                          {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-slate-600">
-                        Payee: <strong>{paymentMethods?.upi?.merchantName || paymentConfig?.merchantName || 'ASKR EV Mobility'}</strong>
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        Payable:{' '}
-                        <strong className="text-[#165DAD]">
-                          {selectedRequestType === 'BASIC_ACTIVATION'
-                            ? '₹3,000'
-                            : selectedRequestType === 'FULL_ACTIVATION'
-                              ? '₹33,000'
-                              : '₹30,000'}
-                        </strong>
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        Scan using Google Pay, PhonePe, Paytm, BHIM, or any banking app.
-                      </p>
+              <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-amber-200/80">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-700" />
+                    <span className="font-bold text-xs text-amber-900 tracking-wide uppercase">
+                      UAT SIMULATION ONLY — REAL PAYMENTS DISABLED
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-800">
+                    SIMULATION
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600 font-medium">Synthetic Testing VPA:</span>
+                    <div className="flex items-center gap-1.5">
+                      <code className="font-mono font-bold text-xs text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                        simulation.uat@askrev.internal
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText('simulation.uat@askrev.internal');
+                          setCopiedUpi(true);
+                          setTimeout(() => setCopiedUpi(false), 2000);
+                        }}
+                        className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
+                        title="Copy Synthetic VPA"
+                      >
+                        {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#253247] mb-1">
-                      Enter UPI Reference / UTR Number <span className="text-red-500">*</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600 font-medium">Payable Amount:</span>
+                    <strong className="text-[#165DAD] font-mono text-sm">
+                      {selectedRequestType === 'BASIC_ACTIVATION'
+                        ? '₹3,000'
+                        : selectedRequestType === 'FULL_ACTIVATION'
+                          ? '₹33,000'
+                          : '₹30,000'}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-white rounded-lg border border-amber-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-[#253247]">
+                      Synthetic UTR Reference <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={paymentUtr}
-                      onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
-                      placeholder="e.g. 432109876543 (12-digit UTR)"
-                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Enter the 12-digit numeric or 12-22 alphanumeric UTR from your bank transaction receipt.
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const randomUtr = `UTR-SIM-${Math.floor(100000 + Math.random() * 900000)}`;
+                        setPaymentUtr(randomUtr);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>+ Insert Synthetic UTR</span>
+                    </button>
                   </div>
-
-                  <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 space-y-0.5">
-                    <span className="font-bold">Verification Notice:</span>
-                    <p className="text-[10px] text-amber-700 leading-relaxed">
-                      Payment requests remain PENDING until authorized administrator verification against actual bank/PSP records. Submitting a UTR number is for audit reconciliation and does not guarantee activation until verified.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-xs text-amber-800">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Merchant UPI Payment Setup in Progress</span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    The official company UPI VPA is pending verification by administration. Live UPI QR payment instructions are temporarily withheld until verified.
-                  </p>
-                  <p className="text-[11px] text-amber-700">
-                    Please contact support for booking payment assistance.
+                  <input
+                    type="text"
+                    required
+                    value={paymentUtr}
+                    onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
+                    placeholder="Click '+ Insert Synthetic UTR' or enter test UTR"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Live banking and UPI transfers are disabled. Use the synthetic UTR generator to submit simulation requests for admin verification testing.
                   </p>
                 </div>
-              )
+              </div>
             ) : null}
 
             {/* Modal Actions */}

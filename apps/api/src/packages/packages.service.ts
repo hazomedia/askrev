@@ -2040,5 +2040,47 @@ export class PackagesService {
       referredMember: userMap.get(h.referredMemberId) || null,
     }));
   }
+
+  /**
+   * Member Portal: Authenticated member's sponsor commission holds
+   */
+  async getMyCommissionHolds(userId: string) {
+    const holds = await this.prisma.commissionHold.findMany({
+      where: { sponsorId: userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const referredUserIds = holds.map((h) => h.referredMemberId);
+    const referredUsers = await this.prisma.user.findMany({
+      where: { id: { in: referredUserIds } },
+      select: { id: true, memberId: true, fullName: true, currentPackage: true },
+    });
+    const userMap = new Map(referredUsers.map((u) => [u.id, u]));
+
+    return holds.map((h) => {
+      const ref = userMap.get(h.referredMemberId);
+      const isReserve =
+        h.reason === 'BASIC_2ND_DIRECT_HOLD_RESERVE' || h.reason === 'BASIC_HOLD_RESERVE';
+      const releaseCondition = isReserve
+        ? 'Released upon qualification of 2nd direct referral (EV PRO or EV ULTRA)'
+        : 'Released upon sponsor upgrade to EV ULTRA';
+
+      return {
+        id: h.id,
+        reason: h.reason,
+        holdType: isReserve ? 'SECOND_DIRECT_RESERVE' : 'UPGRADE_COMMISSION_HOLD',
+        heldAmountINR: paiseToRupees(h.heldAmountPaise),
+        heldAmountPaise: h.heldAmountPaise.toString(),
+        status: h.status,
+        releaseCondition,
+        referredMemberId: ref?.memberId || 'N/A',
+        referredMemberName: ref?.fullName || 'Direct Member',
+        referredMemberPackage: ref?.currentPackage || 'N/A',
+        createdAt: h.createdAt,
+        releasedAt: h.releasedAt,
+        releaseTransactionId: h.releaseTransactionId,
+      };
+    });
+  }
 }
 

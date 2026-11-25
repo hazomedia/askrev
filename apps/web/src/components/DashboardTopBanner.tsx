@@ -32,10 +32,8 @@ const DEFAULT_FALLBACK_SLIDE: SlideItem = {
   subtitle: 'Smart • Connected • Sustainable Electric Mobility',
   badgeText: 'ELECTRIC MOBILITY',
   buttonText: 'EXPLORE FLEET',
-  desktopImageUrl:
-    '/uploads/hero/desktop/urban-fleet-hero---harsil-leo-_1795105582720_1e863ffb12443fbf.webp',
-  mobileImageUrl:
-    '/uploads/hero/desktop/urban-fleet-hero---harsil-leo-_1795105582720_1e863ffb12443fbf.webp',
+  desktopImageUrl: '/images/vehicles/jeep-hero.jpg',
+  mobileImageUrl: '/images/vehicles/jeep-hero.jpg',
   linkUrl: '/dashboard',
   altText: 'ASKR EV Electric Mobility',
   autoplayInterval: 5000,
@@ -191,6 +189,12 @@ export default function DashboardTopBanner({
                   height={600}
                   loading={idx === 0 ? 'eager' : 'lazy'}
                   decoding="async"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.src.includes('/images/vehicles/jeep-hero.jpg')) {
+                      target.src = '/images/vehicles/jeep-hero.jpg';
+                    }
+                  }}
                   className="w-full h-full object-cover object-center select-none"
                 />
               </picture>
