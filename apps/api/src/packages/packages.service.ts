@@ -509,9 +509,13 @@ export class PackagesService {
 
   async approveMembershipRequest(
     requestId: string,
-    adminId: string,
-    dto: ReviewMembershipRequestDto
+    adminId: string | { id?: string; email?: string },
+    dto?: ReviewMembershipRequestDto
   ) {
+    const reviewerId =
+      typeof adminId === 'object' && adminId !== null
+        ? adminId.id || adminId.email || 'SUPER_ADMIN'
+        : String(adminId || 'SUPER_ADMIN');
     const pendingImmediateAncestors: string[] = [];
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -572,9 +576,9 @@ export class PackagesService {
         where: { id: requestId },
         data: {
           status: MembershipRequestStatus.APPROVED,
-          reviewedBy: adminId,
+          reviewedBy: reviewerId,
           reviewedAt: new Date(),
-          adminNotes: dto.adminNotes || 'Approved in compliance simulation mode',
+          adminNotes: dto?.adminNotes || 'Approved in compliance simulation mode',
         },
       });
 
@@ -1035,7 +1039,7 @@ export class PackagesService {
       // 4. Record Administrative Audit Log
       await tx.auditLog.create({
         data: {
-          actorId: adminId,
+          actorId: reviewerId,
           action: 'APPROVE_MEMBERSHIP_REQUEST',
           entityType: 'MEMBERSHIP_REQUEST',
           entityId: req.id,
@@ -1084,9 +1088,14 @@ export class PackagesService {
 
   async rejectMembershipRequest(
     requestId: string,
-    adminId: string,
-    dto: ReviewMembershipRequestDto
+    adminId: string | { id?: string; email?: string },
+    dto?: ReviewMembershipRequestDto
   ) {
+    const reviewerId =
+      typeof adminId === 'object' && adminId !== null
+        ? adminId.id || adminId.email || 'SUPER_ADMIN'
+        : String(adminId || 'SUPER_ADMIN');
+
     return await this.prisma.$transaction(async (tx) => {
       const req = await tx.membershipRequest.findUnique({
         where: { id: requestId },
@@ -1115,22 +1124,22 @@ export class PackagesService {
         where: { id: requestId },
         data: {
           status: MembershipRequestStatus.REJECTED,
-          reviewedBy: adminId,
+          reviewedBy: reviewerId,
           reviewedAt: new Date(),
-          adminNotes: dto.adminNotes || 'Request rejected by administrative simulation review',
+          adminNotes: dto?.adminNotes || 'Request rejected by administrative simulation review',
         },
       });
 
       await tx.auditLog.create({
         data: {
-          actorId: adminId,
+          actorId: reviewerId,
           action: 'REJECT_MEMBERSHIP_REQUEST',
           entityType: 'MEMBERSHIP_REQUEST',
           entityId: req.id,
           metadata: {
             requestType: req.requestType,
             memberId: req.user?.memberId,
-            notes: dto.adminNotes,
+            notes: dto?.adminNotes,
             complianceMode: 'SIMULATION_ONLY',
           },
         },
@@ -1138,6 +1147,7 @@ export class PackagesService {
 
       return {
         message: 'Membership request has been rejected',
+        status: MembershipRequestStatus.REJECTED,
         request: {
           ...updated,
           feeINR: paiseToRupees(updated.feePaise),
