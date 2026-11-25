@@ -286,8 +286,14 @@ export default function AdminPage() {
   // API Fetchers
   const fetchOverview = async () => {
     try {
-      const data = await fetchApi<any>('/admin/overview');
+      const [data, flushes, holds] = await Promise.all([
+        fetchApi<any>('/admin/overview'),
+        fetchAdminBinaryFlushesApi().catch(() => []),
+        fetchAdminCommissionHoldsApi().catch(() => []),
+      ]);
       setOverview(data);
+      if (Array.isArray(flushes)) setBinaryFlushes(flushes);
+      if (Array.isArray(holds)) setCommissionHolds(holds);
     } catch (err: any) {
       console.error('Failed to fetch overview metrics:', err);
     }
@@ -722,6 +728,47 @@ export default function AdminPage() {
     { id: 'security', label: 'Settings → Security', icon: ShieldCheck },
   ];
 
+  // Derived / Database-backed Binary Flush Out metrics
+  const flushData = overview?.binaryFlushOut;
+  const isOverviewLoading = loading && !overview;
+
+  const totalFlushedPairs = flushData?.totalFlushedPairs ?? (binaryFlushes.reduce((acc: number, f: any) => acc + (Number(f.flushedPairs) || 0), 0));
+  const totalNotionalFlushedINR = flushData?.totalNotionalFlushedINR ?? (binaryFlushes.reduce((acc: number, f: any) => acc + (Number(f.notionalMissedINR) || 0), 0));
+  const flushAffectedMembersCount = flushData?.affectedMembersCount ?? (new Set(binaryFlushes.map((f: any) => f.userId)).size);
+
+  const flushPairsDisplay = isOverviewLoading ? '...' : `${Number(totalFlushedPairs).toLocaleString('en-IN')} Pairs`;
+  const flushAmountDisplay = isOverviewLoading ? '...' : `₹${Number(totalNotionalFlushedINR).toLocaleString('en-IN')}`;
+  const flushMembersDisplay = isOverviewLoading ? '...' : `${Number(flushAffectedMembersCount).toLocaleString('en-IN')} Members`;
+
+  // Derived / Database-backed Sponsor Bonus Hold metrics
+  const holdData = overview?.sponsorBonusHold;
+  const activeHoldsList = commissionHolds.filter((h: any) => h.status === 'HELD');
+  
+  const totalOutstandingHoldINR = holdData?.totalOutstandingHoldINR ?? activeHoldsList.reduce((acc: number, h: any) => acc + (Number(h.heldINR) || 0), 0);
+  const activeHoldRecordsCount = holdData?.activeHoldRecordsCount ?? activeHoldsList.length;
+  
+  const directQualReserveINR = holdData?.directQualificationReserveINR ?? activeHoldsList
+    .filter((h: any) => h.reason === 'BASIC_HOLD_RESERVE' || h.reason === 'DIRECT_QUALIFICATION_RESERVE' || Number(h.heldINR) === 1000)
+    .reduce((acc: number, h: any) => acc + (Number(h.heldINR) || 0), 0);
+  const directQualCount = holdData?.directQualificationCount ?? activeHoldsList
+    .filter((h: any) => h.reason === 'BASIC_HOLD_RESERVE' || h.reason === 'DIRECT_QUALIFICATION_RESERVE' || Number(h.heldINR) === 1000).length;
+
+  const upgradeHoldINR = holdData?.sponsorUpgradeHoldINR ?? activeHoldsList
+    .filter((h: any) => h.reason === 'SPONSOR_UPGRADE_HOLD' || h.reason === 'UPGRADE_HOLD' || Number(h.heldINR) === 9000)
+    .reduce((acc: number, h: any) => acc + (Number(h.heldINR) || 0), 0);
+  const upgradeHoldCount = holdData?.sponsorUpgradeCount ?? activeHoldsList
+    .filter((h: any) => h.reason === 'SPONSOR_UPGRADE_HOLD' || h.reason === 'UPGRADE_HOLD' || Number(h.heldINR) === 9000).length;
+
+  const walletHeldINR = overview?.financialLiabilities?.totalHeldCommissionsReserveINR ?? (holdData?.totalHeldCommissionsWalletINR ?? 0);
+
+  const holdAmountDisplay = isOverviewLoading ? '...' : `₹${Number(totalOutstandingHoldINR).toLocaleString('en-IN')}`;
+  const activeHoldRecordsDisplay = isOverviewLoading ? '...' : `${Number(activeHoldRecordsCount)} Active ${activeHoldRecordsCount === 1 ? 'Record' : 'Records'}`;
+  const directQualReserveDisplay = isOverviewLoading ? '...' : `₹${Number(directQualReserveINR).toLocaleString('en-IN')}`;
+  const directQualCountDisplay = isOverviewLoading ? '...' : `${directQualCount} ${directQualCount === 1 ? 'record' : 'records'}`;
+  const upgradeHoldDisplay = isOverviewLoading ? '...' : `₹${Number(upgradeHoldINR).toLocaleString('en-IN')}`;
+  const upgradeHoldCountDisplay = isOverviewLoading ? '...' : `${upgradeHoldCount} ${upgradeHoldCount === 1 ? 'record' : 'records'}`;
+  const walletHeldDisplay = isOverviewLoading ? '...' : `₹${Number(walletHeldINR).toLocaleString('en-IN')}`;
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#F7F9FC] flex items-center justify-center font-sans">
@@ -1098,6 +1145,178 @@ export default function AdminPage() {
                       </div>
                       <div className="text-[10px] text-purple-600 font-semibold mt-1">
                         {overview?.financialLiabilities?.totalBinaryMatchesSettled ?? 0} matches @ ₹3,000
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Additional Financial Summary Cards: Binary Flush Out & Sponsor Bonus Holds */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 mt-3.5">
+                    {/* 1. Binary Flush Out Card */}
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div>
+                        {/* Card Header */}
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-amber-600" />
+                            <span className="font-bold text-[#253247] text-sm">Binary Flush Out Audit</span>
+                          </div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            Non-Payable Historical
+                          </span>
+                        </div>
+
+                        {/* Top Metrics Row */}
+                        <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
+                          <div>
+                            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                              Total Flushed Pairs
+                            </div>
+                            <div className="text-2xl font-black text-slate-800 mt-0.5">
+                              {flushPairsDisplay}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                              Notional Flushed Amount
+                            </div>
+                            <div className="text-xl font-bold text-amber-700 mt-0.5">
+                              {flushAmountDisplay}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Secondary Stats Grid */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                              Affected Members
+                            </span>
+                            <span className="font-bold text-slate-700 text-sm">
+                              {flushMembersDisplay}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                              Wallet Liability Impact
+                            </span>
+                            <span className="font-semibold text-emerald-700 text-xs flex items-center gap-1 mt-0.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>₹0 (Excluded from GL 2000)</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Non-payable Policy Badge / Reassurance */}
+                        <div className="mt-3 bg-amber-50/60 rounded-lg p-2.5 text-[11px] text-amber-900 border border-amber-100 flex items-start gap-2">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                          <span>
+                            Flushed matching volume represents pairs exceeding daily capping limits. These are historical non-payable audit values and <strong>never</strong> create wallet liabilities or payable debt.
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Footer with Link to Binary Flush Audit Report */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">Deterministic Flush Audit</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('matrix');
+                            setMatrixSubTab('flushes');
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[#165DAD] hover:text-[#124b8d] transition-colors"
+                        >
+                          <span>View Flush Report</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 2. Sponsor Bonus Hold Card */}
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div>
+                        {/* Card Header */}
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <Lock className="w-4 h-4 text-indigo-600" />
+                            <span className="font-bold text-[#253247] text-sm">Sponsor Bonus Holds</span>
+                          </div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            Active Holding Reserve
+                          </span>
+                        </div>
+
+                        {/* Top Metrics Row */}
+                        <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
+                          <div>
+                            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                              Total Outstanding Hold
+                            </div>
+                            <div className="text-2xl font-black text-indigo-700 mt-0.5">
+                              {holdAmountDisplay}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                              Active Hold Records
+                            </div>
+                            <div className="text-xl font-bold text-slate-800 mt-0.5">
+                              {activeHoldRecordsDisplay}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Specific Sub-breakdowns: ₹1,000 Direct Qualification vs ₹9,000 Sponsor Upgrade */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                          <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                            <div className="text-[10px] uppercase font-semibold text-slate-500">
+                              ₹1,000 Direct Qual Reserve
+                            </div>
+                            <div className="text-sm font-bold text-slate-800 mt-0.5">
+                              {directQualReserveDisplay}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {directQualCountDisplay}
+                            </div>
+                          </div>
+                          <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                            <div className="text-[10px] uppercase font-semibold text-slate-500">
+                              ₹9,000 Sponsor Upgrade Hold
+                            </div>
+                            <div className="text-sm font-bold text-slate-800 mt-0.5">
+                              {upgradeHoldDisplay}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {upgradeHoldCountDisplay}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Wallet Balance Reconciliation Verification */}
+                        <div className="mt-3 bg-emerald-50/70 rounded-lg p-2.5 text-[11px] text-emerald-900 border border-emerald-100 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>Wallet Held Balance (GL 2010):</span>
+                          </div>
+                          <span className="font-bold font-mono text-emerald-800">
+                            {walletHeldDisplay}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Footer with Link to Sponsor Hold Reports */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">Reconciled Active Holds</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('sponsor-holds');
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[#165DAD] hover:text-[#124b8d] transition-colors"
+                        >
+                          <span>View Hold Report</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   </div>

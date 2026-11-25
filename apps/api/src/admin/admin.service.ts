@@ -141,6 +141,75 @@ export class AdminService {
       if (dr !== cr) unbalancedJournalCount++;
     }
 
+    // 10. Binary Flush Out Aggregates
+    const [allFlushes, placementsWithFlushes] = await Promise.all([
+      this.prisma.binaryMatchFlush.findMany({
+        select: { userId: true, flushedPairs: true, notionalMissedPaise: true },
+      }),
+      this.prisma.binaryPlacement.findMany({
+        where: { cumulativeFlushedPairs: { gt: 0 } },
+        select: { userId: true, cumulativeFlushedPairs: true, cumulativeFlushedPaise: true },
+      }),
+    ]);
+
+    let totalFlushedPairs = 0;
+    let totalNotionalFlushedPaise = 0n;
+    const flushAffectedUserIds = new Set<string>();
+
+    if (allFlushes.length > 0) {
+      for (const f of allFlushes) {
+        totalFlushedPairs += f.flushedPairs;
+        totalNotionalFlushedPaise += f.notionalMissedPaise;
+        flushAffectedUserIds.add(f.userId);
+      }
+    } else {
+      for (const p of placementsWithFlushes) {
+        totalFlushedPairs += p.cumulativeFlushedPairs;
+        totalNotionalFlushedPaise += p.cumulativeFlushedPaise;
+        flushAffectedUserIds.add(p.userId);
+      }
+    }
+
+    // 11. Sponsor Commission Holds Breakdown
+    const allCommissionHolds = await this.prisma.commissionHold.findMany({
+      select: {
+        id: true,
+        sponsorId: true,
+        heldAmountPaise: true,
+        status: true,
+        reason: true,
+      },
+    });
+
+    const activeHolds = allCommissionHolds.filter((h) => h.status === 'HELD');
+    let totalActiveHoldPaise = 0n;
+    let directQualificationReservePaise = 0n;
+    let sponsorUpgradeHoldPaise = 0n;
+    let directQualificationCount = 0;
+    let sponsorUpgradeCount = 0;
+
+    for (const h of activeHolds) {
+      totalActiveHoldPaise += h.heldAmountPaise;
+      if (
+        h.reason === 'BASIC_HOLD_RESERVE' ||
+        h.reason === 'DIRECT_QUALIFICATION_RESERVE' ||
+        h.heldAmountPaise === 100000n
+      ) {
+        directQualificationReservePaise += h.heldAmountPaise;
+        directQualificationCount++;
+      } else if (
+        h.reason === 'SPONSOR_UPGRADE_HOLD' ||
+        h.reason === 'UPGRADE_HOLD' ||
+        h.heldAmountPaise === 900000n
+      ) {
+        sponsorUpgradeHoldPaise += h.heldAmountPaise;
+        sponsorUpgradeCount++;
+      } else {
+        directQualificationReservePaise += h.heldAmountPaise;
+        directQualificationCount++;
+      }
+    }
+
     return {
       memberships: {
         totalRegistered: totalMembers,
@@ -171,6 +240,21 @@ export class AdminService {
         totalVouchersRedeemedINR: paiseToRupees(totalVouchersRedeemedPaise),
         totalBinaryRewardsINR: paiseToRupees(totalBinaryRewardPaise),
         totalBinaryMatchesSettled: totalBinaryMatchesCount,
+      },
+      binaryFlushOut: {
+        totalFlushedPairs,
+        totalNotionalFlushedINR: paiseToRupees(totalNotionalFlushedPaise),
+        affectedMembersCount: flushAffectedUserIds.size,
+      },
+      sponsorBonusHold: {
+        totalOutstandingHoldINR: paiseToRupees(totalActiveHoldPaise),
+        activeHoldRecordsCount: activeHolds.length,
+        directQualificationReserveINR: paiseToRupees(directQualificationReservePaise),
+        directQualificationCount,
+        sponsorUpgradeHoldINR: paiseToRupees(sponsorUpgradeHoldPaise),
+        sponsorUpgradeCount,
+        totalHeldCommissionsWalletINR: paiseToRupees(totalHeldCommissionsPaise),
+        isReconciled: totalActiveHoldPaise === totalHeldCommissionsPaise,
       },
       commerce: {
         totalBookings,
