@@ -209,12 +209,35 @@ function createStatefulMockPrisma() {
         return h;
       },
       findFirst: async ({ where }: any) => {
-        return state.holds.find((h) => h.sponsorId === where.sponsorId && h.status === where.status) ?? null;
+        return state.holds.find((h) => {
+          if (where?.sponsorId && h.sponsorId !== where.sponsorId) return false;
+          if (where?.referredMemberId && h.referredMemberId !== where.referredMemberId) return false;
+          if (where?.status && h.status !== where.status) return false;
+          return true;
+        }) ?? null;
+      },
+      findMany: async ({ where }: any) => {
+        return state.holds.filter((h) => {
+          if (where?.sponsorId && h.sponsorId !== where.sponsorId) return false;
+          if (where?.status && h.status !== where.status) return false;
+          return true;
+        });
       },
       update: async ({ where, data }: any) => {
         const h = state.holds.find((x) => x.id === where.id);
-        Object.assign(h, data);
+        if (h) Object.assign(h, data);
         return h;
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+        for (const h of state.holds) {
+          if (where?.id?.in && !where.id.in.includes(h.id)) continue;
+          if (where?.sponsorId && h.sponsorId !== where.sponsorId) continue;
+          if (where?.status && h.status !== where.status) continue;
+          Object.assign(h, data);
+          count++;
+        }
+        return { count };
       },
     },
     pendingRecovery: {
@@ -225,6 +248,13 @@ function createStatefulMockPrisma() {
       },
     },
     shoppingVoucher: {
+      findFirst: async ({ where }: any) => {
+        return state.vouchers.find((v) => {
+          if (where?.userId && v.userId !== where.userId) return false;
+          if (where?.issuedReason && v.issuedReason !== where.issuedReason) return false;
+          return true;
+        }) ?? null;
+      },
       create: async ({ data }: any) => {
         const v = { id: nextId('vchr'), createdAt: new Date(), ...data };
         state.vouchers.push(v);

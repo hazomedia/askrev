@@ -116,11 +116,12 @@ describe('CommissionSimulatorService', () => {
       // Max matches per day is 15
       expect(match.matchesConsumed).toBe(15);
       expect(match.cappedOutMatches).toBe(5);
-      // Only payable units are consumed; capped-out & unmatched units remain carried forward
-      expect(match.leftUnitsUsed).toBe(15);
-      expect(match.rightUnitsUsed).toBe(15);
-      expect(match.newCarryLeft).toBe(5);
-      expect(match.newCarryRight).toBe(25);
+      expect(match.flushedPairs).toBe(5);
+      // All 20 matched units are consumed; 5 capped-out pairs flushed, 20 unmatched units carried forward
+      expect(match.leftUnitsUsed).toBe(20);
+      expect(match.rightUnitsUsed).toBe(20);
+      expect(match.newCarryLeft).toBe(0);
+      expect(match.newCarryRight).toBe(20);
       // 15 matches * ₹3,000 = ₹45,000
       expect(match.proposedRewardINR).toBe(45000);
     });

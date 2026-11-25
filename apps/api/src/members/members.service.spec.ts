@@ -9,6 +9,7 @@ interface MemberMockState {
   wallets: Map<string, any>;
   journals: any[];
   matchEvents: any[];
+  flushes: any[];
   auditLogs: any[];
 }
 
@@ -19,6 +20,7 @@ function createMembersMockPrisma() {
     wallets: new Map(),
     journals: [],
     matchEvents: [],
+    flushes: [] as any[],
     auditLogs: [],
   };
 
@@ -263,6 +265,18 @@ function createMembersMockPrisma() {
         return ev;
       },
     },
+    binaryMatchFlush: {
+      findUnique: async ({ where }: any) =>
+        state.flushes.find((f: any) => f.idempotencyKey === where.idempotencyKey) || null,
+      create: async ({ data }: any) => {
+        const fl = { id: nextId('bmf'), ...data, createdAt: new Date() };
+        state.flushes.push(fl);
+        return fl;
+      },
+      findMany: async ({ where }: any) => {
+        return state.flushes.filter((f: any) => !where?.userId || f.userId === where.userId);
+      },
+    },
     auditLog: {
       create: async ({ data }: any) => {
         const log = { id: nextId('aud'), ...data };
@@ -414,7 +428,7 @@ describe('MembersService Binary Placement, 1:1 Matching & Subtree Auth', () => {
       expect.objectContaining({ account: '2000_MEMBER_EARNINGS_PAYABLE', debitPaise: 0n, creditPaise: 300000n }),
     ]);
 
-    // Daily cap check: set 20L : 25R (fresh date) -> 15 settled, 5 capped out -> carryLeft = 5, carryRight = 10
+    // Daily cap check: set 20L : 25R (fresh date) -> 15 settled, 5 capped out (flushed) -> carryLeft = 0, carryRight = 5
     const capBp = mock.state.placements.get(mFull1.id);
     capBp.carryLeftPaise = 20n;
     capBp.carryRightPaise = 25n;
@@ -422,16 +436,17 @@ describe('MembersService Binary Placement, 1:1 Matching & Subtree Auth', () => {
     expect(capRes.matchesEvaluated).toBe(20);
     expect(capRes.matchesSettled).toBe(15);
     expect(capRes.cappedOutMatches).toBe(5);
+    expect(capRes.flushedPairs).toBe(5);
     expect(capRes.rewardINR).toBe(45000);
-    expect(capRes.carryLeft).toBe(5);
-    expect(capRes.carryRight).toBe(10);
+    expect(capRes.carryLeft).toBe(0);
+    expect(capRes.carryRight).toBe(5);
     expect(capRes.dailyCapRemaining).toBe(0);
 
-    // Same-day second run settles 0 and preserves carry 5L:10R
+    // Same-day second run settles 0 and preserves carry 0L:5R
     const capRes2 = await service.settleBinaryMatching(mFull1.id, 'idem-cap-2');
     expect(capRes2.matchesSettled).toBe(0);
-    expect(capRes2.carryLeft).toBe(5);
-    expect(capRes2.carryRight).toBe(10);
+    expect(capRes2.carryLeft).toBe(0);
+    expect(capRes2.carryRight).toBe(5);
 
     // Unqualified member cannot earn matching payouts
     const unqRes = await service.settleBinaryMatching(mBasic1.id);

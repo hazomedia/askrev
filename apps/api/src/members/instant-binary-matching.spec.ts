@@ -10,6 +10,7 @@ export function createInstantMatchingMockPrisma() {
     wallets: new Map<string, any>(),
     journals: [] as any[],
     matchEvents: [] as any[],
+    flushes: [] as any[],
     auditLogs: [] as any[],
     outbox: new Map<string, any>(),
   };
@@ -55,6 +56,8 @@ export function createInstantMatchingMockPrisma() {
       matchedVolumeRightPaise: 0n,
       totalMatchesConsumed: 0,
       totalRewardEarnedPaise: 0n,
+      cumulativeFlushedPairs: 0,
+      cumulativeFlushedPaise: 0n,
       lastMatchDate: null,
       dailyMatchesCount: 0,
     });
@@ -340,6 +343,18 @@ export function createInstantMatchingMockPrisma() {
         return ev;
       },
     },
+    binaryMatchFlush: {
+      findUnique: async ({ where }: any) =>
+        state.flushes.find((f: any) => f.idempotencyKey === where.idempotencyKey) || null,
+      create: async ({ data }: any) => {
+        const fl = { id: nextId('bmf'), ...data, createdAt: new Date() };
+        state.flushes.push(fl);
+        return fl;
+      },
+      findMany: async ({ where }: any) => {
+        return state.flushes.filter((f: any) => !where?.userId || f.userId === where.userId);
+      },
+    },
     binaryMatchingOutbox: {
       create: async ({ data }: any) => {
         const item = {
@@ -539,42 +554,46 @@ describe('Instant Binary Matching Engine Specification & Invariants', () => {
     expect(res.rewardINR).toBe(45000);
     expect(res.dailyCapRemaining).toBe(0);
 
-    // Carried forward: 20 - 15 = 5L; 18 - 15 = 3R
-    expect(res.carryLeft).toBe(5);
-    expect(res.carryRight).toBe(3);
+    // Carried forward: 20 - 18 = 2L; 18 - 18 = 0R (capped-out 3 pairs flushed)
+    expect(res.carryLeft).toBe(2);
+    expect(res.carryRight).toBe(0);
 
     const bpAfter = mock.state.placements.get(memberA.id);
-    expect(bpAfter.carryLeftPaise).toBe(5n);
-    expect(bpAfter.carryRightPaise).toBe(3n);
+    expect(bpAfter.carryLeftPaise).toBe(2n);
+    expect(bpAfter.carryRightPaise).toBe(0n);
     expect(bpAfter.dailyMatchesCount).toBe(15);
 
-    // Immediate second settlement on the same IST day settles 0 pairs and preserves 5L : 3R
+    // Immediate second settlement on the same IST day settles 0 pairs and preserves 2L : 0R
     const resSameDay = await membersService.settleBinaryMatching(memberA.id, 'match-same-day-retry');
     expect(resSameDay.matchesSettled).toBe(0);
-    expect(resSameDay.carryLeft).toBe(5);
-    expect(resSameDay.carryRight).toBe(3);
+    expect(resSameDay.carryLeft).toBe(2);
+    expect(resSameDay.carryRight).toBe(0);
     expect(resSameDay.dailyCapRemaining).toBe(0);
   });
 
-  it('Scenario 4 (Non-Qualified Beneficiary): preserves volume with 0 payout until FULL qualification', async () => {
+  it('Scenario 4 (Non-Qualified Beneficiary): flushes matched volume with 0 payout; earns matching rewards after FULL qualification', async () => {
     const bp = mock.state.placements.get(memberC.id);
     bp.carryLeftPaise = 4n;
     bp.carryRightPaise = 4n;
 
-    // memberC is BASIC (isFullQualified = false)
+    // memberC is BASIC (isFullQualified = false) -> 4 pairs flushed
     const res = await membersService.settleBinaryMatching(memberC.id);
     expect(res.isQualified).toBe(false);
+    expect(res.isFlushed).toBe(true);
+    expect(res.flushedPairs).toBe(4);
     expect(res.matchesSettled).toBe(0);
     expect(res.rewardINR).toBe(0);
-    expect(res.carryLeft).toBe(4);
-    expect(res.carryRight).toBe(4);
+    expect(res.carryLeft).toBe(0);
+    expect(res.carryRight).toBe(0);
 
     // Wallet untouched
     expect(mock.state.wallets.get(memberC.id).availableEarningsPaise).toBe(0n);
 
-    // Member upgrades to FULL
+    // Member upgrades to FULL and receives new volume 4L : 4R
     mock.state.users.get(memberC.id).isFullQualified = true;
     mock.state.users.get(memberC.id).currentPackage = MembershipPackage.FULL;
+    bp.carryLeftPaise = 4n;
+    bp.carryRightPaise = 4n;
 
     // After qualification, matches are unlocked instantly!
     const resAfter = await membersService.settleBinaryMatching(memberC.id);
@@ -630,11 +649,12 @@ describe('Instant Binary Matching Engine Specification & Invariants', () => {
     expect(wallet.availableEarningsPaise).toBe(4500000n);
     expect(wallet.totalEarnedPaise).toBe(4500000n);
 
-    // Carry forward must be EXACTLY 25 - 15 = 10L : 10R
+    // Carry forward must be EXACTLY 25 - 25 = 0L : 0R (15 settled, 10 flushed)
     const finalBp = mock.state.placements.get(memberA.id);
-    expect(finalBp.carryLeftPaise).toBe(10n);
-    expect(finalBp.carryRightPaise).toBe(10n);
-    expect(finalBp.totalMatchesConsumed).toBe(15);
+    expect(finalBp.carryLeftPaise).toBe(0n);
+    expect(finalBp.carryRightPaise).toBe(0n);
+    expect(finalBp.totalMatchesConsumed).toBe(25);
+    expect(finalBp.cumulativeFlushedPairs).toBe(10);
   });
 
   it('Scenario 7 (Self-Healing Outbox Recovery): retries pending or failed tasks on startup / sweep', async () => {

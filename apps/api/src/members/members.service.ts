@@ -528,6 +528,7 @@ export class MembersService {
             entityId: flushRecord.id,
             metadata: {
               memberId: user.memberId,
+              reason: 'BASIC_UNQUALIFIED_FLUSH',
               flushedPairs: matchesFound,
               notionalMissedINR: paiseToRupees(notionalMissedPaise),
               previousCarryLeft: totalLeft,
@@ -547,6 +548,7 @@ export class MembersService {
           matchesSettled: 0,
           flushedPairs: matchesFound,
           notionalMissedINR: paiseToRupees(notionalMissedPaise),
+          rewardINR: 0,
           carryLeft: newCarryLeft,
           carryRight: newCarryRight,
           reason: `${matchesFound} binary match pairs flushed without monetary reward for Basic member. Upgrade to EV ULTRA to earn future binary matching rewards.`,
@@ -567,18 +569,24 @@ export class MembersService {
       const matchesFound = Math.min(totalLeft, totalRight);
 
       // 5. Apply Daily Cap: Max 15 matches (₹45,000) per calendar day
+      // Approved rule: All matched pairs are consumed.
+      // Pairs <= remaining cap slots are paid (₹3,000/pair).
+      // Pairs > remaining cap slots are flushed out as non-payable.
+      // Unmatched volume remains carried forward.
       const remainingCapSlots = Math.max(0, FINANCIAL_RULES.BINARY_DAILY_MAX_MATCHES - todaySettledMatches);
       const payableMatches = Math.min(matchesFound, remainingCapSlots);
       const cappedOutMatches = matchesFound - payableMatches;
 
-      // Consume 1 Left and 1 Right unit per payable match
-      const payableLeftUsed = payableMatches;
-      const payableRightUsed = payableMatches;
+      // Consume all matched pairs from carry
+      const totalUnitsUsed = matchesFound;
+      const payableLeftUsed = totalUnitsUsed;
+      const payableRightUsed = totalUnitsUsed;
 
-      // Unmatched & capped-out volume is preserved in carry-forward! (Zero silent volume loss)
-      const newCarryLeft = totalLeft - payableLeftUsed;
-      const newCarryRight = totalRight - payableRightUsed;
+      // Only unmatched units are preserved in carry-forward
+      const newCarryLeft = totalLeft - totalUnitsUsed;
+      const newCarryRight = totalRight - totalUnitsUsed;
       const rewardPaise = BigInt(payableMatches) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE;
+      const cappedNotionalPaise = BigInt(cappedOutMatches) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE;
 
       let journalEntryId: string | null = null;
 
@@ -627,24 +635,80 @@ export class MembersService {
         journalEntryId = journal.id;
       }
 
+      // Record non-payable FLUSHED event if capped out matches > 0
+      let capFlushRecord: any = null;
+      if (cappedOutMatches > 0) {
+        const capFlushKey = idempotencyKey
+          ? `${idempotencyKey}-CAP-FLUSH`
+          : `FLUSH-CAP-${todayStr}-${beneficiaryUserId}-${placement.totalMatchesConsumed}`;
+
+        const existingCapFlush = await tx.binaryMatchFlush.findUnique({
+          where: { idempotencyKey: capFlushKey },
+        });
+
+        if (!existingCapFlush) {
+          capFlushRecord = await tx.binaryMatchFlush.create({
+            data: {
+              userId: beneficiaryUserId,
+              matchDate: todayStr,
+              flushedPairs: cappedOutMatches,
+              notionalMissedPaise: cappedNotionalPaise,
+              previousCarryLeft: totalLeft,
+              previousCarryRight: totalRight,
+              newCarryLeft,
+              newCarryRight,
+              idempotencyKey: capFlushKey,
+            },
+          });
+        } else {
+          capFlushRecord = existingCapFlush;
+        }
+
+        await tx.auditLog.create({
+          data: {
+            actorId: beneficiaryUserId,
+            action: 'BINARY_MATCH_FLUSHED',
+            entityType: 'BINARY_MATCH_FLUSH',
+            entityId: capFlushRecord.id,
+            metadata: {
+              memberId: user.memberId,
+              reason: 'DAILY_CAPPING_LIMIT',
+              flushedPairs: cappedOutMatches,
+              notionalMissedINR: paiseToRupees(cappedNotionalPaise),
+              previousCarryLeft: totalLeft,
+              previousCarryRight: totalRight,
+              newCarryLeft,
+              newCarryRight,
+              complianceMode: 'SIMULATION_ONLY',
+            },
+          },
+        });
+      }
+
       // 7. Update BinaryPlacement State
       const updatedPlacement = await tx.binaryPlacement.update({
         where: { userId: beneficiaryUserId },
         data: {
           carryLeftPaise: BigInt(newCarryLeft),
           carryRightPaise: BigInt(newCarryRight),
-          matchedVolumeLeftPaise: { increment: BigInt(payableLeftUsed) },
-          matchedVolumeRightPaise: { increment: BigInt(payableRightUsed) },
-          totalMatchesConsumed: { increment: payableMatches },
+          matchedVolumeLeftPaise: { increment: BigInt(totalUnitsUsed) },
+          matchedVolumeRightPaise: { increment: BigInt(totalUnitsUsed) },
+          totalMatchesConsumed: { increment: matchesFound },
           totalRewardEarnedPaise: { increment: rewardPaise },
+          ...(cappedOutMatches > 0
+            ? {
+                cumulativeFlushedPairs: { increment: cappedOutMatches },
+                cumulativeFlushedPaise: { increment: cappedNotionalPaise },
+              }
+            : {}),
           lastMatchDate: todayStr,
           dailyMatchesCount: isSameDay ? { increment: payableMatches } : payableMatches,
         },
       });
 
-      // 8. Record Immutable BinaryMatchEvent History & Audit Log (when payable matches > 0 or explicit idempotency key provided)
+      // 8. Record Immutable BinaryMatchEvent History & Audit Log (when payable matches > 0, capped-out matches > 0, or explicit idempotency key provided)
       let matchEvent: any = null;
-      if (payableMatches > 0 || idempotencyKey) {
+      if (payableMatches > 0 || cappedOutMatches > 0 || idempotencyKey) {
         matchEvent = await tx.binaryMatchEvent.create({
           data: {
             userId: beneficiaryUserId,
@@ -652,8 +716,8 @@ export class MembersService {
             matchesEvaluated: matchesFound,
             matchesSettled: payableMatches,
             cappedOutMatches,
-            leftUnitsUsed: payableLeftUsed,
-            rightUnitsUsed: payableRightUsed,
+            leftUnitsUsed: totalUnitsUsed,
+            rightUnitsUsed: totalUnitsUsed,
             previousCarryLeft: totalLeft,
             previousCarryRight: totalRight,
             newCarryLeft,
@@ -678,6 +742,7 @@ export class MembersService {
               matchesFound,
               payableMatches,
               cappedOutMatches,
+              reason: cappedOutMatches > 0 ? 'DAILY_CAPPING_LIMIT' : undefined,
               rewardINR: paiseToRupees(rewardPaise),
               carryLeft: newCarryLeft,
               carryRight: newCarryRight,
@@ -695,6 +760,7 @@ export class MembersService {
         matchesEvaluated: matchesFound,
         matchesSettled: payableMatches,
         cappedOutMatches,
+        flushedPairs: cappedOutMatches,
         rewardPaise: rewardPaise.toString(),
         rewardINR: paiseToRupees(rewardPaise),
         carryLeft: newCarryLeft,

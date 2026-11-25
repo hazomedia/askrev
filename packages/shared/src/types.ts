@@ -133,6 +133,7 @@ export interface BinaryMatchResult {
   newCarryLeft: number;
   newCarryRight: number;
   cappedOutMatches: number;
+  flushedPairs?: number;
   proposedRewardPaise: bigint;
   proposedRewardINR: number;
   isQualified: boolean;

@@ -66,7 +66,7 @@ import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
 import WelcomePopupModal from '../../components/WelcomePopupModal';
 
-type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
+type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
 
 function DashboardContent() {
   const router = useRouter();
@@ -257,6 +257,7 @@ function DashboardContent() {
         'membership',
         'team',
         'binary',
+        'legacy',
         'wallets',
         'vouchers',
         'bookings',
@@ -1111,6 +1112,7 @@ function DashboardContent() {
       { id: 'withdraw_action', label: 'Withdraw', icon: ArrowDownToLine, isAction: true, onClick: handleInitiateWithdrawal },
       { id: 'team', label: 'My Direct Team', icon: Users, count: directTeam?.directs?.length },
       { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
+      { id: 'legacy', label: 'EV Legacy', icon: Layers },
       { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
       { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
       { id: 'bookings', label: 'My Bookings', icon: Bike, count: membershipRequests.length + userBookings.length },
@@ -1726,6 +1728,36 @@ function DashboardContent() {
                     }
                   }
 
+                  // Database-backed EV Legacy Matrix calculations:
+                  // Levels 2, 4, 6, 8 (Even): Earnings Wallet (EV Legacy Income)
+                  // Levels 1, 3, 5, 7 (Odd): EV Club Leadership Pool
+                  const matrixStats = matrixOverview?.levelStats || matrixOverview?.levelBreakdown || [];
+                  let rawWalletQualified = 0;
+                  let rawEvClubQualified = 0;
+                  let rawWalletProjected = 0;
+                  let rawEvClubProjected = 0;
+
+                  for (const lvl of matrixStats) {
+                    const isEven = (lvl.level % 2 === 0);
+                    const qualIncome = Number(lvl.earnedIncomeINR ?? lvl.qualifiedEarningsINR ?? 0);
+                    const projIncome = Number(lvl.potentialIncomeINR ?? lvl.projectedEarningsINR ?? 0);
+                    if (isEven) {
+                      rawWalletQualified += qualIncome;
+                      rawWalletProjected += projIncome;
+                    } else {
+                      rawEvClubQualified += qualIncome;
+                      rawEvClubProjected += projIncome;
+                    }
+                  }
+
+                  const legacyIncomeDisplay =
+                    matrixOverview?.metrics?.earningsWalletQualifiedINR ??
+                    (matrixOverview?.isQualified ? (matrixOverview?.metrics?.earningsWalletProjectedINR ?? rawWalletProjected) : rawWalletQualified);
+
+                  const evClubFundDisplay =
+                    matrixOverview?.metrics?.evClubQualifiedINR ??
+                    (matrixOverview?.isQualified ? (matrixOverview?.metrics?.evClubProjectedINR ?? rawEvClubProjected) : rawEvClubQualified);
+
                   return (
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -1793,7 +1825,10 @@ function DashboardContent() {
                         </div>
 
                         {/* 4. EV Legacy Income: Indigo -> Muted Violet */}
-                        <div className="rounded-2xl p-5 bg-gradient-to-br from-[#354D9B] via-[#484A9F] to-[#6546A3] text-white shadow-md shadow-indigo-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                        <div
+                          onClick={() => setActiveTab('legacy')}
+                          className="rounded-2xl p-5 bg-gradient-to-br from-[#354D9B] via-[#484A9F] to-[#6546A3] text-white shadow-md shadow-indigo-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5 cursor-pointer"
+                        >
                           <div className="flex items-center justify-between text-white/80">
                             <span className="text-xs font-bold uppercase tracking-wider">EV Legacy Income</span>
                             <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
@@ -1802,22 +1837,25 @@ function DashboardContent() {
                           </div>
                           <div className="my-2">
                             <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                              ₹0
+                              ₹{legacyIncomeDisplay.toLocaleString('en-IN')}
                             </div>
                             <div className="text-[11px] text-purple-200/90 font-medium mt-0.5">
-                              Level Income
+                              Level Income (Even Levels)
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-purple-200/80">{Math.min(activeDirectsCount, 3)}/3 Active</span>
+                            <span className="text-purple-200/80">{Math.min(activeDirectsCount, 3)}/3 Active Directs</span>
                             <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
-                              {activeDirectsCount >= 3 ? 'Qualified' : 'Pending'}
+                              {activeDirectsCount >= 3 ? 'Qualified' : 'Pending Directs'}
                             </span>
                           </div>
                         </div>
 
                         {/* 5. EV Club Fund: Emerald Green -> Deep Teal */}
-                        <div className="rounded-2xl p-5 bg-gradient-to-br from-[#126F61] via-[#0E5E4D] to-[#064E3B] text-white shadow-md shadow-emerald-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5">
+                        <div
+                          onClick={() => setActiveTab('legacy')}
+                          className="rounded-2xl p-5 bg-gradient-to-br from-[#126F61] via-[#0E5E4D] to-[#064E3B] text-white shadow-md shadow-emerald-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5 cursor-pointer"
+                        >
                           <div className="flex items-center justify-between text-white/80">
                             <span className="text-xs font-bold uppercase tracking-wider">EV Club Fund</span>
                             <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
@@ -1826,14 +1864,14 @@ function DashboardContent() {
                           </div>
                           <div className="my-2">
                             <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                              ₹0
+                              ₹{evClubFundDisplay.toLocaleString('en-IN')}
                             </div>
                             <div className="text-[11px] text-teal-200/90 font-medium mt-0.5">
-                              Leadership Pool
+                              Leadership Pool (Odd Levels)
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-teal-200/80">Status</span>
+                            <span className="text-teal-200/80">Odd Levels (1,3,5,7)</span>
                             <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
                               Leadership Pool
                             </span>
@@ -1842,191 +1880,169 @@ function DashboardContent() {
                       </div>
 
                       {/* =========================================================================
-                          PERMANENT INCOME AUDIT SUMMARY CARDS (BINARY FLUSH OUT & SPONSOR HOLDS)
-                          Always visible for FREE, BASIC, and FULL members (including zero balances)
+                          SIMPLIFIED SUMMARY CARDS (BINARY FLUSH OUT & SPONSOR HOLDS)
+                          Only shown for EV GO (FREE) & EV PRO (BASIC) members.
+                          EV ULTRA (FULL) members: completely hidden with no empty space.
                           ========================================================================= */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Card 1 — Binary Flush Out */}
-                        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5">
-                          <div>
-                            {/* Card Header */}
-                            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-                              <div className="flex items-center gap-2">
-                                <Zap className="w-4 h-4 text-amber-600" />
-                                <span className="font-bold text-[#253247] text-sm">Binary Flush Out</span>
+                      {user?.currentPackage !== 'FULL' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Card 1 — Binary Flush Out */}
+                          <div className={`bg-white p-5 rounded-2xl border shadow-xs flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5 ${
+                            flushedPairs > 0 ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200/90'
+                          }`}>
+                            <div>
+                              {/* Card Header */}
+                              <div className="flex items-center justify-between text-xs font-semibold">
+                                <div className="flex items-center gap-2">
+                                  <Zap className={`w-4 h-4 ${flushedPairs > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+                                  <span className="font-bold text-[#253247] text-sm">Binary Flush Out</span>
+                                </div>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                  flushedPairs > 0
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}>
+                                  Missed Income
+                                </span>
                               </div>
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                                Non-Payable Historical
-                              </span>
-                            </div>
 
-                            {/* Primary Metrics Row */}
-                            <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
-                              <div>
-                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                                  Total Flushed Pairs
+                              {/* Primary Metrics Row */}
+                              <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
+                                <div>
+                                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                    Missed Income
+                                  </div>
+                                  <div className={`text-2xl font-black mt-0.5 ${
+                                    flushedPairs > 0 ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>
+                                    ₹{flushedAmountINR.toLocaleString('en-IN')}
+                                  </div>
                                 </div>
-                                <div className="text-2xl font-black text-slate-800 mt-0.5">
-                                  {flushedPairs} {flushedPairs === 1 ? 'Pair' : 'Pairs'}
+                                <div className="text-right">
+                                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                    Total Flushed Pairs
+                                  </div>
+                                  <div className="text-xl font-bold text-slate-800 mt-0.5">
+                                    {flushedPairs} {flushedPairs === 1 ? 'Pair' : 'Pairs'}
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                                  Total Non-Payable Flushed Amount
-                                </div>
-                                <div className="text-xl font-bold text-amber-700 mt-0.5">
-                                  ₹{flushedAmountINR.toLocaleString('en-IN')}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Secondary Stats Grid */}
-                            <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
-                              <div>
-                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">
-                                  Historical Audit Status
-                                </span>
-                                <span className="font-semibold text-slate-700 text-xs mt-0.5 block">
-                                  {flushedPairs > 0
-                                    ? `${flushedPairs} ${flushedPairs === 1 ? 'Pair' : 'Pairs'} Flushed`
-                                    : '0 Flushed (Capping Intact)'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">
-                                  Wallet Liability Impact
-                                </span>
-                                <span className="font-semibold text-emerald-700 text-xs flex items-center gap-1 mt-0.5">
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                  <span>₹0 (Excluded from GL 2000)</span>
-                                </span>
                               </div>
                             </div>
 
-                            {/* Policy & Reassurance Notice */}
-                            <div className="mt-3 bg-amber-50/60 rounded-xl p-2.5 text-[11px] text-amber-900 border border-amber-100/80 flex items-start gap-2">
-                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                              <span>
-                                Flushed matching volume represents non-payable pairs from BASIC members or volume exceeding daily capping limits. These are historical non-payable audit values and <strong>never</strong> create wallet liabilities or payable debt. Historical flush-outs remain permanently visible on record even after upgrading to EV ULTRA.
-                              </span>
+                            {/* Action CTA */}
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                              <span className="text-[11px] text-slate-400">Upgrade to unlock matching</span>
+                              <button
+                                type="button"
+                                onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#0C2348] to-[#165DAD] hover:opacity-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                              >
+                                <span>Upgrade to EV ULTRA</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
 
-                          {/* Card Footer with View Flush History Action */}
-                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <span className="text-[11px] text-slate-400">Deterministic Flush Audit</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('overview');
-                                setTimeout(() => {
-                                  document.getElementById('binary-flush-history-section')?.scrollIntoView({ behavior: 'smooth' });
-                                }, 80);
-                              }}
-                              className="inline-flex items-center gap-1 text-xs font-bold text-[#165DAD] hover:text-[#124b8d] transition-colors cursor-pointer"
-                            >
-                              <span>View Flush History</span>
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
+                          {/* Card 2 — Sponsor Bonus Holds */}
+                          <div className={`bg-white p-5 rounded-2xl border shadow-xs flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5 ${
+                            totalHoldAmountINR > 0 ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-slate-200/90'
+                          }`}>
+                            <div>
+                              {/* Card Header */}
+                              <div className="flex items-center justify-between text-xs font-semibold">
+                                <div className="flex items-center gap-2">
+                                  <Lock className={`w-4 h-4 ${totalHoldAmountINR > 0 ? 'text-indigo-600' : 'text-slate-400'}`} />
+                                  <span className="font-bold text-[#253247] text-sm">Sponsor Bonus Holds</span>
+                                </div>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                  totalHoldAmountINR > 0
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}>
+                                  Income on Hold
+                                </span>
+                              </div>
+
+                              {/* Primary Metrics Row */}
+                              <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
+                                <div>
+                                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                    Income on Hold
+                                  </div>
+                                  <div className={`text-2xl font-black mt-0.5 ${
+                                    totalHoldAmountINR > 0 ? 'text-indigo-700' : 'text-slate-700'
+                                  }`}>
+                                    ₹{totalHoldAmountINR.toLocaleString('en-IN')}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                    Hold Records
+                                  </div>
+                                  <div className="text-xl font-bold text-slate-800 mt-0.5">
+                                    {activeHoldsList.length} {activeHoldsList.length === 1 ? 'Record' : 'Records'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Sub-breakdowns */}
+                              {(directReserveINR > 0 || upgradeHoldINR > 0) && (
+                                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                                  {directReserveINR > 0 && (
+                                    <span className="font-semibold text-slate-700">
+                                      ₹{directReserveINR.toLocaleString('en-IN')} Direct Reserve
+                                    </span>
+                                  )}
+                                  {upgradeHoldINR > 0 && (
+                                    <span className="font-semibold text-purple-700">
+                                      ₹{upgradeHoldINR.toLocaleString('en-IN')} Upgrade Hold
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action CTA */}
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                              <span className="text-[11px] text-slate-400">
+                                {upgradeHoldINR > 0
+                                  ? 'Upgrade required to release hold'
+                                  : directReserveINR > 0
+                                  ? '2nd direct referral required'
+                                  : 'Income release conditions'}
+                              </span>
+                              {upgradeHoldINR > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-700 to-indigo-600 hover:opacity-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                                >
+                                  <span>Upgrade to EV ULTRA</span>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              ) : directReserveINR > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('team')}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#165DAD] hover:bg-[#124b8d] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                                >
+                                  <span>View Direct Team</span>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openBookingPaymentModal('BASIC_TO_FULL_UPGRADE')}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                                >
+                                  <span>View Upgrade Options</span>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-
-                        {/* Card 2 — Sponsor Bonus Holds */}
-                        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between transition-transform duration-200 hover:-translate-y-0.5">
-                          <div>
-                            {/* Card Header */}
-                            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-                              <div className="flex items-center gap-2">
-                                <Lock className="w-4 h-4 text-indigo-600" />
-                                <span className="font-bold text-[#253247] text-sm">Sponsor Bonus Holds</span>
-                              </div>
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                Active Holding Reserve
-                              </span>
-                            </div>
-
-                            {/* Primary Metrics Row */}
-                            <div className="mt-3.5 flex items-baseline justify-between flex-wrap gap-2">
-                              <div>
-                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                                  Total Outstanding Hold Amount
-                                </div>
-                                <div className="text-2xl font-black text-indigo-700 mt-0.5">
-                                  ₹{totalHoldAmountINR.toLocaleString('en-IN')}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                                  Active Hold Records
-                                </div>
-                                <div className="text-xl font-bold text-slate-800 mt-0.5">
-                                  {activeHoldsList.length} {activeHoldsList.length === 1 ? 'Record' : 'Records'}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Sub-breakdowns: ₹1,000 Direct Qualification vs ₹9,000 Sponsor Upgrade with Release Conditions */}
-                            <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 flex flex-col justify-between">
-                                <div>
-                                  <div className="text-[10px] uppercase font-semibold text-slate-500">
-                                    ₹1,000 Direct Qualification Reserve
-                                  </div>
-                                  <div className="text-sm font-bold text-slate-800 mt-0.5">
-                                    ₹{directReserveINR.toLocaleString('en-IN')}
-                                  </div>
-                                </div>
-                                <div className="text-[10px] text-indigo-700 font-medium mt-1.5 pt-1.5 border-t border-slate-200/60 leading-tight">
-                                  Release Condition: Released upon qualifying 2nd direct referral (EV PRO or EV ULTRA).
-                                </div>
-                              </div>
-
-                              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 flex flex-col justify-between">
-                                <div>
-                                  <div className="text-[10px] uppercase font-semibold text-slate-500">
-                                    ₹9,000 Sponsor Upgrade Hold
-                                  </div>
-                                  <div className="text-sm font-bold text-slate-800 mt-0.5">
-                                    ₹{upgradeHoldINR.toLocaleString('en-IN')}
-                                  </div>
-                                </div>
-                                <div className="text-[10px] text-purple-700 font-medium mt-1.5 pt-1.5 border-t border-slate-200/60 leading-tight">
-                                  Release Condition: Released upon upgrading your own membership to EV ULTRA.
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Wallet Balance Reconciliation Row (GL 2200) */}
-                            <div className="mt-3 bg-emerald-50/70 rounded-xl p-2.5 text-[11px] text-emerald-900 border border-emerald-100 flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 font-medium">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>Wallet Held Balance (GL 2200):</span>
-                              </div>
-                              <span className="font-bold font-mono">
-                                ₹{totalHoldAmountINR.toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Card Footer with View Hold Details Action */}
-                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <span className="text-[11px] text-slate-400">Reconciled Hold Reserves</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab('wallets');
-                                setTimeout(() => {
-                                  document.getElementById('held-commissions-section')?.scrollIntoView({ behavior: 'smooth' });
-                                }, 80);
-                              }}
-                              className="inline-flex items-center gap-1 text-xs font-bold text-[#165DAD] hover:text-[#124b8d] transition-colors cursor-pointer"
-                            >
-                              <span>View Hold Details</span>
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                      )}
 
                       {/* =========================================================================
                           SECTION 7 — QUALIFICATION & ELIGIBILITY METRICS
@@ -2170,207 +2186,6 @@ function DashboardContent() {
                     </button>
                   </div>
                 )}
-
-                {/* =========================================================================
-                    FEATURE 1 & 7: EV LEGACY GLOBAL 3x8 MATRIX OVERVIEW CARD
-                    ========================================================================= */}
-                {(() => {
-                  const seq = matrixOverview?.sequence ?? matrixOverview?.placement?.matrixSequence;
-                  const layer = matrixOverview?.layer ?? matrixOverview?.placement?.depth;
-                  const isQual = Boolean(
-                    matrixOverview?.isQualified ??
-                    matrixOverview?.qualification?.isQualified ??
-                    matrixOverview?.metrics?.isQualified
-                  );
-                  const activeDirects =
-                    matrixOverview?.activeDirectsCount ??
-                    matrixOverview?.qualification?.activeDirectsCount ??
-                    matrixOverview?.metrics?.activeDirectsCount ??
-                    0;
-                  const downlines =
-                    matrixOverview?.downlineCount ??
-                    matrixOverview?.metrics?.totalDownlineMembers ??
-                    0;
-                  const potentialINR =
-                    matrixOverview?.totalPotentialINR ??
-                    matrixOverview?.metrics?.totalProjectedEarningsINR ??
-                    matrixOverview?.metrics?.projectedEarningsINR ??
-                    0;
-                  const earnedINR =
-                    matrixOverview?.totalEarnedINR ??
-                    matrixOverview?.metrics?.totalQualifiedEarningsINR ??
-                    matrixOverview?.metrics?.qualifiedEarningsINR ??
-                    0;
-                  const evClubProjected =
-                    matrixOverview?.metrics?.evClubProjectedINR ??
-                    matrixOverview?.metrics?.evClubEarningsINR ??
-                    0;
-                  const walletProjected =
-                    matrixOverview?.metrics?.earningsWalletProjectedINR ??
-                    matrixOverview?.metrics?.earningsWalletINR ??
-                    0;
-
-                  const rawLevels =
-                    matrixOverview?.levelStats ||
-                    (matrixOverview?.levelBreakdown
-                      ? matrixOverview.levelBreakdown.map((lb: any) => ({
-                        level: lb.level,
-                        unitRateINR: lb.amountPerPositionINR,
-                        maxCapacity: lb.capacity,
-                        memberCount: lb.occupied,
-                        potentialIncomeINR: lb.projectedEarningsINR,
-                        earnedIncomeINR: lb.qualifiedEarningsINR,
-                      }))
-                      : null);
-
-                  return (
-                    <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-5 sm:p-6 space-y-5">
-                      {matrixError && (
-                        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
-                          <span>Legacy Matrix Notice: {matrixError}</span>
-                          <button
-                            onClick={() => window.location.reload()}
-                            className="underline font-bold text-red-800"
-                          >
-                            Retry
-                          </button>
-                        </div>
-                      )}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
-                              EV Legacy 3×8 Matrix
-                            </span>
-                            {seq && (
-                              <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
-                                Sequence #{seq}
-                              </span>
-                            )}
-                            {layer !== undefined && layer !== null && (
-                              <span className="text-xs font-semibold text-slate-500">
-                                Layer {layer}
-                              </span>
-                            )}
-                          </div>
-                          <h3 className="text-base font-black text-[#0C2348]">
-                            Global 3×8 Matrix Downline & Level Income
-                          </h3>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${isQual
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}>
-                            <Users className="w-3.5 h-3.5" />
-                            <span>{activeDirects} / 3 Active Directs</span>
-                            <span>•</span>
-                            <span>{isQual ? 'Qualified (8 Levels)' : 'Need 3 Active Directs'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Matrix Qualification Progress */}
-                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
-                        <div className="text-xs text-slate-600 space-y-0.5">
-                          <div className="font-semibold text-slate-800">
-                            Qualification Rule: 3 Active Direct Referrals (EV PRO or EV ULTRA)
-                          </div>
-                          <p className="text-[11px] text-slate-500">
-                            {isQual
-                              ? '✓ You meet the 3 active directs rule. All 8 Matrix levels are unlocked for level income.'
-                              : `Currently ${activeDirects} active direct(s). You need ${Math.max(0, 3 - activeDirects)} more active direct referral(s) to unlock full 8-level payouts.`}
-                          </p>
-                        </div>
-                        <div className="w-full sm:w-48 shrink-0">
-                          <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-[#165DAD] to-indigo-600 rounded-full transition-all"
-                              style={{ width: `${Math.min(100, (activeDirects / 3) * 100)}%` }}
-                            />
-                          </div>
-                          <div className="text-right text-[10px] font-bold text-slate-500 mt-1">
-                            {Math.min(3, activeDirects)} / 3 Qualified
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 8-Level Matrix Breakdown Table */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                            <tr>
-                              <th className="py-2.5 px-3">Level</th>
-                              <th className="py-2.5 px-3">Unit Rate</th>
-                              <th className="py-2.5 px-3">Max Capacity</th>
-                              <th className="py-2.5 px-3">Placed Members</th>
-                              <th className="py-2.5 px-3">Projected Income</th>
-                              <th className="py-2.5 px-3">Qualified Level Income</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 text-slate-700">
-                            {rawLevels && rawLevels.length > 0 ? (
-                              rawLevels.map((lvl: any) => (
-                                <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
-                                  <td className="py-2 px-3 font-bold text-[#0C2348]">
-                                    Level {lvl.level}
-                                    <span className="ml-1 text-[10px] font-normal text-slate-400">
-                                      {lvl.level % 2 === 1 ? '(EV Club)' : '(Wallet)'}
-                                    </span>
-                                  </td>
-                                  <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.unitRateINR}</td>
-                                  <td className="py-2 px-3 text-slate-500 font-mono">{lvl.maxCapacity?.toLocaleString('en-IN')}</td>
-                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">{lvl.memberCount || 0}</td>
-                                  <td className="py-2 px-3 font-mono text-slate-600">₹{(lvl.potentialIncomeINR || 0).toLocaleString('en-IN')}</td>
-                                  <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹{(lvl.earnedIncomeINR || 0).toLocaleString('en-IN')}</td>
-                                </tr>
-                              ))
-                            ) : (
-                              [
-                                { level: 1, rate: 200, cap: 3 },
-                                { level: 2, rate: 200, cap: 9 },
-                                { level: 3, rate: 200, cap: 27 },
-                                { level: 4, rate: 200, cap: 81 },
-                                { level: 5, rate: 300, cap: 243 },
-                                { level: 6, rate: 300, cap: 729 },
-                                { level: 7, rate: 300, cap: 2187 },
-                                { level: 8, rate: 300, cap: 6561 },
-                              ].map((lvl) => (
-                                <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
-                                  <td className="py-2 px-3 font-bold text-[#0C2348]">Level {lvl.level}</td>
-                                  <td className="py-2 px-3 font-semibold text-indigo-700">₹{lvl.rate}</td>
-                                  <td className="py-2 px-3 text-slate-500 font-mono">{lvl.cap.toLocaleString('en-IN')}</td>
-                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">0</td>
-                                  <td className="py-2 px-3 font-mono text-slate-600">₹0</td>
-                                  <td className="py-2 px-3 font-mono font-bold text-emerald-700">₹0</td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                          <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
-                            <tr>
-                              <td className="py-2.5 px-3">Total (1–8)</td>
-                              <td className="py-2.5 px-3">—</td>
-                              <td className="py-2.5 px-3 font-mono">9,840</td>
-                              <td className="py-2.5 px-3 font-mono">{downlines}</td>
-                              <td className="py-2.5 px-3 font-mono text-indigo-900">₹{potentialINR.toLocaleString('en-IN')}</td>
-                              <td className="py-2.5 px-3 font-mono text-emerald-800">₹{earnedINR.toLocaleString('en-IN')}</td>
-                            </tr>
-                            <tr className="bg-slate-100/60 text-[11px] font-normal text-slate-500">
-                              <td colSpan={6} className="py-2 px-3">
-                                <span>Simulated Allocation Breakdown: </span>
-                                <strong>Odd Levels (EV Club): ₹{evClubProjected.toLocaleString('en-IN')}</strong> •{' '}
-                                <strong>Even Levels (Earnings Wallet): ₹{walletProjected.toLocaleString('en-IN')}</strong> •{' '}
-                                <span className="text-slate-400">Actually Credited: ₹0 (Simulation Policy)</span>
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 {/* FEATURE 3 & 7: BINARY MATCH FLUSH-OUT AUDIT HISTORY TABLE */}
                 <div id="binary-flush-history-section" className="bg-white rounded-2xl border border-amber-200/90 shadow-sm p-5 sm:p-6 space-y-4">
@@ -3764,6 +3579,334 @@ function DashboardContent() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* TAB: EV LEGACY 3×8 MATRIX */}
+            {activeTab === 'legacy' && (
+              <div className="space-y-6">
+                {(() => {
+                  const seq = matrixOverview?.sequence ?? matrixOverview?.placement?.matrixSequence;
+                  const layer = matrixOverview?.layer ?? matrixOverview?.placement?.depth;
+                  const isQual = Boolean(
+                    matrixOverview?.isQualified ??
+                    matrixOverview?.qualification?.isQualified ??
+                    matrixOverview?.metrics?.isQualified
+                  );
+                  const activeDirects =
+                    matrixOverview?.activeDirectsCount ??
+                    matrixOverview?.qualification?.activeDirectsCount ??
+                    matrixOverview?.metrics?.activeDirectsCount ??
+                    0;
+                  const downlines =
+                    matrixOverview?.downlineCount ??
+                    matrixOverview?.metrics?.totalDownlineMembers ??
+                    0;
+                  const potentialINR =
+                    matrixOverview?.totalPotentialINR ??
+                    matrixOverview?.metrics?.totalProjectedEarningsINR ??
+                    matrixOverview?.metrics?.projectedEarningsINR ??
+                    0;
+                  const earnedINR =
+                    matrixOverview?.totalEarnedINR ??
+                    matrixOverview?.metrics?.totalQualifiedEarningsINR ??
+                    matrixOverview?.metrics?.qualifiedEarningsINR ??
+                    0;
+                  const evClubProjected =
+                    matrixOverview?.metrics?.evClubProjectedINR ??
+                    matrixOverview?.metrics?.evClubEarningsINR ??
+                    0;
+                  const walletProjected =
+                    matrixOverview?.metrics?.earningsWalletProjectedINR ??
+                    matrixOverview?.metrics?.earningsWalletINR ??
+                    0;
+
+                  const rawLevels =
+                    matrixOverview?.levelStats ||
+                    (matrixOverview?.levelBreakdown
+                      ? matrixOverview.levelBreakdown.map((lb: any) => ({
+                        level: lb.level,
+                        unitRateINR: lb.amountPerPositionINR,
+                        maxCapacity: lb.capacity,
+                        memberCount: lb.occupied,
+                        potentialIncomeINR: lb.projectedEarningsINR,
+                        earnedIncomeINR: lb.qualifiedEarningsINR,
+                      }))
+                      : [
+                        { level: 1, unitRateINR: 200, maxCapacity: 3, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 2, unitRateINR: 200, maxCapacity: 9, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 3, unitRateINR: 200, maxCapacity: 27, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 4, unitRateINR: 200, maxCapacity: 81, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 5, unitRateINR: 300, maxCapacity: 243, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 6, unitRateINR: 300, maxCapacity: 729, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 7, unitRateINR: 300, maxCapacity: 2187, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                        { level: 8, unitRateINR: 300, maxCapacity: 6561, memberCount: 0, potentialIncomeINR: 0, earnedIncomeINR: 0 },
+                      ]);
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Matrix Notice & Alerts */}
+                      {matrixError && (
+                        <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+                          <span>Legacy Matrix Notice: {matrixError}</span>
+                          <button
+                            onClick={() => window.location.reload()}
+                            className="underline font-bold text-red-800 cursor-pointer"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Header Card */}
+                      <div className="bg-white rounded-2xl border border-indigo-100 shadow-xs p-5 sm:p-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
+                                EV Legacy 3×8 Matrix
+                              </span>
+                              {seq && (
+                                <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                                  Sequence #{seq}
+                                </span>
+                              )}
+                              {layer !== undefined && layer !== null && (
+                                <span className="text-xs font-semibold text-slate-500">
+                                  Layer {layer}
+                                </span>
+                              )}
+                            </div>
+                            <h2 className="text-lg sm:text-xl font-black text-[#0C2348]">
+                              Global 3×8 Matrix Downline & Level Income
+                            </h2>
+                            <p className="text-xs text-slate-500">
+                              Deterministic global spillover matrix across 8 levels. 3 active direct referrals unlock all 8 levels.
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
+                              isQual
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              <Users className="w-3.5 h-3.5" />
+                              <span>{activeDirects} / 3 Active Directs</span>
+                              <span>•</span>
+                              <span>{isQual ? 'Qualified (8 Levels Unlocked)' : 'Requires 3 Directs'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Matrix Qualification Progress */}
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+                          <div className="text-xs text-slate-600 space-y-0.5">
+                            <div className="font-semibold text-slate-800">
+                              Qualification Rule: 3 Active Direct Referrals (EV PRO or EV ULTRA)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              {isQual
+                                ? '✓ You meet the 3 active directs rule. All 8 Matrix levels are unlocked for level income.'
+                                : `Currently ${activeDirects} active direct(s). You need ${Math.max(0, 3 - activeDirects)} more active direct referral(s) to unlock full 8-level payouts.`}
+                            </p>
+                          </div>
+                          <div className="w-full sm:w-48 shrink-0">
+                            <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-[#165DAD] to-indigo-600 rounded-full transition-all"
+                                style={{ width: `${Math.min(100, (activeDirects / 3) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="text-right text-[10px] font-bold text-slate-500 mt-1">
+                              {Math.min(3, activeDirects)} / 3 Qualified
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Summary Metrics Grid */}
+                      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            Downline Members
+                          </div>
+                          <div className="text-2xl font-black text-slate-800 mt-1">
+                            {downlines.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Max Capacity: 9,840
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            Potential Level Income
+                          </div>
+                          <div className="text-2xl font-black text-indigo-700 mt-1">
+                            ₹{potentialINR.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Max Potential: ₹36,92,400
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            Qualified Level Income
+                          </div>
+                          <div className="text-2xl font-black text-emerald-700 mt-1">
+                            ₹{earnedINR.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] text-emerald-600 mt-0.5">
+                            {isQual ? 'Fully Qualified' : 'Pending Directs'}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            EV Club Leadership Pool
+                          </div>
+                          <div className="text-2xl font-black text-teal-700 mt-1">
+                            ₹{evClubProjected.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Odd Levels (1, 3, 5, 7)
+                          </div>
+                        </div>
+
+                        <div className="col-span-2 lg:col-span-1 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            Earnings Wallet Income
+                          </div>
+                          <div className="text-2xl font-black text-purple-700 mt-1">
+                            ₹{walletProjected.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Even Levels (2, 4, 6, 8)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Desktop Table View (Hidden on mobile) */}
+                      <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-[#0C2348]">8-Level Matrix Structure Breakdown</h3>
+                          <span className="text-xs text-slate-400">Total Positions: 9,840</span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                              <tr>
+                                <th className="py-2.5 px-3">Level</th>
+                                <th className="py-2.5 px-3">Unit Rate</th>
+                                <th className="py-2.5 px-3">Max Capacity</th>
+                                <th className="py-2.5 px-3">Placed Members</th>
+                                <th className="py-2.5 px-3">Allocation Destination</th>
+                                <th className="py-2.5 px-3">Projected Income</th>
+                                <th className="py-2.5 px-3">Qualified Level Income</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                              {rawLevels.map((lvl: any) => {
+                                const isOdd = lvl.level % 2 === 1;
+                                return (
+                                  <tr key={lvl.level} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="py-2.5 px-3 font-bold text-[#0C2348]">
+                                      Level {lvl.level}
+                                    </td>
+                                    <td className="py-2.5 px-3 font-semibold text-indigo-700">₹{lvl.unitRateINR}</td>
+                                    <td className="py-2.5 px-3 text-slate-500 font-mono">{lvl.maxCapacity?.toLocaleString('en-IN')}</td>
+                                    <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{lvl.memberCount || 0}</td>
+                                    <td className="py-2.5 px-3">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                        isOdd ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                      }`}>
+                                        {isOdd ? 'EV Club Pool (Odd)' : 'Earnings Wallet (Even)'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 font-mono text-slate-600">₹{(lvl.potentialIncomeINR || 0).toLocaleString('en-IN')}</td>
+                                    <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">₹{(lvl.earnedIncomeINR || 0).toLocaleString('en-IN')}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
+                              <tr>
+                                <td className="py-2.5 px-3">Total (Levels 1–8)</td>
+                                <td className="py-2.5 px-3">—</td>
+                                <td className="py-2.5 px-3 font-mono">9,840</td>
+                                <td className="py-2.5 px-3 font-mono">{downlines}</td>
+                                <td className="py-2.5 px-3">—</td>
+                                <td className="py-2.5 px-3 font-mono text-indigo-900">₹{potentialINR.toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 px-3 font-mono text-emerald-800">₹{earnedINR.toLocaleString('en-IN')}</td>
+                              </tr>
+                              <tr className="bg-slate-100/60 text-[11px] font-normal text-slate-500">
+                                <td colSpan={7} className="py-2 px-3">
+                                  <span>Simulated Allocation Breakdown: </span>
+                                  <strong>Odd Levels (EV Club): ₹{evClubProjected.toLocaleString('en-IN')}</strong> •{' '}
+                                  <strong>Even Levels (Earnings Wallet): ₹{walletProjected.toLocaleString('en-IN')}</strong> •{' '}
+                                  <span className="text-slate-400">Strictly Non-Payable in Simulation Mode</span>
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Mobile Cards View (Visible on mobile only) */}
+                      <div className="block sm:hidden space-y-3">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                          8-Level Matrix Breakdown
+                        </div>
+                        {rawLevels.map((lvl: any) => {
+                          const isOdd = lvl.level % 2 === 1;
+                          const fillPercent = lvl.maxCapacity ? Math.min(100, ((lvl.memberCount || 0) / lvl.maxCapacity) * 100) : 0;
+                          return (
+                            <div key={lvl.level} className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-xs space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-sm text-[#0C2348]">Level {lvl.level}</span>
+                                  <span className="text-xs font-semibold text-indigo-700">₹{lvl.unitRateINR}/pos</span>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  isOdd ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                }`}>
+                                  {isOdd ? 'EV Club' : 'Wallet'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between text-xs text-slate-600">
+                                <span>Placed Members:</span>
+                                <span className="font-mono font-bold text-slate-800">
+                                  {lvl.memberCount || 0} / {lvl.maxCapacity?.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+
+                              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${isOdd ? 'bg-teal-500' : 'bg-purple-500'}`}
+                                  style={{ width: `${fillPercent}%` }}
+                                />
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                                <div>
+                                  <div className="text-[10px] text-slate-400">Potential</div>
+                                  <div className="font-mono text-slate-700">₹{(lvl.potentialIncomeINR || 0).toLocaleString('en-IN')}</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10px] text-slate-400">Qualified Earned</div>
+                                  <div className="font-mono font-bold text-emerald-700">₹{(lvl.earnedIncomeINR || 0).toLocaleString('en-IN')}</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

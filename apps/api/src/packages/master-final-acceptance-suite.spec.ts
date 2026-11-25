@@ -676,7 +676,7 @@ describe('ASKR EV — MASTER FINAL ACCEPTANCE & DEFECT RESOLUTION SUITE', { time
       expect(wallet?.availableEarningsPaise).toBe(600000n);
     });
 
-    it('E5: MembersService.settleBinaryMatching daily cap: 20L / 18R matches max 15 pairs (₹45,000), preserves 5L / 3R carry', async () => {
+    it('E5: MembersService.settleBinaryMatching daily cap: 20L / 18R matches max 15 pairs (₹45,000), flushes 3 pairs, preserves 2L / 0R carry', async () => {
       const member = await createTestMember('E5-CAP', MembershipPackage.FULL, true);
       await prisma.binaryPlacement.update({
         where: { userId: member.id },
@@ -686,9 +686,10 @@ describe('ASKR EV — MASTER FINAL ACCEPTANCE & DEFECT RESOLUTION SUITE', { time
       const result = await membersService.settleBinaryMatching(member.id);
       expect(result.matchesSettled).toBe(15); // Capped at 15 pairs!
       expect(result.rewardINR).toBe(45000); // 15 * ₹3,000 = ₹45,000
-      expect(result.cappedOutMatches).toBe(3); // 18 - 15 = 3
-      expect(result.carryLeft).toBe(5); // 20 - 15 = 5 carry forward preserved!
-      expect(result.carryRight).toBe(3); // 18 - 15 = 3 carry forward preserved!
+      expect(result.cappedOutMatches).toBe(3); // 18 - 15 = 3 flushed
+      expect(result.flushedPairs).toBe(3);
+      expect(result.carryLeft).toBe(2); // 20 - 18 = 2 unmatched carry forward preserved!
+      expect(result.carryRight).toBe(0); // 18 - 18 = 0 carry forward!
 
       const wallet = await prisma.walletAccount.findUnique({ where: { userId: member.id } });
       expect(wallet?.availableEarningsPaise).toBe(4500000n); // ₹45,000

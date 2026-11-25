@@ -565,19 +565,20 @@ export class CommissionSimulatorService {
     const payableMatches = Math.min(matchesFound, remainingCapSlots);
     const cappedOutMatches = matchesFound - payableMatches;
 
-    // Consume 1 Left and 1 Right unit strictly for payable matches only
-    const payableLeftUsed = payableMatches;
-    const payableRightUsed = payableMatches;
+    // Consume all matched units from carry-forward; capped-out pairs are flushed
+    const leftUnitsUsed = matchesFound;
+    const rightUnitsUsed = matchesFound;
 
     const proposedRewardPaise = BigInt(payableMatches) * FINANCIAL_RULES.BINARY_MATCH_REWARD_PAISE;
 
     return {
       matchesConsumed: payableMatches,
-      leftUnitsUsed: payableLeftUsed,
-      rightUnitsUsed: payableRightUsed,
-      newCarryLeft: totalLeft - payableLeftUsed,
-      newCarryRight: totalRight - payableRightUsed,
+      leftUnitsUsed,
+      rightUnitsUsed,
+      newCarryLeft: totalLeft - leftUnitsUsed,
+      newCarryRight: totalRight - rightUnitsUsed,
       cappedOutMatches,
+      flushedPairs: cappedOutMatches,
       proposedRewardPaise,
       proposedRewardINR: paiseToRupees(proposedRewardPaise),
       isQualified: true,

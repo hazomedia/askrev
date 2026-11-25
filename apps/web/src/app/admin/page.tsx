@@ -177,6 +177,7 @@ export default function AdminPage() {
   const [matrixTreeData, setMatrixTreeData] = useState<any>(null);
   const [binaryFlushes, setBinaryFlushes] = useState<any[]>([]);
   const [commissionHolds, setCommissionHolds] = useState<any[]>([]);
+  const [holdFilterStatus, setHoldFilterStatus] = useState<'ALL' | 'HELD' | 'RELEASED'>('ALL');
   const [allVouchersData, setAllVouchersData] = useState<any[]>([]);
   const [loadingMatrix, setLoadingMatrix] = useState(false);
   const [matrixSubTab, setMatrixSubTab] = useState<'tree' | 'qualifications' | 'flushes' | 'holds' | 'vouchers'>('tree');
@@ -720,7 +721,7 @@ export default function AdminPage() {
       id: 'reconciliation',
       label: 'Reconciliation',
       icon: Scale,
-      count: reconciliation?.status === 'RECONCILED' ? undefined : 1,
+      count: (reconciliation?.status === 'RECONCILED' || reconciliation?.status === 'RECONCILED_PERFECT') ? undefined : (reconciliation?.status ? 1 : undefined),
       badgeColor: 'bg-red-500 text-white',
     },
     { id: 'audit', label: 'Audit Trail', icon: FileText, count: auditTotal },
@@ -1009,7 +1010,7 @@ export default function AdminPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {(overview?.system?.unbalancedJournalCount ?? 0) > 0 || (overview?.system?.reconciliationStatus && overview?.system?.reconciliationStatus !== 'RECONCILED') ? (
+                      {(overview?.system?.unbalancedJournalCount ?? 0) > 0 || (overview?.system?.reconciliationStatus && overview?.system?.reconciliationStatus !== 'RECONCILED' && overview?.system?.reconciliationStatus !== 'RECONCILED_PERFECT') ? (
                         <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
                           <AlertCircle className="w-3.5 h-3.5 text-red-600" />
                           <span>Discrepancy Detected ({overview?.system?.unbalancedJournalCount || 1})</span>
@@ -3689,15 +3690,30 @@ export default function AdminPage() {
                         <span>Sponsor Commission Hold Reports</span>
                       </h2>
                       <p className="text-xs text-slate-500 mt-1">
-                        Audit trail of ₹1,000 second-direct reserves and ₹9,000 upgrade commission holds across baseline and test accounts.
+                        Audit trail of ₹1,000 second-direct reserves and ₹9,000 upgrade commission holds for member accounts.
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+                        {(['ALL', 'HELD', 'RELEASED'] as const).map(tab => (
+                          <button
+                            key={tab}
+                            onClick={() => setHoldFilterStatus(tab)}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                              holdFilterStatus === tab
+                                ? 'bg-white text-slate-900 shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {tab === 'ALL' ? `All (${commissionHolds.length})` : tab === 'HELD' ? `Active (${commissionHolds.filter((h: any) => h.status === 'HELD').length})` : `Released (${commissionHolds.filter((h: any) => h.status === 'RELEASED').length})`}
+                          </button>
+                        ))}
+                      </div>
                       <span className="text-xs font-mono font-bold bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg border border-amber-200">
-                        Active Liability: ₹{commissionHolds.filter((h: any) => h.status === 'HELD').reduce((acc: number, h: any) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')} ({commissionHolds.filter((h: any) => h.status === 'HELD').length})
+                        Active Liability: ₹{commissionHolds.filter((h: any) => h.status === 'HELD').reduce((acc: number, h: any) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')}
                       </span>
                       <span className="text-xs font-mono font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg border border-emerald-200">
-                        Released: ₹{commissionHolds.filter((h: any) => h.status === 'RELEASED').reduce((acc: number, h: any) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')} ({commissionHolds.filter((h: any) => h.status === 'RELEASED').length})
+                        Released: ₹{commissionHolds.filter((h: any) => h.status === 'RELEASED').reduce((acc: number, h: any) => acc + (h.heldINR || 0), 0).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
@@ -3716,51 +3732,49 @@ export default function AdminPage() {
                           <th className="py-2.5 px-3">Direct Name</th>
                           <th className="py-2.5 px-3">Held Amount</th>
                           <th className="py-2.5 px-3">Reason</th>
-                          <th className="py-2.5 px-3">Cohort</th>
                           <th className="py-2.5 px-3">Status</th>
                           <th className="py-2.5 px-3">Released At</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {commissionHolds.length > 0 ? (
-                          commissionHolds.map((h: any) => {
-                            const isBaseline = !h.sponsor?.memberId?.startsWith('UAT-') && !h.sponsorId?.startsWith('UAT-');
+                        {(() => {
+                          const filtered = commissionHolds.filter((h: any) => {
+                            if (holdFilterStatus === 'ALL') return true;
+                            return h.status === holdFilterStatus;
+                          });
+                          if (filtered.length === 0) {
                             return (
-                              <tr key={h.id} className="hover:bg-slate-50/70 transition-colors">
-                                <td className="py-2.5 px-3 font-mono">{new Date(h.createdAt).toLocaleDateString('en-IN')}</td>
-                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{h.sponsor?.memberId || h.sponsorId}</td>
-                                <td className="py-2.5 px-3 font-medium text-slate-800">{h.sponsor?.fullName || '—'}</td>
-                                <td className="py-2.5 px-3 font-mono font-bold text-indigo-700">{h.referredMember?.memberId || h.referredMemberId}</td>
-                                <td className="py-2.5 px-3 font-medium text-slate-800">{h.referredMember?.fullName || '—'}</td>
-                                <td className="py-2.5 px-3 font-mono font-bold text-purple-700">₹{(h.heldINR || 0).toLocaleString('en-IN')}</td>
-                                <td className="py-2.5 px-3 font-mono text-[10px] text-slate-600">{h.reason}</td>
-                                <td className="py-2.5 px-3">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isBaseline ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
-                                    {isBaseline ? 'BASELINE' : 'UAT TEST'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                    h.status === 'RELEASED'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : 'bg-amber-50 text-amber-700 border-amber-200'
-                                  }`}>
-                                    {h.status}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 font-mono text-slate-500">
-                                  {h.releasedAt ? new Date(h.releasedAt).toLocaleDateString('en-IN') : '— (Active Hold)'}
+                              <tr>
+                                <td colSpan={9} className="py-8 text-center text-slate-400">
+                                  No commission holds found for filter {holdFilterStatus}.
                                 </td>
                               </tr>
                             );
-                          })
-                        ) : (
-                          <tr>
-                            <td colSpan={10} className="py-8 text-center text-slate-400">
-                              No commission holds recorded yet.
-                            </td>
-                          </tr>
-                        )}
+                          }
+                          return filtered.map((h: any) => (
+                            <tr key={h.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="py-2.5 px-3 font-mono">{new Date(h.createdAt).toLocaleDateString('en-IN')}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{h.sponsor?.memberId || h.sponsorId}</td>
+                              <td className="py-2.5 px-3 font-medium text-slate-800">{h.sponsor?.fullName || '—'}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-indigo-700">{h.referredMember?.memberId || h.referredMemberId}</td>
+                              <td className="py-2.5 px-3 font-medium text-slate-800">{h.referredMember?.fullName || '—'}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-purple-700">₹{(h.heldINR || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-2.5 px-3 font-mono text-[10px] text-slate-600">{h.reason}</td>
+                              <td className="py-2.5 px-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                  h.status === 'RELEASED'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {h.status}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-slate-500">
+                                {h.releasedAt ? new Date(h.releasedAt).toLocaleDateString('en-IN') : '— (Active Hold)'}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
