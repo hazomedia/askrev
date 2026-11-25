@@ -99,11 +99,16 @@ export class BinaryPlacementService {
     sponsorId: string,
     intendedSide: BinaryLeg
   ): Promise<DirectionalPlacementResult> {
-    // Concurrency protection: PostgreSQL transaction-level advisory lock
-    // Serializes concurrent registrations under the same sponsor on the same leg
+    // Concurrency protection: PostgreSQL transaction-level advisory locks
+    // 1. Spine-level lock serializes any concurrent registrations sharing the same Power Leg (even across different sponsors)
+    // 2. Sponsor-level lock serializes direct referrals of the same sponsor
     try {
       await tx.$executeRawUnsafe(
-        `SELECT pg_advisory_xact_lock(hashtext('power_leg_' || $1 || '_' || $2))`,
+        `SELECT pg_advisory_xact_lock(hashtext('power_leg_spine_' || $1))`,
+        intendedSide
+      );
+      await tx.$executeRawUnsafe(
+        `SELECT pg_advisory_xact_lock(hashtext('power_leg_sponsor_' || $1 || '_' || $2))`,
         sponsorId,
         intendedSide
       );
@@ -111,28 +116,64 @@ export class BinaryPlacementService {
       // In SQLite or mock testing environments without pg_advisory_xact_lock, continue safely
     }
 
-    // 1. Find vacant directional slot
-    const slot = await this.findDirectionalPlacementSlot(tx, sponsorId, intendedSide);
+    // 1. Find vacant directional slot and upsert with safe conflict retries
+    let slot: { parentId: string; leg: BinaryLeg } = { parentId: '', leg: intendedSide };
+    const maxRetries = 3;
 
-    // 2. Upsert BinaryPlacement record for the registered member
-    await tx.binaryPlacement.upsert({
-      where: { userId },
-      create: {
-        userId,
-        parentId: slot.parentId,
-        leg: slot.leg,
-        leftCount: 0,
-        rightCount: 0,
-        leftVolumePaise: 0n,
-        rightVolumePaise: 0n,
-        carryLeftPaise: 0n,
-        carryRightPaise: 0n,
-      },
-      update: {
-        parentId: slot.parentId,
-        leg: slot.leg,
-      },
-    });
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      slot = await this.findDirectionalPlacementSlot(tx, sponsorId, intendedSide);
+
+      let savepointCreated = false;
+      try {
+        await tx.$executeRawUnsafe(`SAVEPOINT slot_attempt_${attempt}`);
+        savepointCreated = true;
+      } catch {
+        // Non-Postgres test environments ignore savepoints
+      }
+
+      try {
+        await tx.binaryPlacement.upsert({
+          where: { userId },
+          create: {
+            userId,
+            parentId: slot.parentId,
+            leg: slot.leg,
+            leftCount: 0,
+            rightCount: 0,
+            leftVolumePaise: 0n,
+            rightVolumePaise: 0n,
+            carryLeftPaise: 0n,
+            carryRightPaise: 0n,
+          },
+          update: {
+            parentId: slot.parentId,
+            leg: slot.leg,
+          },
+        });
+
+        if (savepointCreated) {
+          try {
+            await tx.$executeRawUnsafe(`RELEASE SAVEPOINT slot_attempt_${attempt}`);
+          } catch {}
+        }
+        break; // Successfully placed!
+      } catch (err: any) {
+        if (savepointCreated) {
+          try {
+            await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT slot_attempt_${attempt}`);
+          } catch {}
+        }
+
+        // If unique constraint violation occurs and we have retries left, re-traverse
+        if (attempt < maxRetries) {
+          this.logger.warn(
+            `Concurrent placement race detected at parent ${slot.parentId} (${slot.leg}). Retrying attempt ${attempt + 1}/${maxRetries}...`
+          );
+          continue;
+        }
+        throw err;
+      }
+    }
 
     // 3. Propagate headcount (+1 on leftCount or rightCount) up ancestor chain
     let currParentId: string | null = slot.parentId;
