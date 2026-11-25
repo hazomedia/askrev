@@ -354,12 +354,9 @@ async function run() {
             data: countUpdate,
           });
 
-          const parentNode = await tx.binaryPlacement.findUnique({
-            where: { userId: currP },
-            select: { parentId: true, leg: true },
-          });
-          currP = parentNode?.parentId;
-          currL = parentNode?.leg;
+          const parentSlot = placements.get(currP);
+          currP = parentSlot?.parentId;
+          currL = parentSlot?.leg;
         }
       }
 
@@ -384,12 +381,9 @@ async function run() {
                 data: volUpdate,
               });
 
-              const parentNode = await tx.binaryPlacement.findUnique({
-                where: { userId: currP },
-                select: { parentId: true, leg: true },
-              });
-              currP = parentNode?.parentId;
-              currL = parentNode?.leg;
+              const parentSlot = placements.get(currP);
+              currP = parentSlot?.parentId;
+              currL = parentSlot?.leg;
             }
           }
         }
@@ -563,7 +557,7 @@ async function run() {
 
       console.log('In-transaction financial preservation assertions PASSED: 0 variance across all wallets, journals, vouchers, and holds.');
     },
-    { maxWait: 20000, timeout: 120000 }
+    { maxWait: 60000, timeout: 600000 }
   );
 
   // Step 6: Post-Migration Structural & Financial Verification
