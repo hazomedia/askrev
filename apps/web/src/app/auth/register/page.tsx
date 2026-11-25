@@ -106,6 +106,12 @@ function RegisterForm() {
       return;
     }
 
+    if (!side) {
+      setError('Please select your placement team leg (LEFT or RIGHT). Team leg selection is mandatory.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const data: any = await fetchApi('/auth/register', {
         method: 'POST',
@@ -115,7 +121,7 @@ function RegisterForm() {
           password,
           phone: phone || undefined,
           sponsorMemberId: sponsorMemberId.trim().toUpperCase(),
-          side: side || undefined,
+          side,
         }),
       });
 
@@ -125,7 +131,7 @@ function RegisterForm() {
         memberId: data.user.memberId,
         fullName,
         email,
-        side: data.user.intendedBinarySide || side || 'AUTO',
+        side: data.user.intendedBinarySide || side,
         sponsorName: sponsorInfo?.fullName,
         sponsorId: sponsorMemberId.trim().toUpperCase(),
       });
@@ -362,10 +368,10 @@ function RegisterForm() {
                     onBlur={() => lookupSponsor(sponsorMemberId)}
                     placeholder="e.g. ASKR-ADMIN-01"
                     className={`w-full pl-9 pr-9 py-2.5 rounded-lg border text-xs text-[#253247] font-mono uppercase placeholder:text-slate-400 focus:outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-400 ${sponsorInfo
-                        ? 'border-emerald-500 bg-emerald-50/20'
-                        : sponsorError
-                          ? 'border-red-400 bg-red-50/20'
-                          : 'border-slate-200 focus:border-[#165DAD]'
+                      ? 'border-emerald-500 bg-emerald-50/20'
+                      : sponsorError
+                        ? 'border-red-400 bg-red-50/20'
+                        : 'border-slate-200 focus:border-[#165DAD]'
                       }`}
                   />
                   <div className="absolute right-3 top-2.5">
@@ -398,6 +404,49 @@ function RegisterForm() {
                     {sponsorError}
                   </p>
                 )}
+              </div>
+
+              {/* Binary Placement Team Selector */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-[#253247]">
+                    Placement Team (Power Leg) <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">Mandatory</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled={loading || isRegistrationPaused}
+                    onClick={() => setSide('LEFT')}
+                    className={`py-2.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${side === 'LEFT'
+                        ? 'border-[#165DAD] bg-[#165DAD]/10 text-[#165DAD] ring-2 ring-[#165DAD]/20 font-bold'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                    <span>LEFT TEAM</span>
+                    {side === 'LEFT' && <CheckCircle2 className="w-3.5 h-3.5 text-[#165DAD] shrink-0" />}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading || isRegistrationPaused}
+                    onClick={() => setSide('RIGHT')}
+                    className={`py-2.5 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${side === 'RIGHT'
+                        ? 'border-[#165DAD] bg-[#165DAD]/10 text-[#165DAD] ring-2 ring-[#165DAD]/20 font-bold'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                    <span>RIGHT TEAM</span>
+                    {side === 'RIGHT' && <CheckCircle2 className="w-3.5 h-3.5 text-[#165DAD] shrink-0" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  {side
+                    ? `Your account will be permanently placed on your sponsor's ${side} power leg immediately upon registration.`
+                    : 'Select either LEFT or RIGHT team. Automatic balancing is disabled per direct-selling binary policy.'}
+                </p>
               </div>
 
               <button

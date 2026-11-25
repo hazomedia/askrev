@@ -21,9 +21,9 @@ export class RegisterDto {
   sponsorMemberId: string;
 
   @IsString()
-  @IsOptional()
+  @IsNotEmpty({ message: 'Placement leg is required and must be either LEFT or RIGHT' })
   @IsIn(['LEFT', 'RIGHT'], { message: 'Placement leg must be either LEFT or RIGHT' })
-  side?: 'LEFT' | 'RIGHT';
+  side: 'LEFT' | 'RIGHT';
 
   @IsString()
   @IsOptional()

@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { BinaryLeg } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -10,6 +10,7 @@ import { getJwtAccessSecret, getJwtRefreshSecret, hashToken, revokeAccessToken, 
 import { TotpService } from './totp.service';
 import { EmailService } from './email.service';
 import { TokenRevocationService } from './token-revocation.service';
+import { BinaryPlacementService } from '../members/binary-placement.service';
 
 @Injectable()
 export class AuthService {
@@ -20,7 +21,11 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly totpService: TotpService,
     private readonly emailService: EmailService,
-    private readonly tokenRevocationService?: TokenRevocationService
+    @Optional()
+    private readonly tokenRevocationService?: TokenRevocationService,
+    @Inject(forwardRef(() => BinaryPlacementService))
+    @Optional()
+    private readonly binaryPlacementService?: BinaryPlacementService
   ) { }
 
   /**
@@ -89,69 +94,65 @@ export class AuthService {
     }
 
     const sponsorId = sponsor.id;
-    let intendedBinarySide: BinaryLeg;
     const rawSide = dto.side?.trim().toUpperCase();
 
-    if (rawSide) {
-      if (rawSide === 'LEFT') {
-        intendedBinarySide = BinaryLeg.LEFT;
-      } else if (rawSide === 'RIGHT') {
-        intendedBinarySide = BinaryLeg.RIGHT;
-      } else {
-        throw new BadRequestException('Invalid team placement leg specified. Leg must be explicitly LEFT or RIGHT.');
-      }
-    } else {
-      // Dynamic weaker leg auto-balancing when leg parameter is omitted:
-      // Safely balance based on sponsor's volume and member count
-      const sponsorPlacement = await this.prisma.binaryPlacement?.findUnique?.({
-        where: { userId: sponsorId },
-        select: { leftVolumePaise: true, rightVolumePaise: true, leftCount: true, rightCount: true },
-      });
-
-      if (sponsorPlacement && sponsorPlacement.rightVolumePaise < sponsorPlacement.leftVolumePaise) {
-        intendedBinarySide = BinaryLeg.RIGHT;
-      } else if (sponsorPlacement && sponsorPlacement.leftVolumePaise < sponsorPlacement.rightVolumePaise) {
-        intendedBinarySide = BinaryLeg.LEFT;
-      } else if (sponsorPlacement && sponsorPlacement.rightCount < sponsorPlacement.leftCount) {
-        intendedBinarySide = BinaryLeg.RIGHT;
-      } else {
-        intendedBinarySide = BinaryLeg.LEFT;
-      }
+    if (!rawSide || (rawSide !== 'LEFT' && rawSide !== 'RIGHT')) {
+      throw new BadRequestException(
+        'Placement leg is required and must be explicitly LEFT or RIGHT. No silent auto-balancing.'
+      );
     }
+    const intendedBinarySide = rawSide === 'LEFT' ? BinaryLeg.LEFT : BinaryLeg.RIGHT;
 
     const memberId = await this.generateUniqueMemberId();
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
-    const user = await this.prisma.user.create({
-      data: {
-        memberId,
-        email: dto.email.toLowerCase().trim(),
-        passwordHash,
-        fullName: dto.fullName.trim(),
-        phone: cleanPhone,
-        role: UserRole.FREE_USER,
-        currentPackage: MembershipPackage.FREE,
-        isFullQualified: false,
-        sponsorId,
-        intendedBinarySide,
-        wallet: {
-          create: {
-            availableEarningsPaise: 0n,
-            heldCommissionsPaise: 0n,
-            pendingRecoveryPaise: 0n,
-            shoppingVoucherBalancePaise: 0n,
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          memberId,
+          email: dto.email.toLowerCase().trim(),
+          passwordHash,
+          fullName: dto.fullName.trim(),
+          phone: cleanPhone,
+          role: UserRole.FREE_USER,
+          currentPackage: MembershipPackage.FREE,
+          isFullQualified: false,
+          sponsorId,
+          intendedBinarySide,
+          wallet: {
+            create: {
+              availableEarningsPaise: 0n,
+              heldCommissionsPaise: 0n,
+              pendingRecoveryPaise: 0n,
+              shoppingVoucherBalancePaise: 0n,
+            },
           },
         },
-        binaryPlacement: {
-          create: {},
+        include: {
+          wallet: true,
+          sponsor: {
+            select: { memberId: true, fullName: true },
+          },
         },
-      },
-      include: {
-        wallet: true,
-        sponsor: {
-          select: { memberId: true, fullName: true },
-        },
-      },
+      });
+
+      // Immediate permanent directional binary placement upon registration
+      if (this.binaryPlacementService) {
+        await this.binaryPlacementService.placeMemberOnRegistration(
+          tx,
+          createdUser.id,
+          sponsorId,
+          intendedBinarySide
+        );
+      } else if (tx.binaryPlacement && typeof tx.binaryPlacement.create === 'function') {
+        await tx.binaryPlacement.create({
+          data: {
+            userId: createdUser.id,
+          },
+        });
+      }
+
+      return createdUser;
     });
 
     // Automatically trigger 24-hr verification email immediately after registration

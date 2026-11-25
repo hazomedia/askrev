@@ -20,6 +20,7 @@ import {
   getMatrixFillSlot,
 } from '../legacy-matrix/legacy-matrix.constants';
 import { MembersService } from '../members/members.service';
+import { BinaryPlacementService } from '../members/binary-placement.service';
 import { PackagesService } from './packages.service';
 import { LegacyMatrixService } from '../legacy-matrix/legacy-matrix.service';
 import { VouchersService } from '../vouchers/vouchers.service';
@@ -92,7 +93,14 @@ describe('ASKR EV — MASTER FINAL ACCEPTANCE & DEFECT RESOLUTION SUITE', { time
     expect(dbInfo?.current_database).toBeDefined();
 
     legacyMatrixService = new LegacyMatrixService(prisma as any);
-    packagesService = new PackagesService(prisma as any, undefined, legacyMatrixService, undefined);
+    const binaryPlacementService = new BinaryPlacementService(prisma as any);
+    packagesService = new PackagesService(
+      prisma as any,
+      undefined,
+      legacyMatrixService,
+      undefined,
+      binaryPlacementService
+    );
     membersService = new MembersService(prisma as any);
     vouchersService = new VouchersService(prisma as any);
     adminService = new AdminService(prisma as any);

@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InstantBinaryMatchingService } from '../members/instant-binary-matching.service';
+import { BinaryPlacementService } from '../members/binary-placement.service';
 import { LegacyMatrixService } from '../legacy-matrix/legacy-matrix.service';
 import { EmailService } from '../auth/email.service';
 import {
@@ -38,8 +39,11 @@ export class PackagesService {
     @Optional()
     private readonly legacyMatrixService?: LegacyMatrixService,
     @Optional()
-    private readonly emailService?: EmailService
-  ) {}
+    private readonly emailService?: EmailService,
+    @Inject(forwardRef(() => BinaryPlacementService))
+    @Optional()
+    private readonly binaryPlacementService?: BinaryPlacementService
+  ) { }
 
   getAllPackages() {
     return [
@@ -990,14 +994,30 @@ export class PackagesService {
       // 3b. PHASE 3C & FEATURES 1 & 2: BINARY & LEGACY MATRIX PLACEMENT
       let binaryPlacementResult: any = null;
       if (req.requestType === MembershipRequestType.BASIC_ACTIVATION) {
-        // Feature 2: Place BASIC member in binary tree (count only, 0 volume)
+        // Feature 2: Retain existing registration binary placement (count only, 0 volume)
         const existingPlacement = await tx.binaryPlacement.findUnique({
           where: { userId: user.id },
         });
 
         if (!existingPlacement || !existingPlacement.parentId) {
-          const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user, false);
-          binaryPlacementResult = autoRes;
+          if (
+            this.binaryPlacementService &&
+            typeof this.binaryPlacementService.placeMemberOnRegistration === 'function' &&
+            user.sponsorId
+          ) {
+            const side = user.intendedBinarySide === BinaryLeg.RIGHT ? BinaryLeg.RIGHT : BinaryLeg.LEFT;
+            const res = await this.binaryPlacementService.placeMemberOnRegistration(tx, user.id, user.sponsorId, side);
+            binaryPlacementResult = res;
+          } else {
+            const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user, false);
+            binaryPlacementResult = autoRes;
+          }
+        } else {
+          binaryPlacementResult = {
+            action: 'PLACEMENT_RETAINED',
+            parentId: existingPlacement.parentId,
+            leg: existingPlacement.leg,
+          };
         }
 
         // Feature 1: Place in Global 3x8 Legacy Matrix
@@ -1013,21 +1033,39 @@ export class PackagesService {
           where: { userId: user.id },
         });
 
-        if (existingPlacement && existingPlacement.parentId && existingPlacement.leg) {
-          const ancestors = await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
+        let placementToUse = existingPlacement;
+        if (!placementToUse || !placementToUse.parentId || !placementToUse.leg) {
+          if (
+            this.binaryPlacementService &&
+            typeof this.binaryPlacementService.placeMemberOnRegistration === 'function' &&
+            user.sponsorId
+          ) {
+            const side = user.intendedBinarySide === BinaryLeg.RIGHT ? BinaryLeg.RIGHT : BinaryLeg.LEFT;
+            await this.binaryPlacementService.placeMemberOnRegistration(tx, user.id, user.sponsorId, side);
+            placementToUse = await tx.binaryPlacement.findUnique({ where: { userId: user.id } });
+          } else {
+            const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user, true);
+            if (autoRes?.affectedAncestors) {
+              pendingImmediateAncestors.push(...autoRes.affectedAncestors);
+            }
+            binaryPlacementResult = autoRes;
+          }
+        }
+
+        // Propagate FULL qualified volume (+1 unit) up ancestors WITHOUT moving node
+        if (placementToUse && placementToUse.parentId && placementToUse.leg) {
+          const ancestors =
+            this.binaryPlacementService &&
+            typeof this.binaryPlacementService.propagateBinaryVolumeOnFullQualification === 'function'
+              ? await this.binaryPlacementService.propagateBinaryVolumeOnFullQualification(tx, user.id)
+              : await this.propagateBinaryVolumeOnFullQualification(tx, user.id);
           pendingImmediateAncestors.push(...ancestors);
           binaryPlacementResult = {
             action: 'VOLUME_PROPAGATED',
-            parentId: existingPlacement.parentId,
-            leg: existingPlacement.leg,
+            parentId: placementToUse.parentId,
+            leg: placementToUse.leg,
             affectedAncestors: ancestors,
           };
-        } else {
-          const autoRes = await this.autoPlaceMemberInBinaryTree(tx, user, true);
-          if (autoRes?.affectedAncestors) {
-            pendingImmediateAncestors.push(...autoRes.affectedAncestors);
-          }
-          binaryPlacementResult = autoRes;
         }
 
         // Feature 1: Place in Global 3x8 Legacy Matrix

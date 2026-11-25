@@ -348,6 +348,7 @@ describe('AuthService & TotpService Security Enhancements', () => {
             fullName: 'New Member',
             phone: '+919876543210',
             sponsorMemberId: 'ASKR-SUPERADMIN',
+            side: 'LEFT',
           })
         ).rejects.toThrow('New member registrations will resume soon');
       } finally {
@@ -368,6 +369,7 @@ describe('AuthService & TotpService Security Enhancements', () => {
           fullName: 'New Member',
           phone: '+919876543210',
           sponsorMemberId: 'NONEXISTENT',
+          side: 'LEFT',
         })
       ).rejects.toThrow('does not exist');
     });
@@ -385,6 +387,7 @@ describe('AuthService & TotpService Security Enhancements', () => {
           fullName: 'Self Sponsor Attempt',
           phone: '+919876543210',
           sponsorMemberId: mockUser.memberId,
+          side: 'LEFT',
         })
       ).rejects.toThrow('Self-sponsoring is strictly prohibited');
     });
@@ -401,6 +404,7 @@ describe('AuthService & TotpService Security Enhancements', () => {
         fullName: 'Valid Member',
         phone: '+919123456789',
         sponsorMemberId: mockUser.memberId,
+        side: 'LEFT',
       });
 
       expect(result).toBeDefined();
@@ -454,57 +458,32 @@ describe('AuthService & TotpService Security Enhancements', () => {
       );
     });
 
-    it('should auto-balance to weaker leg when placement leg is omitted', async () => {
+    it('should reject registration when placement leg is omitted or invalid (no silent auto-balancing)', async () => {
       mockPrisma.user.findUnique.mockImplementation(({ where }) => {
         if (where.memberId === mockUser.memberId) return Promise.resolve(mockUser);
         return Promise.resolve(null);
       });
 
-      // Sponsor has right volume weaker (e.g. left: 60000 paise, right: 30000 paise)
-      mockPrisma.binaryPlacement.findUnique.mockResolvedValueOnce({
-        leftVolumePaise: 60000n,
-        rightVolumePaise: 30000n,
-        leftCount: 2,
-        rightCount: 1,
-      });
+      // Missing side rejected
+      await expect(
+        authService.register({
+          email: 'applicant-missing-side@askrevdrive.com',
+          password: 'ValidMemberPassword@2026',
+          fullName: 'Missing Side Member',
+          sponsorMemberId: mockUser.memberId,
+        } as any)
+      ).rejects.toThrow('Placement leg is required');
 
-      await authService.register({
-        email: 'applicant-auto-right@askrevdrive.com',
-        password: 'ValidMemberPassword@2026',
-        fullName: 'Auto Weaker Member',
-        sponsorMemberId: mockUser.memberId,
-      });
-
-      expect(mockPrisma.user.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            intendedBinarySide: 'RIGHT',
-          }),
+      // Invalid side rejected
+      await expect(
+        authService.register({
+          email: 'applicant-invalid-side@askrevdrive.com',
+          password: 'ValidMemberPassword@2026',
+          fullName: 'Bad Side Member',
+          sponsorMemberId: mockUser.memberId,
+          side: 'MIDDLE' as any,
         })
-      );
-
-      // Sponsor has left volume weaker (e.g. left: 10000 paise, right: 50000 paise)
-      mockPrisma.binaryPlacement.findUnique.mockResolvedValueOnce({
-        leftVolumePaise: 10000n,
-        rightVolumePaise: 50000n,
-        leftCount: 1,
-        rightCount: 3,
-      });
-
-      await authService.register({
-        email: 'applicant-auto-left@askrevdrive.com',
-        password: 'ValidMemberPassword@2026',
-        fullName: 'Auto Left Member',
-        sponsorMemberId: mockUser.memberId,
-      });
-
-      expect(mockPrisma.user.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            intendedBinarySide: 'LEFT',
-          }),
-        })
-      );
+      ).rejects.toThrow('Placement leg is required and must be explicitly LEFT or RIGHT');
     });
 
     it('should lookup valid sponsor and return identity preview', async () => {
