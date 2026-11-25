@@ -10,7 +10,7 @@
 - **Rehearsal Database:** `askrev_rehearsal_disposable` (PostgreSQL 17.11 Local Clone — Complete 48-Journal Baseline Verified)
 - **Production Web Application:** `https://www.askrevdrive.com` (Registrations Paused: `REGISTRATION_PAUSED=true`)
 - **Staging Web Application:** `https://staging.askrevdrive.com` / `https://staging-admin.askrevdrive.com`
-- **Verified Release Commit SHA:** `7a2f32997e06ec70cb5c64319692dd9a5b36e89d` (Branches: `develop`, `feat/uat-master-compensation-refinements`)
+- **Verified Release Commit SHA:** `9fac98f986a98886fc94e83ba3a02fa5882ef4e7` (Branches: `develop`, `feat/uat-master-compensation-refinements`)
 - **Protected Production Baseline Commit SHA:** `d0c6b39e9e53f7cc95375ce2951df14ffb3b5b11` (Branch: `main`)
 
 ---
@@ -407,7 +407,7 @@ The script enforces strict, fail-closed guards against improper invocation or en
 - [ ] Asserts 100% field restoration and ₹0 ledger imbalance.
 
 ### Phase 5: Controlled Unfreeze & Service Resumption
-- [ ] Verify production API build and deploy commit `7a2f32997e06ec70cb5c64319692dd9a5b36e89d` to `main`.
+- [ ] Verify production API build and deploy commit `9fac98f986a98886fc94e83ba3a02fa5882ef4e7` to `main`.
 - [ ] Set `REGISTRATION_PAUSED=false` on Production API service.
 - [ ] Execute 1 controlled canary member registration via Member Portal.
 - [ ] Verify binary slot assignment and real-time ancestor headcount increments.
@@ -417,7 +417,7 @@ The script enforces strict, fail-closed guards against improper invocation or en
 
 ## 8. DEFINITIVE PREFLIGHT SIGN-OFF
 
-**Approved Release Commit SHA:** `7a2f32997e06ec70cb5c64319692dd9a5b36e89d`  
+**Approved Release Commit SHA:** `9fac98f986a98886fc94e83ba3a02fa5882ef4e7`  
 **Git Branches Synchronized:** `develop`, `feat/uat-master-compensation-refinements`  
 **Production `main` Baseline:** `d0c6b39e9e53f7cc95375ce2951df14ffb3b5b11` (Untouched)  
 **Database Integrity:** Verified across all 28 accounts, 28 wallets, 48 journals, 109 lines, 21 vouchers, 2 commission holds.  
