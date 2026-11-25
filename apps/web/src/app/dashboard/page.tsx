@@ -1563,9 +1563,9 @@ function DashboardContent() {
                 {(() => {
                   const heldINR = Number(
                     walletOverview?.heldCommissionsINR ??
-                      (walletOverview?.heldCommissionsPaise
-                        ? Number(walletOverview.heldCommissionsPaise) / 100
-                        : 0)
+                    (walletOverview?.heldCommissionsPaise
+                      ? Number(walletOverview.heldCommissionsPaise) / 100
+                      : 0)
                   );
                   if (heldINR <= 0) return null;
 
@@ -1930,8 +1930,8 @@ function DashboardContent() {
                   const layer = matrixOverview?.layer ?? matrixOverview?.placement?.depth;
                   const isQual = Boolean(
                     matrixOverview?.isQualified ??
-                      matrixOverview?.qualification?.isQualified ??
-                      matrixOverview?.metrics?.isQualified
+                    matrixOverview?.qualification?.isQualified ??
+                    matrixOverview?.metrics?.isQualified
                   );
                   const activeDirects =
                     matrixOverview?.activeDirectsCount ??
@@ -1965,13 +1965,13 @@ function DashboardContent() {
                     matrixOverview?.levelStats ||
                     (matrixOverview?.levelBreakdown
                       ? matrixOverview.levelBreakdown.map((lb: any) => ({
-                          level: lb.level,
-                          unitRateINR: lb.amountPerPositionINR,
-                          maxCapacity: lb.capacity,
-                          memberCount: lb.occupied,
-                          potentialIncomeINR: lb.projectedEarningsINR,
-                          earnedIncomeINR: lb.qualifiedEarningsINR,
-                        }))
+                        level: lb.level,
+                        unitRateINR: lb.amountPerPositionINR,
+                        maxCapacity: lb.capacity,
+                        memberCount: lb.occupied,
+                        potentialIncomeINR: lb.projectedEarningsINR,
+                        earnedIncomeINR: lb.qualifiedEarningsINR,
+                      }))
                       : null);
 
                   return (
@@ -2010,11 +2010,10 @@ function DashboardContent() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
-                            isQual
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : 'bg-amber-50 text-amber-800 border-amber-200'
-                          }`}>
+                          <div className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${isQual
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
                             <Users className="w-3.5 h-3.5" />
                             <span>{activeDirects} / 3 Active Directs</span>
                             <span>•</span>
@@ -3621,11 +3620,10 @@ function DashboardContent() {
                               </td>
                               <td className="p-3 text-slate-600 text-[11px]">{h.releaseCondition}</td>
                               <td className="p-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                  h.status === 'RELEASED'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${h.status === 'RELEASED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
                                   {h.status}
                                 </span>
                               </td>
@@ -3880,11 +3878,10 @@ function DashboardContent() {
                                 {v.voucherCode}
                               </td>
                               <td className="py-3 px-4">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                  v.category === 'EV_VEHICLE_VOUCHER'
-                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${v.category === 'EV_VEHICLE_VOUCHER'
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                                  }`}>
                                   {v.category === 'EV_VEHICLE_VOUCHER' ? 'EV Vehicle Voucher' : 'Shopping Voucher'}
                                 </span>
                               </td>
@@ -5005,83 +5002,141 @@ function DashboardContent() {
                 </div>
               </div>
             ) : paymentMethod === 'UPI' ? (
-              <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-amber-200/80">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-amber-700" />
-                    <span className="font-bold text-xs text-amber-900 tracking-wide uppercase">
-                      UAT SIMULATION ONLY — REAL PAYMENTS DISABLED
-                    </span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-800">
-                    SIMULATION
-                  </span>
-                </div>
+              (() => {
+                const isSimulationEnv =
+                  process.env.NEXT_PUBLIC_COMPLIANCE_MODE === 'SIMULATION_ONLY' ||
+                  process.env.NEXT_PUBLIC_APP_ENV === 'staging' ||
+                  (typeof window !== 'undefined' &&
+                    (window.location.hostname.includes('staging') ||
+                      window.location.hostname.includes('localhost') ||
+                      window.location.hostname.includes('127.0.0.1') ||
+                      window.location.hostname.includes('vercel.app')));
 
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600 font-medium">Synthetic Testing VPA:</span>
-                    <div className="flex items-center gap-1.5">
-                      <code className="font-mono font-bold text-xs text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
-                        simulation.uat@askrev.internal
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText('simulation.uat@askrev.internal');
-                          setCopiedUpi(true);
-                          setTimeout(() => setCopiedUpi(false), 2000);
-                        }}
-                        className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
-                        title="Copy Synthetic VPA"
-                      >
-                        {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                return isSimulationEnv ? (
+                  <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-amber-200/80">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-amber-700" />
+                        <span className="font-bold text-xs text-amber-900 tracking-wide uppercase">
+                          UAT SIMULATION ONLY — REAL PAYMENTS DISABLED
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-800">
+                        SIMULATION
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-medium">Synthetic Testing VPA:</span>
+                        <div className="flex items-center gap-1.5">
+                          <code className="font-mono font-bold text-xs text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                            simulation.uat@askrev.internal
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText('simulation.uat@askrev.internal');
+                              setCopiedUpi(true);
+                              setTimeout(() => setCopiedUpi(false), 2000);
+                            }}
+                            className="p-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-600"
+                            title="Copy Synthetic VPA"
+                          >
+                            {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-medium">Payable Amount:</span>
+                        <strong className="text-[#165DAD] font-mono text-sm">
+                          {selectedRequestType === 'BASIC_ACTIVATION'
+                            ? '₹3,000'
+                            : selectedRequestType === 'FULL_ACTIVATION'
+                              ? '₹33,000'
+                              : '₹30,000'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white rounded-lg border border-amber-200/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-[#253247]">
+                          Synthetic UTR Reference <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const randomUtr = `UTR-SIM-${Math.floor(100000 + Math.random() * 900000)}`;
+                            setPaymentUtr(randomUtr);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>+ Insert Synthetic UTR</span>
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={paymentUtr}
+                        onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
+                        placeholder="Click '+ Insert Synthetic UTR' or enter test UTR"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
+                      />
+                      <p className="text-[10px] text-slate-500">
+                        Live banking and UPI transfers are disabled. Use the synthetic UTR generator to submit simulation requests for admin verification testing.
+                      </p>
                     </div>
                   </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                      <span className="font-bold text-xs text-slate-800 tracking-wide uppercase">
+                        Official Merchant UPI Transfer
+                      </span>
+                    </div>
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600 font-medium">Payable Amount:</span>
-                    <strong className="text-[#165DAD] font-mono text-sm">
-                      {selectedRequestType === 'BASIC_ACTIVATION'
-                        ? '₹3,000'
-                        : selectedRequestType === 'FULL_ACTIVATION'
-                          ? '₹33,000'
-                          : '₹30,000'}
-                    </strong>
-                  </div>
-                </div>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-medium">Merchant VPA:</span>
+                        <code className="font-mono font-bold text-xs text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                          {paymentConfig?.merchantUpiVpa || 'pay.askrev@bank'}
+                        </code>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-medium">Payable Amount:</span>
+                        <strong className="text-[#165DAD] font-mono text-sm">
+                          {selectedRequestType === 'BASIC_ACTIVATION'
+                            ? '₹3,000'
+                            : selectedRequestType === 'FULL_ACTIVATION'
+                              ? '₹33,000'
+                              : '₹30,000'}
+                        </strong>
+                      </div>
+                    </div>
 
-                <div className="p-3 bg-white rounded-lg border border-amber-200/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-[#253247]">
-                      Synthetic UTR Reference <span className="text-red-500">*</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const randomUtr = `UTR-SIM-${Math.floor(100000 + Math.random() * 900000)}`;
-                        setPaymentUtr(randomUtr);
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      <span>+ Insert Synthetic UTR</span>
-                    </button>
+                    <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                      <label className="block text-xs font-semibold text-[#253247]">
+                        Banking 12-Digit UTR Reference <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={22}
+                        value={paymentUtr}
+                        onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
+                        placeholder="Enter 12-digit UTR from your UPI payment receipt"
+                        className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
+                      />
+                      <p className="text-[10px] text-slate-500">
+                        Transfer the exact amount to our verified merchant UPI ID, then enter the 12-digit banking reference (UTR) for account activation verification.
+                      </p>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    required
-                    value={paymentUtr}
-                    onChange={(e) => setPaymentUtr(e.target.value.toUpperCase())}
-                    placeholder="Click '+ Insert Synthetic UTR' or enter test UTR"
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-300 focus:border-[#165DAD] focus:outline-none text-xs font-mono text-[#253247] placeholder:text-slate-400"
-                  />
-                  <p className="text-[10px] text-slate-500">
-                    Live banking and UPI transfers are disabled. Use the synthetic UTR generator to submit simulation requests for admin verification testing.
-                  </p>
-                </div>
-              </div>
+                );
+              })()
             ) : null}
 
             {/* Modal Actions */}

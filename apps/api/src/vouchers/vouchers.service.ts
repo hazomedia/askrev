@@ -31,7 +31,7 @@ export class RedeemVoucherDto {
 
 @Injectable()
 export class VouchersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Fetch all vouchers belonging to the authenticated member with detailed metrics
@@ -55,6 +55,13 @@ export class VouchersService {
       return {
         id: v.id,
         voucherCode: v.voucherCode,
+        category: v.category,
+        categoryLabel:
+          v.category === 'ADDITIONAL_SHOPPING_VOUCHER'
+            ? 'Additional Shopping Voucher'
+            : v.category === 'SHOPPING_VOUCHER'
+              ? 'EV Vehicle Voucher'
+              : v.category || 'Shopping Voucher',
         initialValueINR: paiseToRupees(v.initialValuePaise),
         remainingBalanceINR: paiseToRupees(v.remainingBalancePaise),
         usedAmountINR: paiseToRupees(usedPaise),
@@ -297,6 +304,34 @@ export class VouchersService {
       },
     });
 
+    const voucherIds = vouchers.map((v) => v.id);
+    const voucherCodes = vouchers.map((v) => v.voucherCode);
+
+    // Query recorded audit logs for voucher delivery evidence
+    const deliveryAuditLogs = await this.prisma.auditLog.findMany({
+      where: {
+        action: 'VOUCHER_EMAIL_NOTIFICATION',
+        OR: [
+          { entityId: { in: voucherIds } },
+          { entityType: 'ShoppingVoucher' },
+        ],
+      },
+      select: { entityId: true, metadata: true },
+    });
+
+    // Map by voucher id or voucher code from metadata
+    const deliveryStatusMap = new Map<string, string>();
+    for (const log of deliveryAuditLogs) {
+      const meta = log.metadata as any;
+      const status = meta?.deliveryStatus || 'SANDBOX_LOGGED';
+      if (log.entityId) {
+        deliveryStatusMap.set(log.entityId, status);
+      }
+      if (meta?.voucherCode) {
+        deliveryStatusMap.set(meta.voucherCode, status);
+      }
+    }
+
     let totalIssuedPaise = 0n;
     let totalOutstandingPaise = 0n;
     let totalRedeemedPaise = 0n;
@@ -317,12 +352,14 @@ export class VouchersService {
             ? 'EV Vehicle Voucher'
             : v.category || 'Shopping Voucher';
 
-      // Distinguish Live Sent, Sandbox Logged, Not Attempted
+      // Distinguish Live Sent, Sandbox Logged, Failed, Not Attempted based on recorded evidence
       let emailDeliveryStatus = 'NOT_ATTEMPTED';
-      if (v.emailSent) {
+      if (v.emailSent && v.emailSentAt) {
         emailDeliveryStatus = 'LIVE_SENT';
-      } else if (v.voucherCode.includes('UAT') || v.issuedReason?.includes('GRANT')) {
-        emailDeliveryStatus = 'SANDBOX_LOGGED';
+      } else if (deliveryStatusMap.has(v.id)) {
+        emailDeliveryStatus = deliveryStatusMap.get(v.id)!;
+      } else if (deliveryStatusMap.has(v.voucherCode)) {
+        emailDeliveryStatus = deliveryStatusMap.get(v.voucherCode)!;
       }
 
       return {

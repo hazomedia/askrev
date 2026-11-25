@@ -309,7 +309,16 @@ export class PackagesService {
         // 2. Validate UTR format (12-digit numeric or 12-22 alphanumeric standard banking reference)
         const rawRef = dto.paymentReference?.trim().toUpperCase();
         const utrRegex = /^([0-9]{12}|[A-Z0-9]{12,22})$/;
-        if (!rawRef || !utrRegex.test(rawRef)) {
+        const isSynthetic = /^([A-Z0-9_-]*(SIM|TEST)[A-Z0-9_-]*)$/i.test(rawRef || '');
+        if (isSynthetic) {
+          const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+          const isUatEnv = complianceMode === 'SIMULATION_ONLY' || process.env.NODE_ENV !== 'production';
+          if (!isUatEnv) {
+            throw new BadRequestException(
+              'Synthetic payment references are strictly rejected outside the approved isolated UAT simulation environment.'
+            );
+          }
+        } else if (!rawRef || !utrRegex.test(rawRef)) {
           throw new BadRequestException(
             'Invalid payment reference / UTR format. Standard UPI reference must be a 12-digit numeric or 12-22 alphanumeric transaction reference.'
           );
@@ -342,6 +351,13 @@ export class PackagesService {
           );
         }
       } else {
+        const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+        const isUatEnv = complianceMode === 'SIMULATION_ONLY' || process.env.NODE_ENV !== 'production';
+        if (!isUatEnv) {
+          throw new BadRequestException(
+            'Synthetic payment simulation is strictly prohibited outside the approved isolated UAT simulation environment.'
+          );
+        }
         cleanPaymentRef =
           dto.paymentReference?.trim().toUpperCase() ||
           `SIM-REF-${Date.now().toString().slice(-8)}-${Math.floor(100 + Math.random() * 900)}`;
@@ -591,7 +607,7 @@ export class PackagesService {
         if (!existingBasicVoucher) {
           const basicVoucherCode = `VCHR-BSC-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-          await tx.shoppingVoucher.create({
+          const basicVoucher = await tx.shoppingVoucher.create({
             data: {
               voucherCode: basicVoucherCode,
               userId: user.id,
@@ -617,6 +633,22 @@ export class PackagesService {
                 expiresAt: '2099-12-31',
               }
             );
+
+            await tx.auditLog.create({
+              data: {
+                actorId: user.id,
+                action: 'VOUCHER_EMAIL_NOTIFICATION',
+                entityType: 'ShoppingVoucher',
+                entityId: basicVoucher.id,
+                metadata: {
+                  deliveryStatus: 'SANDBOX_LOGGED',
+                  recipientEmail: user.email,
+                  voucherCode: basicVoucherCode,
+                  category: 'ADDITIONAL_SHOPPING_VOUCHER',
+                  loggedAt: new Date().toISOString(),
+                },
+              },
+            });
           }
 
           await tx.walletAccount.update({
@@ -670,7 +702,7 @@ export class PackagesService {
 
         // Grant Member's ₹30,000 Shopping Voucher (EV Vehicle Voucher)
         const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
-        await tx.shoppingVoucher.create({
+        const fullVoucher = await tx.shoppingVoucher.create({
           data: {
             voucherCode,
             userId: user.id,
@@ -691,6 +723,22 @@ export class PackagesService {
             category: 'EV_VEHICLE_VOUCHER',
             valueINR: paiseToRupees(voucherIssuedPaise),
             expiresAt: '2099-12-31',
+          });
+
+          await tx.auditLog.create({
+            data: {
+              actorId: user.id,
+              action: 'VOUCHER_EMAIL_NOTIFICATION',
+              entityType: 'ShoppingVoucher',
+              entityId: fullVoucher.id,
+              metadata: {
+                deliveryStatus: 'SANDBOX_LOGGED',
+                recipientEmail: user.email,
+                voucherCode,
+                category: 'EV_VEHICLE_VOUCHER',
+                loggedAt: new Date().toISOString(),
+              },
+            },
           });
         }
 
@@ -750,7 +798,7 @@ export class PackagesService {
 
         // Grant Member's ₹30,000 Shopping Voucher (EV Vehicle Voucher)
         const voucherCode = `VCHR-MBR-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
-        await tx.shoppingVoucher.create({
+        const upgradeVoucher = await tx.shoppingVoucher.create({
           data: {
             voucherCode,
             userId: user.id,
@@ -771,6 +819,22 @@ export class PackagesService {
             category: 'EV_VEHICLE_VOUCHER',
             valueINR: paiseToRupees(voucherIssuedPaise),
             expiresAt: '2099-12-31',
+          });
+
+          await tx.auditLog.create({
+            data: {
+              actorId: user.id,
+              action: 'VOUCHER_EMAIL_NOTIFICATION',
+              entityType: 'ShoppingVoucher',
+              entityId: upgradeVoucher.id,
+              metadata: {
+                deliveryStatus: 'SANDBOX_LOGGED',
+                recipientEmail: user.email,
+                voucherCode,
+                category: 'EV_VEHICLE_VOUCHER',
+                loggedAt: new Date().toISOString(),
+              },
+            },
           });
         }
 
@@ -1537,7 +1601,7 @@ export class PackagesService {
         const voucherGrantPaise = FINANCIAL_RULES.QUALIFIED_DIRECT_2ND_VOUCHER_PAISE;
         const sponsorVoucherCode = `VCHR-SPON-${Date.now().toString().slice(-8)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        await tx.shoppingVoucher.create({
+        const sponsorVoucher = await tx.shoppingVoucher.create({
           data: {
             voucherCode: sponsorVoucherCode,
             userId: params.sponsor.id,
@@ -1563,6 +1627,22 @@ export class PackagesService {
               expiresAt: '2099-12-31',
             }
           );
+
+          await tx.auditLog.create({
+            data: {
+              actorId: params.sponsor.id,
+              action: 'VOUCHER_EMAIL_NOTIFICATION',
+              entityType: 'ShoppingVoucher',
+              entityId: sponsorVoucher.id,
+              metadata: {
+                deliveryStatus: 'SANDBOX_LOGGED',
+                recipientEmail: params.sponsor.email,
+                voucherCode: sponsorVoucherCode,
+                category: 'ADDITIONAL_SHOPPING_VOUCHER',
+                loggedAt: new Date().toISOString(),
+              },
+            },
+          });
         }
 
         await tx.walletAccount.update({
