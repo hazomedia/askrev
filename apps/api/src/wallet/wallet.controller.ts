@@ -86,6 +86,9 @@ export class WalletController {
     @Param('id') id: string,
     @Body() dto?: AdminApproveWithdrawalDto
   ) {
+    if (admin.isSupportMode || admin.supportSessionId || admin.role === 'SUPPORT_READ_ONLY') {
+      throw new ForbiddenException('Withdrawal mutations are strictly prohibited during Admin View Mode.');
+    }
     return this.walletService.adminApproveWithdrawal(admin.id, id, dto);
   }
 
@@ -97,6 +100,9 @@ export class WalletController {
     @Param('id') id: string,
     @Body() dto: AdminRejectWithdrawalDto
   ) {
+    if (admin.isSupportMode || admin.supportSessionId || admin.role === 'SUPPORT_READ_ONLY') {
+      throw new ForbiddenException('Withdrawal mutations are strictly prohibited during Admin View Mode.');
+    }
     return this.walletService.adminRejectWithdrawal(admin.id, id, dto);
   }
 
@@ -108,6 +114,9 @@ export class WalletController {
     @Param('id') id: string,
     @Body() dto: AdminSettleWithdrawalDto
   ) {
+    if (admin.isSupportMode || admin.supportSessionId || admin.role === 'SUPPORT_READ_ONLY') {
+      throw new ForbiddenException('Withdrawal mutations are strictly prohibited during Admin View Mode.');
+    }
     return this.walletService.adminSettleWithdrawal(admin.id, id, dto);
   }
 

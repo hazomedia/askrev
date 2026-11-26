@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   ServiceUnavailableException,
   Optional,
 } from '@nestjs/common';
@@ -882,9 +883,26 @@ export class WalletService {
   }
 
   /**
+   * Enforces financial activation gates on all financial mutation operations.
+   * In Production SIMULATION_ONLY mode, live financial activations and manual withdrawals are disabled.
+   */
+  private ensureFinancialMutationAllowed(actionName: string) {
+    const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    const enableManualWithdrawals = process.env.ENABLE_MANUAL_WITHDRAWALS === 'true';
+
+    if (!enableManualWithdrawals && !enableLivePayouts) {
+      throw new ForbiddenException(
+        `Financial mutations are strictly disabled in Production (${actionName} blocked). Live financial activations and manual withdrawals are disabled (ENABLE_MANUAL_WITHDRAWALS=false, ENABLE_LIVE_PAYOUTS=false).`
+      );
+    }
+  }
+
+  /**
    * Admin: Approve Withdrawal Request
    */
   async adminApproveWithdrawal(adminUserId: string, withdrawalId: string, dto?: AdminApproveWithdrawalDto) {
+    this.ensureFinancialMutationAllowed('Withdrawal Approval');
     const withdrawal = await this.prisma.withdrawalRequest.findUnique({
       where: { id: withdrawalId },
       include: { user: true },
@@ -956,6 +974,7 @@ export class WalletService {
    * Admin: Reject Withdrawal Request (Refunds reserved balance with journal reversal)
    */
   async adminRejectWithdrawal(adminUserId: string, withdrawalId: string, dto: AdminRejectWithdrawalDto) {
+    this.ensureFinancialMutationAllowed('Withdrawal Rejection');
     const withdrawal = await this.prisma.withdrawalRequest.findUnique({
       where: { id: withdrawalId },
       include: { user: true },
@@ -1070,6 +1089,7 @@ export class WalletService {
    * Admin: Settle Withdrawal via Bank Transfer (Records UTR & posts final settlement journal)
    */
   async adminSettleWithdrawal(adminUserId: string, withdrawalId: string, dto: AdminSettleWithdrawalDto) {
+    this.ensureFinancialMutationAllowed('Withdrawal Settlement');
     if (!dto.utrNumber?.trim()) {
       throw new BadRequestException('Valid Bank UTR / Reference number is required for manual settlement.');
     }

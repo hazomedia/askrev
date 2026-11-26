@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WalletService } from './wallet.service';
 import { PayoutDestinationType } from './dto/withdrawal.dto';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { JournalAccount } from '@askrev/shared';
 
 describe('Withdrawal & Bank Settlement System (UAT)', () => {
@@ -464,6 +464,32 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
       expect(res.status).toBe('POLICY_PENDING_APPROVAL');
       expect(res.programId).toBe('EV_PURCHASE_CREDIT');
       expect(mockPrisma.auditLog.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('Disabled Financial Activation Gates (Production Enforcement)', () => {
+    beforeEach(() => {
+      process.env.ENABLE_MANUAL_WITHDRAWALS = 'false';
+      process.env.ENABLE_LIVE_PAYOUTS = 'false';
+      process.env.COMPLIANCE_MODE = 'SIMULATION_ONLY';
+    });
+
+    it('strictly blocks adminApproveWithdrawal when financial mutation gates are disabled', async () => {
+      await expect(
+        service.adminApproveWithdrawal('admin-1', 'wth-100')
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('strictly blocks adminRejectWithdrawal when financial mutation gates are disabled', async () => {
+      await expect(
+        service.adminRejectWithdrawal('admin-1', 'wth-200', { rejectionReason: 'Testing' })
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('strictly blocks adminSettleWithdrawal when financial mutation gates are disabled', async () => {
+      await expect(
+        service.adminSettleWithdrawal('admin-1', 'wth-300', { utrNumber: 'UTR12345' })
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });
