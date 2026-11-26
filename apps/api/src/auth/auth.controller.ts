@@ -58,6 +58,10 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // Proactively clear any stale support token on registration
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
+
     return { csrfToken };
   }
 
@@ -141,6 +145,10 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // Proactively clear any stale support token on registration
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
+
     return {
       message: result.message,
       emailVerificationSent: result.emailVerificationSent,
@@ -214,6 +222,14 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // Proactively clear any stale support token on normal login
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
+
+    // Proactively clear any stale support token on registration
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
+
     return {
       message: result.message,
       csrfToken,
@@ -279,6 +295,10 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // Proactively clear any stale support token on registration
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
+
     return {
       message: result.message,
       csrfToken,
@@ -326,6 +346,10 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // Proactively clear any stale support token on registration
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
+
     return {
       message: result.message,
       success: true,
@@ -366,6 +390,8 @@ export class AuthController {
     res.clearCookie('askrev_admin_access_token', { ...cookieOpts, path: '/' });
     res.clearCookie('askrev_admin_refresh_token', { ...cookieOpts, path: '/api/auth' });
     res.clearCookie('askrev_csrf_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { ...cookieOpts, path: '/' });
+    res.clearCookie('askrev_support_token', { path: '/', httpOnly: true });
 
     return this.authService.logout(user.id, token);
   }

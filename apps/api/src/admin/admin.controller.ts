@@ -143,7 +143,7 @@ export class AdminController {
     const tokenFromCookie = req.cookies?.['askrev_support_token'];
     const result = await this.adminService.exitSupportSession(user, dto, tokenFromCookie);
 
-    // Clear support session cookie
+    // Clear support session cookie across both domain scopes
     const isProd = process.env.NODE_ENV === 'production';
     res.clearCookie('askrev_support_token', {
       httpOnly: true,
@@ -151,6 +151,12 @@ export class AdminController {
       sameSite: 'lax',
       path: '/',
       domain: isProd ? '.askrevdrive.com' : undefined,
+    });
+    res.clearCookie('askrev_support_token', {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/',
     });
 
     return result;

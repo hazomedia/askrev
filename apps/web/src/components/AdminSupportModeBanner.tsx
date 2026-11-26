@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LogOut } from 'lucide-react';
-import { exitAdminSupportSessionApi } from '../lib/api';
+import { LogOut, CheckCircle2 } from 'lucide-react';
+import { exitAdminSupportSessionApi, clearSupportSession } from '../lib/api';
 
 interface AdminSupportModeBannerProps {
   member: {
@@ -22,25 +22,68 @@ export default function AdminSupportModeBanner({
   onExit,
 }: AdminSupportModeBannerProps) {
   const [isExiting, setIsExiting] = useState(false);
+  const [exitError, setExitError] = useState<string | null>(null);
+  const [isTerminated, setIsTerminated] = useState(false);
 
   const handleExit = async () => {
     setIsExiting(true);
+    setExitError(null);
     try {
       await exitAdminSupportSessionApi();
-    } catch {
-    } finally {
-      setIsExiting(false);
+      clearSupportSession();
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('askrev_user');
+      }
+      setIsTerminated(true);
       if (onExit) {
         onExit();
-      } else if (typeof window !== 'undefined') {
-        if (window.opener) {
-          window.close();
-        } else {
-          window.location.href = 'https://admin.askrevdrive.com/admin';
-        }
       }
+      if (typeof window !== 'undefined') {
+        window.close();
+      }
+    } catch (err: any) {
+      setExitError(err?.message || 'Failed to revoke support session on server.');
+      clearSupportSession();
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('askrev_user');
+      }
+      setIsTerminated(true);
+    } finally {
+      setIsExiting(false);
     }
   };
+
+  if (isTerminated) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+        <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-4">
+          <CheckCircle2 className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Admin View Session Closed</h2>
+        <p className="text-sm text-slate-300 max-w-md mb-6 leading-relaxed">
+          The administrative support session has been revoked and all cached data cleared.
+          {exitError ? <span className="block text-amber-400 text-xs mt-2">{exitError}</span> : null}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') window.close();
+            }}
+            className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
+          >
+            Close This Tab
+          </button>
+          <a
+            href="https://admin.askrevdrive.com/admin"
+            className="px-5 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors shadow-xs"
+          >
+            Return to Admin Portal
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <aside
@@ -63,7 +106,7 @@ export default function AdminSupportModeBanner({
           className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
         >
           <LogOut className="w-3.5 h-3.5" />
-          <span>{isExiting ? 'Exiting...' : 'Exit View'}</span>
+          <span>{isExiting ? 'Closing View...' : 'Exit View'}</span>
         </button>
       </div>
     </aside>

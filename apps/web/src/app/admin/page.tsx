@@ -212,7 +212,7 @@ export default function AdminPage() {
         ? `https://askrevdrive.com/dashboard?exchange_code=${encodeURIComponent(res.exchangeCode)}`
         : `/dashboard?exchange_code=${encodeURIComponent(res.exchangeCode)}`;
 
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      window.open(targetUrl, '_blank');
       setActionSuccess(`Opening Member Dashboard for ${targetMember.fullName || memberId} in a new tab...`);
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
@@ -258,35 +258,96 @@ export default function AdminPage() {
     }
   };
 
+  // Real-time debounced searches
+  useEffect(() => {
+    if (!currentUser || activeTab !== 'members') return;
+    const timer = setTimeout(() => {
+      fetchMembers(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [memberSearch, memberPackageFilter, memberQualFilter]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== 'finance') return;
+    const timer = setTimeout(() => {
+      fetchWallets();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [walletSearch]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== 'finance') return;
+    const timer = setTimeout(() => {
+      fetchLedger();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [ledgerSearch, ledgerFilterType]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== 'audit') return;
+    const timer = setTimeout(() => {
+      fetchAuditLogs();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [auditSearch, auditActionFilter]);
+
+  // Tab data loader
+  const loadTabData = async (tab: AdminTab) => {
+    try {
+      if (tab === 'overview') {
+        await fetchOverview();
+      } else {
+        if (!overview) {
+          fetchOverview().catch(() => null);
+        }
+        if (tab === 'members') await fetchMembers(membersPage);
+        else if (tab === 'approvals') {
+          await Promise.allSettled([fetchMembershipRequests(), fetchPaymentConfig()]);
+        } else if (tab === 'binary') await fetchBinaryData(binaryTreeMemberId);
+        else if (tab === 'matrix' || tab === 'sponsor-holds') await fetchMatrixAdminData();
+        else if (tab === 'finance') {
+          await Promise.allSettled([fetchWallets(), fetchLedger()]);
+        } else if (tab === 'vouchers') await fetchVouchers();
+        else if (tab === 'bookings') await fetchBookings();
+        else if (tab === 'reconciliation') await fetchReconciliation();
+        else if (tab === 'audit') await Promise.allSettled([fetchAuditLogs(), fetchSupportAuditLogs()]);
+        else if (tab === 'payment-settings') await fetchPaymentConfig();
+        else if (tab === 'security') {
+          const profile = await fetchCurrentUserProfile();
+          if (profile) setCurrentUser(profile);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`Tab data load notice (${tab}):`, err.message);
+    }
+  };
+
   // 1. Initial Authentication & Verification
   useEffect(() => {
     const handleInitAuth = async () => {
       let stored = getStoredUser();
-      if (
-        !stored ||
-        !['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(stored?.role)
-      ) {
-        // Smooth Page Refresh Auth Restoration:
-        // Attempt /auth/me profile restoration before redirecting to prevent premature logout
-        try {
-          const profile = await fetchCurrentUserProfile();
-          if (
-            profile &&
-            ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(profile.role)
-          ) {
-            stored = profile;
-            localStorage.setItem('askrev_user', JSON.stringify(profile));
-          } else {
-            router.push('/auth/login');
-            return;
-          }
-        } catch {
+      // Proactively verify /auth/me on refresh before triggering data requests
+      try {
+        const profile = await fetchCurrentUserProfile();
+        if (
+          profile &&
+          ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(profile.role)
+        ) {
+          stored = profile;
+          localStorage.setItem('askrev_user', JSON.stringify(profile));
+        } else if (!stored || !['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(stored?.role)) {
+          router.push('/auth/login');
+          return;
+        }
+      } catch {
+        if (!stored || !['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(stored?.role)) {
           router.push('/auth/login');
           return;
         }
       }
 
       setCurrentUser(stored);
+      let targetTab: AdminTab = 'overview';
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const tabParam = params.get('tab');
@@ -296,59 +357,25 @@ export default function AdminPage() {
           tabParam === 'sponsor-holds' ||
           (tabParam === 'banners' && stored.role === 'SUPER_ADMIN')
         ) {
-          setActiveTab(tabParam as AdminTab);
+          targetTab = tabParam as AdminTab;
+          setActiveTab(targetTab);
         }
       }
-      loadAllData();
+      setLoading(true);
+      try {
+        await loadTabData(targetTab);
+      } finally {
+        setLoading(false);
+      }
     };
 
     handleInitAuth();
   }, []);
 
-  const loadAllData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await Promise.allSettled([
-        fetchOverview(),
-        fetchMembers(1),
-        fetchMembershipRequests(),
-        fetchPaymentConfig(),
-        fetchBinaryData('ASKR-ADMIN-01'),
-        fetchWallets(),
-        fetchLedger(),
-        fetchVouchers(),
-        fetchBookings(),
-        fetchReconciliation(),
-        fetchAuditLogs(),
-        fetchMatrixAdminData(),
-      ]);
-    } catch (err: any) {
-      console.warn('Initial data load notice:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRefreshCurrentTab = async () => {
     setRefreshing(true);
     try {
-      if (activeTab === 'overview') await fetchOverview();
-      else if (activeTab === 'members') await fetchMembers(membersPage);
-      else if (activeTab === 'approvals') {
-        await Promise.all([fetchMembershipRequests(), fetchPaymentConfig()]);
-      } else if (activeTab === 'binary') await fetchBinaryData(binaryTreeMemberId);
-      else if (activeTab === 'matrix' || activeTab === 'sponsor-holds') await fetchMatrixAdminData();
-      else if (activeTab === 'finance') {
-        await Promise.allSettled([fetchWallets(), fetchLedger()]);
-      } else if (activeTab === 'vouchers') await fetchVouchers();
-      else if (activeTab === 'bookings') await fetchBookings();
-      else if (activeTab === 'reconciliation') await fetchReconciliation();
-      else if (activeTab === 'audit') await fetchAuditLogs();
-      else if (activeTab === 'security') {
-        const profile = await fetchCurrentUserProfile();
-        if (profile) setCurrentUser(profile);
-      }
+      await loadTabData(activeTab);
       setActionSuccess('Data refreshed successfully.');
       setTimeout(() => setActionSuccess(null), 3000);
     } catch (err: any) {
@@ -359,7 +386,7 @@ export default function AdminPage() {
   };
 
   // API Fetchers
-  const fetchOverview = async () => {
+  const fetchOverview = async (retryCount = 0) => {
     try {
       const [data, flushes, holds] = await Promise.all([
         fetchApi<any>('/admin/overview'),
@@ -371,6 +398,9 @@ export default function AdminPage() {
       if (Array.isArray(holds)) setCommissionHolds(holds);
     } catch (err: any) {
       console.error('Failed to fetch overview metrics:', err);
+      if (retryCount < 2) {
+        setTimeout(() => fetchOverview(retryCount + 1), 600);
+      }
     }
   };
 
@@ -755,9 +785,7 @@ export default function AdminPage() {
   const handleSelectTab = (tab: AdminTab) => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
-    if (tab === 'matrix' || tab === 'sponsor-holds') {
-      fetchMatrixAdminData();
-    }
+    loadTabData(tab);
     if (typeof window !== 'undefined') {
       const url = tab === 'overview' ? '/admin' : `/admin?tab=${tab}`;
       window.history.replaceState(null, '', url);
@@ -1084,7 +1112,12 @@ export default function AdminPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {(overview?.system?.unbalancedJournalCount ?? 0) > 0 || (overview?.system?.reconciliationStatus && overview?.system?.reconciliationStatus !== 'RECONCILED' && overview?.system?.reconciliationStatus !== 'RECONCILED_PERFECT') ? (
+                      {!overview ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200">
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                          <span>Validating Equilibrium...</span>
+                        </span>
+                      ) : (overview?.system?.unbalancedJournalCount ?? 0) > 0 || (overview?.system?.reconciliationStatus && overview?.system?.reconciliationStatus !== 'RECONCILED' && overview?.system?.reconciliationStatus !== 'RECONCILED_PERFECT') ? (
                         <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
                           <AlertCircle className="w-3.5 h-3.5 text-red-600" />
                           <span>Discrepancy Detected ({overview?.system?.unbalancedJournalCount || 1})</span>

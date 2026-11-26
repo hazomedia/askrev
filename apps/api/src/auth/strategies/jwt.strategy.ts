@@ -19,10 +19,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         (req: Request) => {
           if (req && req.cookies) {
-            // 1. Support session cookie priority for support requests
-            if (req.cookies['askrev_support_token']) {
+            const isSupportRequested =
+              req.headers['x-support-mode'] === 'true' ||
+              req.headers['x-admin-support-mode'] === 'true' ||
+              (typeof req.query?.is_support === 'string' && req.query.is_support === 'true');
+
+            // 1. Explicit support request priority when support mode is active
+            if (isSupportRequested && req.cookies['askrev_support_token']) {
               return req.cookies['askrev_support_token'];
             }
+
             // 2. Admin portal route isolation
             const urlPath = req.path || req.url || '';
             const origin = (req.headers?.origin || req.headers?.referer || '').toLowerCase();
@@ -30,9 +36,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             if (isAdminRoute && req.cookies['askrev_admin_access_token']) {
               return req.cookies['askrev_admin_access_token'];
             }
-            // 3. General member cookie
+
+            // 3. Normal member access token priority (normal login never overridden by stale support token)
+            if (req.cookies['askrev_access_token']) {
+              return req.cookies['askrev_access_token'];
+            }
+
+            // 4. Standalone support session token if present without normal member session
+            if (req.cookies['askrev_support_token']) {
+              return req.cookies['askrev_support_token'];
+            }
+
+            // 5. Fallback admin cookies
             return (
-              req.cookies['askrev_access_token'] ||
               req.cookies['askrev_admin_access_token'] ||
               req.cookies['askrev_admin_session'] ||
               null
@@ -110,20 +126,56 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
       // 7. Enforce explicit allowlist of safe read-only endpoints
       const safeAllowlist = [
+        // Auth & Identity
         '/auth/me',
+        '/auth/profile',
+        // Members & Binary
         '/members/dashboard',
         '/members/direct-team',
         '/members/binary-tree',
+        '/members/binary/history',
+        '/members/binary/carry-forward',
+        '/members/binary/flush-history',
+        '/members/support-consent/active',
+        // Legacy Matrix
+        '/legacy-matrix/my-matrix',
+        '/legacy-matrix/qualification',
+        '/legacy-matrix/settlement-preview',
+        '/legacy-matrix/overview',
         '/matrix/overview',
         '/matrix/my-placements',
         '/matrix/my-earnings',
+        // Packages & Holds
+        '/packages',
         '/packages/catalog',
+        '/packages/upgrade-options',
         '/packages/my-status',
+        '/packages/my-requests',
+        '/packages/my-holds',
+        '/packages/payment-config',
+        // Vouchers
         '/vouchers/my-vouchers',
         '/vouchers/my-balance',
+        '/vouchers/transactions',
+        // Wallets & Commissions
+        '/wallet/my-wallet',
+        '/wallet/transactions',
+        '/wallet/sponsor-commissions',
+        '/wallet/eligibility',
+        '/wallet/my-withdrawals',
+        '/wallet/club-fund',
+        // Vehicles & Bookings
+        '/ev-bikes',
+        '/ev-bikes/my-bookings',
         '/products',
         '/banners/active',
         '/banners/welcome-popup',
+        '/payments/methods',
+        // Retail Qualification
+        '/retail-qualification/my-progress',
+        '/retail-qualification/my-orders',
+        '/retail-qualification/config',
+        // Dedicated Termination
         '/admin/support/exit-session',
         '/support/exit-session',
       ];

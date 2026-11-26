@@ -297,6 +297,9 @@ export async function fetchApi<T>(
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Support-Mode'] = 'true';
+  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    headers['X-Support-Mode'] = 'true';
   }
 
   let csrf = getCsrfToken();
@@ -408,6 +411,9 @@ export async function uploadProductImageApi(
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Support-Mode'] = 'true';
+  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    headers['X-Support-Mode'] = 'true';
   }
   if (csrf) {
     headers['X-CSRF-Token'] = csrf;
@@ -532,6 +538,9 @@ export async function fetchPublishedCatalog(params?: {
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Support-Mode'] = 'true';
+  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    headers['X-Support-Mode'] = 'true';
   }
 
   let res = await fetch(`${API_BASE}/catalog${qs}`, {
@@ -581,6 +590,9 @@ export async function fetchHeroSlides(preview: boolean = false): Promise<any[]> 
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Support-Mode'] = 'true';
+  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    headers['X-Support-Mode'] = 'true';
   }
 
   const res = await fetch(`${API_BASE}/catalog/hero${qs}`, {
@@ -602,6 +614,9 @@ export async function fetchProductBySlug(slug: string, preview: boolean = false)
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Support-Mode'] = 'true';
+  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    headers['X-Support-Mode'] = 'true';
   }
 
   const res = await fetch(`${API_BASE}/catalog/${encodeURIComponent(slug)}${qs}`, {
@@ -630,6 +645,9 @@ export async function fetchHeroSliderSlides(preview: boolean = false): Promise<a
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Support-Mode'] = 'true';
+  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+    headers['X-Support-Mode'] = 'true';
   }
 
   const res = await fetch(`${API_BASE}/homepage/hero-slides${qs}`, {
@@ -1183,6 +1201,18 @@ export function clearSupportSession() {
   if (typeof window !== 'undefined') {
     sessionStorage.removeItem('askrev_support_token');
     sessionStorage.removeItem('askrev_support_meta');
+    sessionStorage.removeItem('askrev_support_mode');
+    localStorage.removeItem('askrev_support_meta');
+    try {
+      const stored = localStorage.getItem('askrev_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if (u?.isSupportMode || u?.role === 'ADMIN_SUPPORT' || sessionStorage.getItem('askrev_was_support')) {
+          localStorage.removeItem('askrev_user');
+        }
+      }
+      sessionStorage.removeItem('askrev_was_support');
+    } catch {}
   }
 }
 
@@ -1212,8 +1242,6 @@ export async function exitAdminSupportSessionApi(): Promise<any> {
       method: 'POST',
       body: JSON.stringify({}),
     });
-  } catch {
-    return { success: true };
   } finally {
     clearSupportSession();
   }

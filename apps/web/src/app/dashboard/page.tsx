@@ -433,12 +433,18 @@ function DashboardContent() {
     // 1. Smooth Auth Restoration on Page Refresh:
     // If askrev_user is absent in localStorage, attempt /auth/me before redirecting
     const stored = getStoredUser();
-    if (!stored) {
+    if (stored && (stored.isSupportMode || stored.role === 'ADMIN_SUPPORT')) {
+      // Clean up stale support user from normal login
+      localStorage.removeItem('askrev_user');
+    }
+    if (!stored || stored.isSupportMode || stored.role === 'ADMIN_SUPPORT') {
       fetchApi<any>('/auth/me')
         .then((profile) => {
           if (profile && profile.id) {
             setUser(profile);
-            localStorage.setItem('askrev_user', JSON.stringify(profile));
+            if (!isSupportMode) {
+              localStorage.setItem('askrev_user', JSON.stringify(profile));
+            }
             loadData();
           } else {
             router.push('/auth/login?redirect=/dashboard');
@@ -544,71 +550,30 @@ function DashboardContent() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // STAGE 1: Fast Essential Profile, Income, Holds & Banners First
       const [
         profileData,
-        teamData,
-        binaryData,
-        binaryHistoryData,
-        bookingsData,
-        vouchersData,
         walletData,
-        walletTxData,
-        voucherTxData,
-        requestsData,
-        paymentConfigData,
-        paymentMethodsData,
-        bannersData,
-        matrixData,
         flushData,
         myHoldsData,
+        bannersData,
       ] = await Promise.all([
         fetchApi<any>('/auth/me'),
-        fetchApi<any>('/members/direct-team').catch(() => null),
-        fetchApi<any>('/members/binary-tree').catch(() => null),
-        fetchApi<any[]>('/members/binary/history').catch(() => []),
-        fetchApi<any>('/ev-bikes/my-bookings').catch(() => []),
-        fetchApi<any>('/vouchers/my-vouchers').catch(() => []),
         fetchApi<any>('/wallet/my-wallet').catch(() => null),
-        fetchApi<any>('/wallet/transactions').catch(() => []),
-        fetchApi<any>('/vouchers/transactions').catch(() => []),
-        fetchApi<any>('/packages/my-requests').catch(() => []),
-        fetchApi<any>('/packages/payment-config').catch(() => null),
-        fetchApi<any>('/payments/methods').catch(() => null),
-        fetchActiveBanners().catch(() => ({ topBanner: null, slides: [], popupCampaign: null })),
-        fetchMyMatrixOverviewApi().catch((err) => {
-          setMatrixError(err.message || 'Matrix API error');
-          return null;
-        }),
         fetchBinaryFlushHistoryApi().catch(() => null),
         fetchMyCommissionHoldsApi().catch(() => []),
+        fetchActiveBanners().catch(() => ({ topBanner: null, slides: [], popupCampaign: null })),
       ]);
 
       setUser(profileData);
-      if (profileData && typeof window !== 'undefined') {
+      if (profileData && !isSupportMode && typeof window !== 'undefined') {
         localStorage.setItem('askrev_user', JSON.stringify(profileData));
       }
-      setMatrixOverview(matrixData);
+      setWalletOverview(walletData);
       setBinaryFlushData(flushData);
       setMyCommissionHolds(Array.isArray(myHoldsData) ? myHoldsData : []);
-      setDirectTeam(teamData);
-      setBinaryTree(binaryData);
-      setInspectedBinaryTree(binaryData);
-      setBinaryHistory(Array.isArray(binaryHistoryData) ? binaryHistoryData : []);
       if (profileData?.memberId) {
         setBinaryBreadcrumb([{ memberId: profileData.memberId, fullName: profileData.fullName || 'Me' }]);
-      }
-      setUserBookings(bookingsData);
-      setUserVouchers(vouchersData);
-      setWalletOverview(walletData);
-      setWalletTransactions(walletTxData);
-      setVoucherTransactions(voucherTxData);
-      setMembershipRequests(Array.isArray(requestsData) ? requestsData : []);
-      setPaymentConfig(paymentConfigData);
-      if (paymentMethodsData) {
-        setPaymentMethods(paymentMethodsData);
-        if (paymentMethodsData.gateways && paymentMethodsData.gateways.length > 0) {
-          setSelectedGatewayProvider(paymentMethodsData.gateways[0].provider);
-        }
       }
 
       // Handle Dashboard Banners and Welcome Popup (respecting Admin enable/disable)
@@ -652,6 +617,40 @@ function DashboardContent() {
         setPopupCampaign(null);
         setWelcomePopupOpen(false);
       }
+
+      // Complete initial loading block once essential income & wallet cards are painted
+      setLoading(false);
+
+      // STAGE 2: Core Matrix, Tree & Team Data in Parallel (Non-Blocking)
+      Promise.allSettled([
+        fetchApi<any>('/members/direct-team').then(setDirectTeam).catch(() => null),
+        fetchApi<any>('/members/binary-tree').then((b) => {
+          setBinaryTree(b);
+          setInspectedBinaryTree(b);
+        }).catch(() => null),
+        fetchMyMatrixOverviewApi().then(setMatrixOverview).catch((err) => {
+          setMatrixError(err.message || 'Matrix API error');
+        }),
+        fetchApi<any>('/vouchers/my-vouchers').then(setUserVouchers).catch(() => []),
+        fetchApi<any>('/packages/my-requests').then((r) => setMembershipRequests(Array.isArray(r) ? r : [])).catch(() => []),
+      ]);
+
+      // STAGE 3: Extended Histories & Configuration (Lazy / Background)
+      Promise.allSettled([
+        fetchApi<any[]>('/members/binary/history').then((h) => setBinaryHistory(Array.isArray(h) ? h : [])).catch(() => []),
+        fetchApi<any>('/wallet/transactions').then((tx) => setWalletTransactions(Array.isArray(tx) ? tx : [])).catch(() => []),
+        fetchApi<any>('/vouchers/transactions').then((tx) => setVoucherTransactions(Array.isArray(tx) ? tx : [])).catch(() => []),
+        fetchApi<any>('/ev-bikes/my-bookings').then(setUserBookings).catch(() => []),
+        fetchApi<any>('/packages/payment-config').then(setPaymentConfig).catch(() => null),
+        fetchApi<any>('/payments/methods').then((m) => {
+          if (m) {
+            setPaymentMethods(m);
+            if (m.gateways && m.gateways.length > 0) {
+              setSelectedGatewayProvider(m.gateways[0].provider);
+            }
+          }
+        }).catch(() => null),
+      ]);
     } catch (err: any) {
       setError(err.message || 'Failed to load member dashboard');
     } finally {
@@ -1198,8 +1197,7 @@ function DashboardContent() {
             expiresAt={supportMeta?.expiresAt}
             onExit={() => {
               setIsSupportMode(false);
-              clearSupportSession();
-              window.location.href = 'https://admin.askrevdrive.com/admin';
+              setUser(null);
             }}
           />
         )}
@@ -1270,8 +1268,7 @@ function DashboardContent() {
           expiresAt={supportMeta?.expiresAt}
           onExit={() => {
             setIsSupportMode(false);
-            clearSupportSession();
-            window.location.href = 'https://admin.askrevdrive.com/admin';
+            setUser(null);
           }}
         />
       )}
@@ -1306,16 +1303,18 @@ function DashboardContent() {
               />
             </div>
 
-            {/* Right: Logout button (44px min touch target matching left width for exact symmetry) */}
+            {/* Right: Logout button (Hidden in Admin View) */}
             <div className="w-11 flex items-center justify-end shrink-0">
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-lg text-slate-500 hover:text-[#DC2626] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors"
-                title="Sign out of portal"
-                aria-label="Logout"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+              {!isSupportMode && (
+                <button
+                  onClick={handleLogout}
+                  className="p-2 rounded-lg text-slate-500 hover:text-[#DC2626] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors"
+                  title="Sign out of portal"
+                  aria-label="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1364,16 +1363,19 @@ function DashboardContent() {
                 </span>
               )}
 
-              <div className="h-5 w-px bg-slate-200 mx-1" />
-
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-[#DC2626] transition-colors px-2.5 py-1.5 rounded-lg hover:bg-slate-50 min-h-[36px]"
-                title="Sign out of portal"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Logout</span>
-              </button>
+              {!isSupportMode && (
+                <>
+                  <div className="h-5 w-px bg-slate-200 mx-1" />
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-[#DC2626] transition-colors px-2.5 py-1.5 rounded-lg hover:bg-slate-50 min-h-[36px]"
+                    title="Sign out of portal"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Logout</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1531,13 +1533,15 @@ function DashboardContent() {
                     <Share2 className="w-3.5 h-3.5" />
                     <span>Share Referral Links</span>
                   </button>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Logout</span>
-                  </button>
+                  {!isSupportMode && (
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Logout</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
