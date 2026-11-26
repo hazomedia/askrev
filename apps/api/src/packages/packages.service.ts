@@ -1023,6 +1023,13 @@ export class PackagesService {
         // Feature 1: Place in Global 3x8 Legacy Matrix
         if (this.legacyMatrixService) {
           await this.legacyMatrixService.placeMemberInMatrix(user.id, tx);
+          if (user.sponsorId) {
+            try {
+              await this.legacyMatrixService.evaluateAndReleaseAccumulatedIncome(user.sponsorId, tx);
+            } catch (err: any) {
+              this.logger.warn(`Could not evaluate accumulated income for sponsor ${user.sponsorId}: ${err.message}`);
+            }
+          }
         }
       } else if (
         (req.requestType === MembershipRequestType.FULL_ACTIVATION ||
@@ -1071,6 +1078,13 @@ export class PackagesService {
         // Feature 1: Place in Global 3x8 Legacy Matrix
         if (this.legacyMatrixService) {
           await this.legacyMatrixService.placeMemberInMatrix(user.id, tx);
+          if (user.sponsorId) {
+            try {
+              await this.legacyMatrixService.evaluateAndReleaseAccumulatedIncome(user.sponsorId, tx);
+            } catch (err: any) {
+              this.logger.warn(`Could not evaluate accumulated income for sponsor ${user.sponsorId}: ${err.message}`);
+            }
+          }
         }
       }
 

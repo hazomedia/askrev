@@ -117,6 +117,7 @@ export class WalletService {
 
     let ledgerCrownBonusPaise = 0n;
     let ledgerRoyalMatchPaise = 0n;
+    let ledgerLegacyIncomePaise = 0n;
 
     for (const line of (ledgerLines as any[]) || []) {
       const eventType = line.journalEntry?.eventType || '';
@@ -127,6 +128,8 @@ export class WalletService {
         ledgerCrownBonusPaise += netPaise;
       } else if (isBinaryMatchEvent(eventType)) {
         ledgerRoyalMatchPaise += netPaise;
+      } else if (eventType === 'LEGACY_MATRIX_SETTLEMENT') {
+        ledgerLegacyIncomePaise += netPaise;
       }
     }
 
@@ -154,8 +157,10 @@ export class WalletService {
     const historicalBinaryPaise = binaryEventsPaise > placementPaise ? binaryEventsPaise : placementPaise;
     const royalMatchPaise = ledgerRoyalMatchPaise > historicalBinaryPaise ? ledgerRoyalMatchPaise : historicalBinaryPaise;
 
+    const shoppingWallet = await this.getShoppingWalletBalance(userId);
+
     const walletTotalEarned = BigInt(wallet.totalEarnedPaise ? String(wallet.totalEarnedPaise) : '0');
-    const computedTotalEarned = crownBonusPaise + royalMatchPaise;
+    const computedTotalEarned = crownBonusPaise + royalMatchPaise + ledgerLegacyIncomePaise;
     const totalEarnedPaise = walletTotalEarned > computedTotalEarned ? walletTotalEarned : computedTotalEarned;
 
     return {
@@ -164,18 +169,85 @@ export class WalletService {
       pendingRecoveryINR: paiseToRupees(wallet.pendingRecoveryPaise),
       totalEarnedINR: paiseToRupees(totalEarnedPaise),
       shoppingVoucherINR: paiseToRupees(wallet.shoppingVoucherBalancePaise),
+      shoppingWalletINR: shoppingWallet.availableShoppingWalletINR,
+      shoppingWallet,
       isEmailVerified: !!user?.isEmailVerified,
       breakdown: {
         totalEarningsINR: paiseToRupees(totalEarnedPaise),
         crownBonusINR: paiseToRupees(crownBonusPaise),
         royalMatchINR: paiseToRupees(royalMatchPaise),
-        legacyIncomeINR: 0,
-        clubFundINR: 0,
+        legacyIncomeINR: paiseToRupees(ledgerLegacyIncomePaise),
+        clubFundINR: shoppingWallet.availableShoppingWalletINR,
       },
       currency: 'INR',
       complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
       withdrawalsEnabled: false,
       withdrawalNotice: 'Withdrawals are restricted in compliance simulation mode. Live payouts are strictly non-operational.',
+    };
+  }
+
+  /**
+   * Authoritative Shopping Wallet (EV Club Fund) Balance & Ledger History
+   * Calculates net balance from 2150_EV_CLUB_FUND_LIABILITY ledger lines (Credits - Debits).
+   */
+  async getShoppingWalletBalance(userId: string) {
+    const lines = await this.prisma.journalLine.findMany({
+      where: {
+        userId,
+        account: {
+          in: [
+            JournalAccount.EV_CLUB_FUND_LIABILITY,
+            '2150_EV_CLUB_FUND_LIABILITY',
+          ],
+        },
+      },
+      include: {
+        journalEntry: {
+          select: {
+            referenceId: true,
+            eventType: true,
+            narration: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let totalCreditsPaise = 0n;
+    let totalDebitsPaise = 0n;
+
+    for (const line of lines) {
+      totalCreditsPaise += line.creditPaise;
+      totalDebitsPaise += line.debitPaise;
+    }
+
+    const availableBalancePaise =
+      totalCreditsPaise > totalDebitsPaise
+        ? totalCreditsPaise - totalDebitsPaise
+        : 0n;
+
+    return {
+      userId,
+      availableShoppingWalletPaise: availableBalancePaise.toString(),
+      availableShoppingWalletINR: Number(availableBalancePaise / 100n),
+      totalCreditedPaise: totalCreditsPaise.toString(),
+      totalCreditedINR: Number(totalCreditsPaise / 100n),
+      totalDebitedPaise: totalDebitsPaise.toString(),
+      totalDebitedINR: Number(totalDebitsPaise / 100n),
+      isWithdrawable: false,
+      isTransferable: false,
+      rulesNotice:
+        'Shopping Wallet (EV Club Fund) is strictly dedicated for EV bookings and product purchases. It is non-withdrawable and non-transferable to cash or Earnings Wallet.',
+      transactions: lines.map((l) => ({
+        id: l.id,
+        referenceId: l.journalEntry?.referenceId ?? null,
+        eventType: l.journalEntry?.eventType ?? null,
+        narration: l.journalEntry?.narration ?? l.description,
+        creditINR: Number(l.creditPaise / 100n),
+        debitINR: Number(l.debitPaise / 100n),
+        createdAt: l.createdAt,
+      })),
     };
   }
 
@@ -259,6 +331,111 @@ export class WalletService {
         status: r.status,
         createdAt: r.createdAt,
       })),
+    };
+  }
+
+  /**
+   * Admin: Complete Shopping Wallet (EV Club Fund) Ledger with search & pagination (Task 5)
+   */
+  async getAdminShoppingLedger(params: { page?: number; limit?: number; search?: string }) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(100, Math.max(1, params.limit || 50));
+    const skip = (page - 1) * limit;
+
+    const whereClause: any = {
+      account: {
+        in: [
+          JournalAccount.EV_CLUB_FUND_LIABILITY,
+          '2150_EV_CLUB_FUND_LIABILITY',
+        ],
+      },
+    };
+
+    if (params.search && params.search.trim()) {
+      const q = params.search.trim();
+      const matchedUsers = await this.prisma.user.findMany({
+        where: {
+          OR: [
+            { memberId: { contains: q, mode: 'insensitive' } },
+            { fullName: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      });
+      const matchedUserIds = matchedUsers.map((u) => u.id);
+
+      whereClause.OR = [
+        ...(matchedUserIds.length > 0 ? [{ userId: { in: matchedUserIds } }] : []),
+        { journalEntry: { referenceId: { contains: q, mode: 'insensitive' } } },
+        { journalEntry: { narration: { contains: q, mode: 'insensitive' } } },
+        { description: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, lines, aggregateCredits] = await Promise.all([
+      this.prisma.journalLine.count({ where: whereClause }),
+      this.prisma.journalLine.findMany({
+        where: whereClause,
+        include: {
+          journalEntry: {
+            select: { id: true, referenceId: true, eventType: true, narration: true, createdAt: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.journalLine.aggregate({
+        where: whereClause,
+        _sum: { creditPaise: true, debitPaise: true },
+      }),
+    ]);
+
+    const userIds = [...new Set(lines.map((l) => l.userId).filter(Boolean))] as string[];
+    const users = userIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, memberId: true, fullName: true, email: true },
+        })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const totalCreditsPaise = aggregateCredits._sum.creditPaise || 0n;
+    const totalDebitsPaise = aggregateCredits._sum.debitPaise || 0n;
+    const netLiabilityPaise =
+      totalCreditsPaise > totalDebitsPaise ? totalCreditsPaise - totalDebitsPaise : 0n;
+
+    return {
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+      summary: {
+        totalCreditsINR: Number(totalCreditsPaise / 100n),
+        totalDebitsINR: Number(totalDebitsPaise / 100n),
+        netOutstandingShoppingLiabilityINR: Number(netLiabilityPaise / 100n),
+      },
+      records: lines.map((l) => {
+        const u = l.userId ? userMap.get(l.userId) : null;
+        const isCredit = l.creditPaise > 0n;
+        const amountPaise = isCredit ? l.creditPaise : l.debitPaise;
+        return {
+          id: l.id,
+          referenceId: l.journalEntry?.referenceId || l.id,
+          memberId: u?.memberId || 'SYSTEM',
+          memberName: u?.fullName || 'System Account',
+          transactionType: l.journalEntry?.eventType || 'SHOPPING_WALLET_TX',
+          description: l.description || l.journalEntry?.narration || 'Shopping Wallet movement',
+          creditINR: Number(l.creditPaise / 100n),
+          debitINR: Number(l.debitPaise / 100n),
+          amountINR: Number(amountPaise / 100n),
+          isCredit,
+          date: l.createdAt.toISOString(),
+          status: 'SETTLED',
+        };
+      }),
     };
   }
 

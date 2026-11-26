@@ -24,6 +24,12 @@ export class CreateBookingDto {
   @IsOptional()
   voucherAmountINR?: number;
 
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  shoppingWalletAmountINR?: number;
+
   @IsString()
   @IsOptional()
   idempotencyKey?: string;
@@ -292,9 +298,52 @@ export class EvBikesService {
         }
       }
 
-      const netCashPaidPaise = bookingAmountPaise > actualVoucherDeductedPaise
-        ? bookingAmountPaise - actualVoucherDeductedPaise
-        : 0n;
+      const remainingAfterVoucherPaise =
+        bookingAmountPaise > actualVoucherDeductedPaise
+          ? bookingAmountPaise - actualVoucherDeductedPaise
+          : 0n;
+
+      let actualShoppingWalletDeductedPaise = 0n;
+      if (dto.shoppingWalletAmountINR && dto.shoppingWalletAmountINR > 0) {
+        // Authoritative Shopping Wallet available balance check from 2150_EV_CLUB_FUND_LIABILITY
+        const shoppingLines = await tx.journalLine.findMany({
+          where: {
+            userId,
+            account: {
+              in: [
+                JournalAccount.EV_CLUB_FUND_LIABILITY,
+                '2150_EV_CLUB_FUND_LIABILITY',
+              ],
+            },
+          },
+        });
+
+        let availableShoppingWalletPaise = 0n;
+        for (const sl of shoppingLines) {
+          availableShoppingWalletPaise += (sl.creditPaise - sl.debitPaise);
+        }
+        if (availableShoppingWalletPaise < 0n) availableShoppingWalletPaise = 0n;
+
+        const requestedShoppingWalletPaise = BigInt(
+          Math.round(dto.shoppingWalletAmountINR * 100)
+        );
+
+        if (requestedShoppingWalletPaise > availableShoppingWalletPaise) {
+          throw new BadRequestException(
+            `Requested shopping wallet amount (₹${paiseToRupees(requestedShoppingWalletPaise)}) exceeds available balance (₹${paiseToRupees(availableShoppingWalletPaise)}).`
+          );
+        }
+
+        actualShoppingWalletDeductedPaise = safeBigIntMin(
+          requestedShoppingWalletPaise,
+          remainingAfterVoucherPaise
+        );
+      }
+
+      const netCashPaidPaise =
+        remainingAfterVoucherPaise > actualShoppingWalletDeductedPaise
+          ? remainingAfterVoucherPaise - actualShoppingWalletDeductedPaise
+          : 0n;
 
       // Balanced Double-Entry Journal Entry
       const jnlRef = `JNL-BK-${bookingNumber}`;
@@ -315,6 +364,25 @@ export class EvBikesService {
             debitPaise: 0n,
             creditPaise: actualVoucherDeductedPaise,
             description: `Voucher applied to booking deposit ${bookingNumber}`,
+          }
+        );
+      }
+
+      if (actualShoppingWalletDeductedPaise > 0n) {
+        journalLines.push(
+          {
+            account: JournalAccount.EV_CLUB_FUND_LIABILITY,
+            userId,
+            debitPaise: actualShoppingWalletDeductedPaise,
+            creditPaise: 0n,
+            description: `Shopping wallet (EV Club Fund) redeemed for booking ${bookingNumber}`,
+          },
+          {
+            account: JournalAccount.EV_BOOKING_DEPOSITS,
+            userId,
+            debitPaise: 0n,
+            creditPaise: actualShoppingWalletDeductedPaise,
+            description: `Shopping wallet applied to booking deposit ${bookingNumber}`,
           }
         );
       }
@@ -383,6 +451,7 @@ export class EvBikesService {
             bikeName: bike.name,
             bookingAmountINR: paiseToRupees(bookingAmountPaise),
             voucherAppliedINR: paiseToRupees(actualVoucherDeductedPaise),
+            shoppingWalletAppliedINR: paiseToRupees(actualShoppingWalletDeductedPaise),
             netCashPaidINR: paiseToRupees(netCashPaidPaise),
             complianceMode: 'SIMULATION_ONLY',
           },
@@ -398,6 +467,7 @@ export class EvBikesService {
           modelCode: booking.bike.modelCode,
           bookingAmountINR: paiseToRupees(booking.bookingAmountPaise),
           voucherAppliedINR: paiseToRupees(booking.voucherAppliedPaise),
+          shoppingWalletAppliedINR: paiseToRupees(actualShoppingWalletDeductedPaise),
           netCashPaidINR: paiseToRupees(booking.netCashPaidPaise),
           voucherCode: booking.voucher?.voucherCode || null,
           bookingStatus: booking.bookingStatus,

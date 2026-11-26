@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, MembershipPackage } from '@prisma/client';
+import { JournalAccount } from '@askrev/shared';
 import {
   LEGACY_MATRIX_RATES,
   LEGACY_MATRIX_CONFIG,
@@ -47,10 +48,21 @@ export class LegacyMatrixService {
       // Verify User
       const user = await tx.user.findUnique({
         where: { id: userId },
-        select: { id: true, memberId: true, fullName: true, sponsorId: true },
+        select: { id: true, memberId: true, fullName: true, sponsorId: true, currentPackage: true, role: true },
       });
       if (!user) {
         throw new NotFoundException(`User with ID ${userId} not found.`);
+      }
+
+      // TASK 1: EV GO / FREE members must NOT receive Legacy Matrix placement.
+      // Super Admin is exempt as matrix root.
+      if (user.currentPackage === MembershipPackage.FREE && user.role !== 'SUPER_ADMIN') {
+        return {
+          placement: null,
+          isNew: false,
+          eligible: false,
+          message: 'EV GO / FREE members are not eligible for Legacy Matrix placement.',
+        };
       }
 
       // Concurrency lock using PostgreSQL advisory lock
@@ -188,6 +200,132 @@ export class LegacyMatrixService {
           },
         },
       });
+
+      // 6. Upstream matrix rewards / accumulation evaluation across 8 levels
+      let currentParentId = targetParentId;
+      for (let level = 1; level <= LEGACY_MATRIX_CONFIG.MAX_EARNING_LEVELS && currentParentId; level++) {
+        const parentPlacement = await tx.legacyMatrixPlacement.findUnique({
+          where: { id: currentParentId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                memberId: true,
+                role: true,
+                directReferrals: {
+                  where: { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+                  select: { id: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (!parentPlacement) break;
+
+        const ancestorUser = parentPlacement.user;
+        const rate = LEGACY_MATRIX_RATES.find((r) => r.level === level);
+        if (rate && ancestorUser) {
+          const activeDirectsCount = ancestorUser.directReferrals?.length || 0;
+          const isAncestorQualified = activeDirectsCount >= LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS;
+          const settlementRef = `LEGACY-SETTLE-${ancestorUser.id}-${newPlacement.id}-L${level}`;
+
+          if (isAncestorQualified && process.env.ENABLE_LEGACY_SETTLEMENT === 'true') {
+            const existingEntry = await tx.journalEntry.findUnique({ where: { referenceId: settlementRef } });
+            if (!existingEntry) {
+              const journalLines: any[] = [];
+              if (rate.destination === 'EARNINGS_WALLET') {
+                journalLines.push(
+                  {
+                    account: JournalAccount.LEGACY_MATRIX_EXPENSE,
+                    userId: ancestorUser.id,
+                    debitPaise: rate.amountPaise,
+                    creditPaise: 0n,
+                    description: `Legacy Matrix Level ${level} commission expense for ${ancestorUser.memberId}`,
+                  },
+                  {
+                    account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                    userId: ancestorUser.id,
+                    debitPaise: 0n,
+                    creditPaise: rate.amountPaise,
+                    description: `Legacy Matrix Level ${level} earnings credit (source: ${user.memberId})`,
+                  }
+                );
+
+                await tx.walletAccount.update({
+                  where: { userId: ancestorUser.id },
+                  data: {
+                    availableEarningsPaise: { increment: rate.amountPaise },
+                    totalEarnedPaise: { increment: rate.amountPaise },
+                  },
+                });
+              } else {
+                journalLines.push(
+                  {
+                    account: JournalAccount.EV_CLUB_FUND_EXPENSE,
+                    userId: ancestorUser.id,
+                    debitPaise: rate.amountPaise,
+                    creditPaise: 0n,
+                    description: `EV Club Fund Level ${level} promotional expense for ${ancestorUser.memberId}`,
+                  },
+                  {
+                    account: JournalAccount.EV_CLUB_FUND_LIABILITY,
+                    userId: ancestorUser.id,
+                    debitPaise: 0n,
+                    creditPaise: rate.amountPaise,
+                    description: `EV Club Fund Level ${level} credit (source: ${user.memberId})`,
+                  }
+                );
+              }
+
+              await tx.journalEntry.create({
+                data: {
+                  referenceId: settlementRef,
+                  eventType: 'LEGACY_MATRIX_SETTLEMENT',
+                  narration: `Legacy Matrix Level ${level} settled for ${ancestorUser.memberId} from ${user.memberId}`,
+                  lines: { create: journalLines },
+                },
+              });
+
+              await tx.legacyMatrixAuditLog.create({
+                data: {
+                  placementId: newPlacement.id,
+                  userId: ancestorUser.id,
+                  action: 'LEGACY_INCOME_CREDITED',
+                  details: {
+                    level,
+                    amountPaise: rate.amountPaise.toString(),
+                    destination: rate.destination,
+                    settlementRef,
+                    sourceMemberId: user.memberId,
+                  },
+                },
+              });
+            }
+          } else {
+            await tx.legacyMatrixAuditLog.create({
+              data: {
+                placementId: newPlacement.id,
+                userId: ancestorUser.id,
+                action: isAncestorQualified ? 'INCOME_SIMULATED_QUALIFIED' : 'INCOME_ACCUMULATED_UNQUALIFIED',
+                details: {
+                  level,
+                  amountPaise: rate.amountPaise.toString(),
+                  destination: rate.destination,
+                  activeDirectsCount,
+                  isQualified: isAncestorQualified,
+                  sourceMemberId: user.memberId,
+                  reason: !isAncestorQualified
+                    ? 'Pending 3 active direct referrals'
+                    : 'Simulation mode active (ENABLE_LEGACY_SETTLEMENT is not true)',
+                },
+              },
+            });
+          }
+        }
+
+        currentParentId = parentPlacement.parentId;
+      }
 
       this.logger.log(
         `✓ Legacy Matrix Node placed: ${user.memberId} (Seq #${nextSequence}, Depth ${targetDepth}, Parent ${newPlacement.parent?.user.memberId}, Pos ${targetPositionIndex})`
@@ -355,6 +493,38 @@ export class LegacyMatrixService {
     const evClubQualifiedINR = isQualified ? evClubProjectedINR : 0;
     const earningsWalletQualifiedINR = isQualified ? earningsWalletProjectedINR : 0;
 
+    let actuallyCreditedLegacyIncomePaise = 0n;
+    let actuallyCreditedEvClubFundPaise = 0n;
+
+    if (this.prisma.journalLine) {
+      const settledLines = await this.prisma.journalLine.findMany({
+        where: {
+          userId,
+          journalEntry: { eventType: 'LEGACY_MATRIX_SETTLEMENT' },
+        },
+        select: { account: true, creditPaise: true },
+      });
+
+      for (const line of settledLines) {
+        if (
+          line.account === JournalAccount.MEMBER_EARNINGS_PAYABLE ||
+          line.account === '2000_MEMBER_EARNINGS_PAYABLE'
+        ) {
+          actuallyCreditedLegacyIncomePaise += line.creditPaise;
+        } else if (
+          line.account === JournalAccount.EV_CLUB_FUND_LIABILITY ||
+          line.account === '2150_EV_CLUB_FUND_LIABILITY'
+        ) {
+          actuallyCreditedEvClubFundPaise += line.creditPaise;
+        }
+      }
+    }
+
+    const actuallyCreditedLegacyIncomeINR = Number(actuallyCreditedLegacyIncomePaise / 100n);
+    const actuallyCreditedEvClubFundINR = Number(actuallyCreditedEvClubFundPaise / 100n);
+    const actuallyCreditedINR = actuallyCreditedLegacyIncomeINR + actuallyCreditedEvClubFundINR;
+    const awaitingQualificationINR = isQualified ? 0 : totalProjectedEarningsINR;
+
     return {
       hasPlacement: true,
       memberId: user.memberId,
@@ -368,6 +538,12 @@ export class LegacyMatrixService {
       downlineCount: totalDownline,
       totalPotentialINR: totalProjectedEarningsINR,
       totalEarnedINR: totalQualifiedEarningsINR,
+      accumulatedLegacyIncomeINR: earningsWalletProjectedINR,
+      accumulatedEvClubFundINR: evClubProjectedINR,
+      awaitingQualificationINR,
+      actuallyCreditedLegacyIncomeINR,
+      actuallyCreditedEvClubFundINR,
+      actuallyCreditedINR,
       levelStats: levelBreakdown.map((lb) => ({
         level: lb.level,
         unitRateINR: lb.amountPerPositionINR,
@@ -416,9 +592,14 @@ export class LegacyMatrixService {
         // Qualified Income: Unlocked only after 3 active directs (BASIC or FULL)
         totalQualifiedEarningsINR,
         qualifiedEarningsINR: totalQualifiedEarningsINR,
-        // Actually Credited Income: Strict simulation mode, 0 live liabilities credited
-        actuallyCreditedINR: 0,
-        actuallyCreditedPaise: '0',
+        // Actually Credited Income from authoritative double-entry journal ledger
+        actuallyCreditedINR,
+        actuallyCreditedPaise: (actuallyCreditedLegacyIncomePaise + actuallyCreditedEvClubFundPaise).toString(),
+        actuallyCreditedLegacyIncomeINR,
+        actuallyCreditedEvClubFundINR,
+        accumulatedLegacyIncomeINR: earningsWalletProjectedINR,
+        accumulatedEvClubFundINR: evClubProjectedINR,
+        awaitingQualificationINR,
         // Destination Breakdown: Odd levels (EV Club) vs Even levels (Earnings Wallet)
         evClubProjectedINR,
         evClubQualifiedINR,
@@ -578,20 +759,42 @@ export class LegacyMatrixService {
       };
     });
 
+    const freeMembersWithPlacement = members
+      .filter(
+        (m) =>
+          m.legacyPlacement !== null &&
+          m.currentPackage === MembershipPackage.FREE &&
+          m.role !== 'SUPER_ADMIN'
+      )
+      .map((m) => ({
+        memberId: m.memberId,
+        fullName: m.fullName,
+        package: m.currentPackage,
+        matrixSequence: m.legacyPlacement!.matrixSequence,
+        depth: m.legacyPlacement!.depth,
+        positionIndex: m.legacyPlacement!.positionIndex,
+        notice: 'FREE member has Legacy Matrix placement. Preserved per live production protection rules.',
+      }));
+
     return {
       totalMembers: members.length,
       qualifiedMembersCount: report.filter((r) => r.isQualified).length,
       unqualifiedMembersCount: report.filter((r) => !r.isQualified).length,
+      inconsistencies: {
+        freeMembersWithPlacementCount: freeMembersWithPlacement.length,
+        freeMembersWithPlacement,
+      },
       report,
     };
   }
 
   /**
-   * Backfill existing imported 28 members into Legacy Matrix
+   * Backfill existing imported members into Legacy Matrix
    * in chronological order of activation/creation, without creating backdated payable credits.
+   * EV GO / FREE members are strictly excluded from matrix placement.
    */
   async backfillExistingMembersMatrix() {
-    this.logger.log('🚀 Starting deterministic Legacy Matrix backfill for baseline members...');
+    this.logger.log('🚀 Starting deterministic Legacy Matrix backfill for active members...');
 
     // Place Super Admin first as root
     const superAdmin = await this.prisma.user.findFirst({
@@ -614,24 +817,11 @@ export class LegacyMatrixService {
       await this.placeMemberInMatrix(member.id);
     }
 
-    // Then place free members
-    const freeMembers = await this.prisma.user.findMany({
-      where: {
-        role: { not: 'SUPER_ADMIN' },
-        currentPackage: MembershipPackage.FREE,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    for (const member of freeMembers) {
-      await this.placeMemberInMatrix(member.id);
-    }
-
     const totalPlaced = await this.prisma.legacyMatrixPlacement.count();
     this.logger.log(`✓ Legacy Matrix backfill completed. Total placed nodes: ${totalPlaced}`);
 
     return {
-      message: 'Legacy Matrix backfill completed successfully.',
+      message: 'Legacy Matrix backfill completed successfully for eligible active members.',
       totalPlaced,
     };
   }
@@ -821,5 +1011,447 @@ export class LegacyMatrixService {
       effectiveDate,
       message: `Prospective settlement evaluated for ${prospectivePlacements.length} eligible post-launch placements.`,
     };
+  }
+
+  /**
+   * Admin: System-wide READ-ONLY Legacy Matrix Settlement Preview (Task 5)
+   * Evaluates all placed members, qualification status, accumulated income,
+   * proposed releases, and liquidity analysis WITHOUT mutating any records.
+   */
+  async getAdminSettlementPreview() {
+    const placements = await this.prisma.legacyMatrixPlacement.findMany({
+      orderBy: { matrixSequence: 'asc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            memberId: true,
+            fullName: true,
+            currentPackage: true,
+            role: true,
+            directReferrals: {
+              where: { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+              select: { id: true, memberId: true, currentPackage: true },
+            },
+          },
+        },
+      },
+    });
+
+    const existingSettlementEntries = await this.prisma.journalEntry.findMany({
+      where: { eventType: 'LEGACY_MATRIX_SETTLEMENT' },
+      select: { referenceId: true },
+    });
+    const settledRefs = new Set(existingSettlementEntries.map((e) => e.referenceId));
+
+    const memberPreviews: any[] = [];
+    let systemTotalAccumulatedEarningsPaise = 0n;
+    let systemTotalAccumulatedShoppingPaise = 0n;
+    let systemTotalPreviouslyCreditedEarningsPaise = 0n;
+    let systemTotalPreviouslyCreditedShoppingPaise = 0n;
+    let systemProposedQualifiedEarningsPaise = 0n;
+    let systemProposedQualifiedShoppingPaise = 0n;
+
+    for (const placement of placements) {
+      const u = placement.user;
+      const activeDirectsCount = u.directReferrals.length;
+      const isQualified = activeDirectsCount >= LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS;
+
+      let currentLayerIds = [placement.id];
+      const levelWisePlacements: any[] = [];
+      let memberAccumulatedEarningsPaise = 0n;
+      let memberAccumulatedShoppingPaise = 0n;
+      let memberPreviouslyCreditedEarningsPaise = 0n;
+      let memberPreviouslyCreditedShoppingPaise = 0n;
+      let memberProposedEarningsPaise = 0n;
+      let memberProposedShoppingPaise = 0n;
+
+      for (let level = 1; level <= LEGACY_MATRIX_CONFIG.MAX_EARNING_LEVELS; level++) {
+        const rate = LEGACY_MATRIX_RATES[level - 1];
+
+        if (currentLayerIds.length === 0) {
+          levelWisePlacements.push({
+            level,
+            capacity: rate.positions,
+            occupied: 0,
+            rateINR: rate.amountINR,
+            destination: rate.destination,
+            accumulatedINR: 0,
+            previouslyCreditedINR: 0,
+            proposedCreditINR: 0,
+          });
+          continue;
+        }
+
+        const children = await this.prisma.legacyMatrixPlacement.findMany({
+          where: { parentId: { in: currentLayerIds } },
+          select: { id: true, userId: true },
+        });
+
+        let levelAccumulatedPaise = 0n;
+        let levelCreditedPaise = 0n;
+        let levelProposedPaise = 0n;
+
+        for (const child of children) {
+          const ref = `LEGACY-SETTLE-${u.id}-${child.id}-L${level}`;
+          const isCredited = settledRefs.has(ref);
+
+          levelAccumulatedPaise += rate.amountPaise;
+          if (rate.destination === 'EARNINGS_WALLET') {
+            memberAccumulatedEarningsPaise += rate.amountPaise;
+            if (isCredited) {
+              levelCreditedPaise += rate.amountPaise;
+              memberPreviouslyCreditedEarningsPaise += rate.amountPaise;
+            } else if (isQualified) {
+              levelProposedPaise += rate.amountPaise;
+              memberProposedEarningsPaise += rate.amountPaise;
+            }
+          } else {
+            memberAccumulatedShoppingPaise += rate.amountPaise;
+            if (isCredited) {
+              levelCreditedPaise += rate.amountPaise;
+              memberPreviouslyCreditedShoppingPaise += rate.amountPaise;
+            } else if (isQualified) {
+              levelProposedPaise += rate.amountPaise;
+              memberProposedShoppingPaise += rate.amountPaise;
+            }
+          }
+        }
+
+        levelWisePlacements.push({
+          level,
+          capacity: rate.positions,
+          occupied: children.length,
+          rateINR: rate.amountINR,
+          destination: rate.destination,
+          accumulatedINR: Number(levelAccumulatedPaise / 100n),
+          previouslyCreditedINR: Number(levelCreditedPaise / 100n),
+          proposedCreditINR: Number(levelProposedPaise / 100n),
+        });
+
+        currentLayerIds = children.map((c) => c.id);
+      }
+
+      systemTotalAccumulatedEarningsPaise += memberAccumulatedEarningsPaise;
+      systemTotalAccumulatedShoppingPaise += memberAccumulatedShoppingPaise;
+      systemTotalPreviouslyCreditedEarningsPaise += memberPreviouslyCreditedEarningsPaise;
+      systemTotalPreviouslyCreditedShoppingPaise += memberPreviouslyCreditedShoppingPaise;
+      systemProposedQualifiedEarningsPaise += memberProposedEarningsPaise;
+      systemProposedQualifiedShoppingPaise += memberProposedShoppingPaise;
+
+      memberPreviews.push({
+        memberId: u.memberId,
+        fullName: u.fullName,
+        package: u.currentPackage,
+        matrixSequence: placement.matrixSequence,
+        activeDirectsCount,
+        isQualified,
+        levelWisePlacements,
+        previouslyCreditedAmounts: {
+          earningsWalletINR: Number(memberPreviouslyCreditedEarningsPaise / 100n),
+          shoppingWalletINR: Number(memberPreviouslyCreditedShoppingPaise / 100n),
+          totalCreditedINR: Number((memberPreviouslyCreditedEarningsPaise + memberPreviouslyCreditedShoppingPaise) / 100n),
+        },
+        accumulatedUnpaidIncome: {
+          earningsWalletINR: Number((memberAccumulatedEarningsPaise - memberPreviouslyCreditedEarningsPaise) / 100n),
+          shoppingWalletINR: Number((memberAccumulatedShoppingPaise - memberPreviouslyCreditedShoppingPaise) / 100n),
+          totalAccumulatedUnpaidINR: Number(
+            (memberAccumulatedEarningsPaise +
+              memberAccumulatedShoppingPaise -
+              memberPreviouslyCreditedEarningsPaise -
+              memberPreviouslyCreditedShoppingPaise) /
+              100n
+          ),
+        },
+        proposedCredits: {
+          proposedEarningsWalletCreditINR: Number(memberProposedEarningsPaise / 100n),
+          proposedShoppingWalletCreditINR: Number(memberProposedShoppingPaise / 100n),
+          totalProposedCreditINR: Number((memberProposedEarningsPaise + memberProposedShoppingPaise) / 100n),
+          status: isQualified
+            ? memberProposedEarningsPaise + memberProposedShoppingPaise > 0n
+              ? 'READY_FOR_SETTLEMENT'
+              : 'FULLY_SETTLED'
+            : 'UNQUALIFIED_ACCUMULATED_HELD',
+        },
+      });
+    }
+
+    // Funding Analysis from authoritative double-entry journal ledger
+    let totalCashBankPaise = 0n;
+    let totalPlatformRevenuePaise = 0n;
+
+    if (this.prisma.journalLine) {
+      const [cashLines, revenueLines] = await Promise.all([
+        this.prisma.journalLine.findMany({
+          where: { account: { in: [JournalAccount.CASH_AND_BANK, '1000_CASH_AND_BANK'] } },
+          select: { debitPaise: true, creditPaise: true },
+        }),
+        this.prisma.journalLine.findMany({
+          where: { account: { in: [JournalAccount.PLATFORM_JOINING_REVENUE, '4000_PLATFORM_JOINING_REVENUE'] } },
+          select: { debitPaise: true, creditPaise: true },
+        }),
+      ]);
+
+      for (const l of cashLines) {
+        totalCashBankPaise += (l.debitPaise - l.creditPaise);
+      }
+      for (const l of revenueLines) {
+        totalPlatformRevenuePaise += (l.creditPaise - l.debitPaise);
+      }
+    }
+
+    const totalProposedLiabilityPaise =
+      systemProposedQualifiedEarningsPaise + systemProposedQualifiedShoppingPaise;
+    const totalCashBankINR = Number(totalCashBankPaise / 100n);
+    const totalProposedLiabilityINR = Number(totalProposedLiabilityPaise / 100n);
+    const shortfallINR =
+      totalProposedLiabilityINR > totalCashBankINR ? totalProposedLiabilityINR - totalCashBankINR : 0;
+
+    return {
+      previewNotice: 'READ-ONLY SETTLEMENT PREVIEW. NO TRANSACTIONS OR WALLETS MODIFIED.',
+      complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
+      settlementEnabled: process.env.ENABLE_LEGACY_SETTLEMENT === 'true',
+      summary: {
+        totalPlacedMembers: placements.length,
+        totalQualifiedMembers: memberPreviews.filter((m) => m.isQualified).length,
+        totalUnqualifiedMembers: memberPreviews.filter((m) => !m.isQualified).length,
+        totalAccumulatedLiabilitiesINR: {
+          earningsWalletINR: Number(systemTotalAccumulatedEarningsPaise / 100n),
+          shoppingWalletINR: Number(systemTotalAccumulatedShoppingPaise / 100n),
+          totalAccumulatedINR: Number((systemTotalAccumulatedEarningsPaise + systemTotalAccumulatedShoppingPaise) / 100n),
+        },
+        totalPreviouslyCreditedINR: {
+          earningsWalletINR: Number(systemTotalPreviouslyCreditedEarningsPaise / 100n),
+          shoppingWalletINR: Number(systemTotalPreviouslyCreditedShoppingPaise / 100n),
+          totalCreditedINR: Number(
+            (systemTotalPreviouslyCreditedEarningsPaise + systemTotalPreviouslyCreditedShoppingPaise) / 100n
+          ),
+        },
+        totalProposedReleaseINR: {
+          earningsWalletINR: Number(systemProposedQualifiedEarningsPaise / 100n),
+          shoppingWalletINR: Number(systemProposedQualifiedShoppingPaise / 100n),
+          totalProposedReleaseINR: totalProposedLiabilityINR,
+        },
+        fundingAnalysis: {
+          platformCashAndBankINR: totalCashBankINR,
+          platformRevenueINR: Number(totalPlatformRevenuePaise / 100n),
+          proposedImmediateLiabilityINR: totalProposedLiabilityINR,
+          fundingStatus: shortfallINR === 0 ? 'ADEQUATE_FUNDING' : 'LIQUIDITY_SHORTFALL',
+          shortfallINR,
+        },
+      },
+      members: memberPreviews,
+    };
+  }
+
+  /**
+   * Release all accumulated, uncredited matrix income when a member reaches 3 active directs
+   * or during controlled UAT settlement execution.
+   */
+  async evaluateAndReleaseAccumulatedIncome(userId: string, externalTx?: Prisma.TransactionClient) {
+    const run = async (tx: Prisma.TransactionClient) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        include: {
+          directReferrals: {
+            where: { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+            select: { id: true, memberId: true },
+          },
+          legacyPlacement: true,
+        },
+      });
+
+      if (!user) {
+        throw new NotFoundException(`User ${userId} not found.`);
+      }
+
+      const activeDirectsCount = user.directReferrals.length;
+      const isQualified = activeDirectsCount >= LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS;
+
+      if (!user.legacyPlacement) {
+        return {
+          memberId: user.memberId,
+          isQualified,
+          activeDirectsCount,
+          released: false,
+          reason: 'Member has no Legacy Matrix placement.',
+        };
+      }
+
+      if (!isQualified) {
+        return {
+          memberId: user.memberId,
+          isQualified: false,
+          activeDirectsCount,
+          released: false,
+          reason: `Requires 3 active directs (currently has ${activeDirectsCount}). Income remains accumulated.`,
+        };
+      }
+
+      // User is qualified! Traverse downline 8 levels and find uncredited placements
+      let currentLayerIds = [user.legacyPlacement.id];
+      const uncreditedItems: Array<{
+        placementId: string;
+        sourceUserId: string;
+        sourceMemberId: string;
+        level: number;
+        rate: (typeof LEGACY_MATRIX_RATES)[number];
+        settlementRef: string;
+      }> = [];
+
+      for (let level = 1; level <= LEGACY_MATRIX_CONFIG.MAX_EARNING_LEVELS; level++) {
+        if (currentLayerIds.length === 0) break;
+
+        const children = await tx.legacyMatrixPlacement.findMany({
+          where: { parentId: { in: currentLayerIds } },
+          include: {
+            user: { select: { id: true, memberId: true, currentPackage: true } },
+          },
+        });
+
+        const rate = LEGACY_MATRIX_RATES.find((r) => r.level === level)!;
+
+        for (const child of children) {
+          const settlementRef = `LEGACY-SETTLE-${user.id}-${child.id}-L${level}`;
+          const existingEntry = await tx.journalEntry.findUnique({
+            where: { referenceId: settlementRef },
+          });
+
+          if (!existingEntry) {
+            uncreditedItems.push({
+              placementId: child.id,
+              sourceUserId: child.user.id,
+              sourceMemberId: child.user.memberId,
+              level,
+              rate,
+              settlementRef,
+            });
+          }
+        }
+
+        currentLayerIds = children.map((c) => c.id);
+      }
+
+      let totalProposedEarningsPaise = 0n;
+      let totalProposedShoppingPaise = 0n;
+
+      for (const item of uncreditedItems) {
+        if (item.rate.destination === 'EARNINGS_WALLET') {
+          totalProposedEarningsPaise += item.rate.amountPaise;
+        } else {
+          totalProposedShoppingPaise += item.rate.amountPaise;
+        }
+      }
+
+      const isLiveSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+
+      if (!isLiveSettlementEnabled) {
+        return {
+          memberId: user.memberId,
+          isQualified: true,
+          activeDirectsCount,
+          released: false,
+          simulationMode: true,
+          uncreditedItemsCount: uncreditedItems.length,
+          proposedEarningsWalletPaise: totalProposedEarningsPaise.toString(),
+          proposedEarningsWalletINR: Number(totalProposedEarningsPaise / 100n),
+          proposedShoppingWalletPaise: totalProposedShoppingPaise.toString(),
+          proposedShoppingWalletINR: Number(totalProposedShoppingPaise / 100n),
+          message: 'SIMULATION ONLY: ENABLE_LEGACY_SETTLEMENT is false. Balances protected.',
+        };
+      }
+
+      // Execute live release for this qualified member in controlled UAT
+      let releasedEarningsPaise = 0n;
+      let releasedShoppingPaise = 0n;
+
+      for (const item of uncreditedItems) {
+        const journalLines: any[] = [];
+        if (item.rate.destination === 'EARNINGS_WALLET') {
+          journalLines.push(
+            {
+              account: JournalAccount.LEGACY_MATRIX_EXPENSE,
+              userId: user.id,
+              debitPaise: item.rate.amountPaise,
+              creditPaise: 0n,
+              description: `Legacy Matrix Level ${item.level} commission expense for ${user.memberId}`,
+            },
+            {
+              account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+              userId: user.id,
+              debitPaise: 0n,
+              creditPaise: item.rate.amountPaise,
+              description: `Legacy Matrix Level ${item.level} earnings credit (source: ${item.sourceMemberId})`,
+            }
+          );
+
+          await tx.walletAccount.update({
+            where: { userId: user.id },
+            data: {
+              availableEarningsPaise: { increment: item.rate.amountPaise },
+              totalEarnedPaise: { increment: item.rate.amountPaise },
+            },
+          });
+          releasedEarningsPaise += item.rate.amountPaise;
+        } else {
+          journalLines.push(
+            {
+              account: JournalAccount.EV_CLUB_FUND_EXPENSE,
+              userId: user.id,
+              debitPaise: item.rate.amountPaise,
+              creditPaise: 0n,
+              description: `EV Club Fund Level ${item.level} promotional expense for ${user.memberId}`,
+            },
+            {
+              account: JournalAccount.EV_CLUB_FUND_LIABILITY,
+              userId: user.id,
+              debitPaise: 0n,
+              creditPaise: item.rate.amountPaise,
+              description: `EV Club Fund Level ${item.level} credit (source: ${item.sourceMemberId})`,
+            }
+          );
+          releasedShoppingPaise += item.rate.amountPaise;
+        }
+
+        await tx.journalEntry.create({
+          data: {
+            referenceId: item.settlementRef,
+            eventType: 'LEGACY_MATRIX_SETTLEMENT',
+            narration: `Legacy Matrix Level ${item.level} settled for ${user.memberId} from ${item.sourceMemberId}`,
+            lines: { create: journalLines },
+          },
+        });
+
+        await tx.legacyMatrixAuditLog.create({
+          data: {
+            placementId: item.placementId,
+            userId: user.id,
+            action: 'ACCUMULATED_INCOME_RELEASED',
+            details: {
+              level: item.level,
+              amountPaise: item.rate.amountPaise.toString(),
+              destination: item.rate.destination,
+              settlementRef: item.settlementRef,
+              sourceMemberId: item.sourceMemberId,
+            },
+          },
+        });
+      }
+
+      return {
+        memberId: user.memberId,
+        isQualified: true,
+        activeDirectsCount,
+        released: true,
+        settledCount: uncreditedItems.length,
+        releasedEarningsPaise: releasedEarningsPaise.toString(),
+        releasedEarningsINR: Number(releasedEarningsPaise / 100n),
+        releasedShoppingPaise: releasedShoppingPaise.toString(),
+        releasedShoppingINR: Number(releasedShoppingPaise / 100n),
+      };
+    };
+
+    if (externalTx) return await run(externalTx);
+    return await this.prisma.$transaction(run, { timeout: 30000 });
   }
 }

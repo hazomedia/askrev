@@ -13,6 +13,12 @@ import {
   RotateCcw,
   Gauge,
   Filter,
+  Wallet,
+  ShoppingBag,
+  Ticket,
+  AlertCircle,
+  Receipt,
+  Info,
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
@@ -22,6 +28,8 @@ import {
   fetchPublishedCatalog,
   getStoredUser,
   isAdminPreviewActive,
+  fetchApi,
+  bookEvBikeWithCombinedCheckoutApi,
 } from '../../lib/api';
 
 function BookingFlowContent() {
@@ -43,12 +51,41 @@ function BookingFlowContent() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Load published catalog
+  // Member Combined Checkout States
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [memberVouchers, setMemberVouchers] = useState<any[]>([]);
+  const [memberShoppingWallet, setMemberShoppingWallet] = useState<any | null>(null);
+  const [selectedVoucherId, setSelectedVoucherId] = useState<string>('');
+  const [shoppingWalletAmount, setShoppingWalletAmount] = useState<number>(0);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingResult, setBookingResult] = useState<any | null>(null);
+
+  // Load published catalog & member balances
   useEffect(() => {
     const user = getStoredUser();
     if (user) {
+      setCurrentUser(user);
       if (user.fullName) setFullName((prev) => prev || user.fullName);
       if (user.phone) setPhone((prev) => prev || user.phone);
+
+      // Fetch member's active vouchers
+      fetchApi<any>('/vouchers/my-vouchers')
+        .then((res) => {
+          const list = Array.isArray(res) ? res : res?.vouchers || [];
+          const active = list.filter((v: any) => v.status === 'ACTIVE' && (v.currentBalanceINR || v.balanceINR || 0) > 0);
+          setMemberVouchers(active);
+          if (active.length > 0) {
+            setSelectedVoucherId(active[0].id);
+          }
+        })
+        .catch(() => []);
+
+      // Fetch member's Shopping Wallet balance
+      fetchApi<any>('/wallet/shopping-wallet')
+        .then((sw) => {
+          setMemberShoppingWallet(sw);
+        })
+        .catch(() => null);
     }
   }, []);
 
@@ -124,34 +161,78 @@ function BookingFlowContent() {
     setSelectedVehicle(vehicle);
     initVariant(vehicle);
     setSubmitted(false);
+    setBookingResult(null);
+    setBookingError(null);
     // Update URL query safely without full page reload
     router.replace(`/book?product=${encodeURIComponent(vehicle.slug || vehicle.id)}`);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const vehiclePriceINR = Number(selectedVehicle?.sellingPriceINR || selectedVehicle?.exShowroomPriceINR || 40000);
+
+  const activeVoucher = memberVouchers.find((v: any) => v.id === selectedVoucherId);
+  const voucherBalanceINR = activeVoucher ? Number(activeVoucher.currentBalanceINR || activeVoucher.balanceINR || 0) : 0;
+  const appliedVoucherDiscount = selectedVoucherId ? Math.min(voucherBalanceINR, vehiclePriceINR) : 0;
+
+  const availableShoppingBalance = Number(memberShoppingWallet?.availableShoppingWalletINR || 0);
+  const maxShoppingAllowed = Math.min(
+    availableShoppingBalance,
+    Math.max(0, vehiclePriceINR - appliedVoucherDiscount)
+  );
+
+  const appliedShoppingCredit = Math.min(Math.max(0, Number(shoppingWalletAmount) || 0), maxShoppingAllowed);
+  const totalCombinedDiscount = appliedVoucherDiscount + appliedShoppingCredit;
+  const finalNetPayable = Math.max(0, vehiclePriceINR - totalCombinedDiscount);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedVehicle) return;
+    setBookingError(null);
+
+    // Front-end validations (Task 4)
+    if (shoppingWalletAmount > availableShoppingBalance) {
+      setBookingError(`Shopping Wallet deduction (₹${shoppingWalletAmount.toLocaleString('en-IN')}) cannot exceed available balance of ₹${availableShoppingBalance.toLocaleString('en-IN')}.`);
+      return;
+    }
+    if (totalCombinedDiscount > vehiclePriceINR) {
+      setBookingError('Total discounts cannot exceed eligible vehicle price.');
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const existing = JSON.parse(localStorage.getItem('askrev_showroom_enquiries') || '[]');
-      existing.push({
-        vehicleId: selectedVehicle.id,
-        vehicleName: selectedVehicle.name,
-        modelCode: selectedVehicle.modelCode,
-        variant: selectedVariant || 'Standard',
-        fullName,
-        phone,
-        city,
-        timestamp: new Date().toISOString(),
-      });
-      localStorage.setItem('askrev_showroom_enquiries', JSON.stringify(existing));
-    } catch {}
-
-    setTimeout(() => {
+      if (currentUser) {
+        // Authenticated member combined checkout
+        const res = await bookEvBikeWithCombinedCheckoutApi({
+          bikeId: selectedVehicle.id,
+          voucherId: selectedVoucherId || undefined,
+          voucherAmountINR: appliedVoucherDiscount || undefined,
+          shoppingWalletAmountINR: appliedShoppingCredit || undefined,
+          deliveryAddress: city,
+          notes: `Variant: ${selectedVariant}. Breakdown: Price ₹${vehiclePriceINR}, Voucher ₹${appliedVoucherDiscount}, Shopping Wallet ₹${appliedShoppingCredit}, Net ₹${finalNetPayable}`,
+        });
+        setBookingResult(res);
+        setSubmitted(true);
+      } else {
+        // Guest showroom inquiry
+        const existing = JSON.parse(localStorage.getItem('askrev_showroom_enquiries') || '[]');
+        existing.push({
+          vehicleId: selectedVehicle.id,
+          vehicleName: selectedVehicle.name,
+          modelCode: selectedVehicle.modelCode,
+          variant: selectedVariant || 'Standard',
+          fullName,
+          phone,
+          city,
+          timestamp: new Date().toISOString(),
+        });
+        localStorage.setItem('askrev_showroom_enquiries', JSON.stringify(existing));
+        setSubmitted(true);
+      }
+    } catch (err: any) {
+      setBookingError(err.message || 'Failed to complete vehicle reservation.');
+    } finally {
       setSubmitting(false);
-      setSubmitted(true);
-    }, 600);
+    }
   };
 
   const filteredCatalog = React.useMemo(() => {
@@ -324,55 +405,91 @@ function BookingFlowContent() {
                   </div>
 
                   {submitted ? (
-                    <div className="text-center py-10 space-y-4">
+                    <div className="text-center py-8 space-y-5">
                       <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center border border-emerald-500/30 shadow-[0_0_20px_rgba(52,211,153,0.3)]">
                         <CheckCircle2 className="w-10 h-10" />
                       </div>
                       <div className="space-y-1">
                         <h3 className="text-2xl font-black text-[#F7FAFF]">
-                          Showroom Reservation Logged!
+                          Vehicle Reservation Confirmed!
                         </h3>
                         <p className="text-xs sm:text-sm text-[#AAB7C8] max-w-md mx-auto">
-                          Thank you, <span className="text-white font-bold">{fullName}</span>. Your priority request for the <span className="text-[#50D9FF] font-semibold">{selectedVehicle.name}</span> in <span className="text-white font-semibold">{selectedVariant}</span> has been confirmed.
+                          Thank you, <span className="text-white font-bold">{fullName}</span>. Your combined reservation for the <span className="text-[#50D9FF] font-semibold">{selectedVehicle.name}</span> ({selectedVariant}) has been logged.
                         </p>
                       </div>
 
-                      <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-left max-w-sm mx-auto space-y-1.5">
-                        <div className="flex justify-between">
-                          <span className="text-[#AAB7C8]">Vehicle:</span>
-                          <span className="font-bold text-white">{selectedVehicle.name}</span>
+                      {/* Authoritative Settlement & Booking Receipt */}
+                      <div className="p-5 rounded-2xl bg-[#080B12] border border-white/10 text-xs text-left max-w-md mx-auto space-y-3">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                          <span className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <Receipt className="w-4 h-4 text-[#50D9FF]" />
+                            <span>Combined Checkout Receipt</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                            {bookingResult?.bookingId || bookingResult?.id ? `Ref #${(bookingResult.bookingId || bookingResult.id).slice(0, 10)}` : 'SIMULATION LOGGED'}
+                          </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#AAB7C8]">Variant:</span>
-                          <span className="font-medium text-[#50D9FF]">{selectedVariant}</span>
+
+                        <div className="space-y-1.5 text-slate-300">
+                          <div className="flex justify-between">
+                            <span className="text-[#AAB7C8]">Vehicle Model:</span>
+                            <span className="font-bold text-white">{selectedVehicle.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#AAB7C8]">Selected Variant:</span>
+                            <span className="text-[#50D9FF] font-medium">{selectedVariant}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-white/5 pt-1.5">
+                            <span className="text-[#AAB7C8]">Vehicle Price:</span>
+                            <span className="font-bold text-white">₹{vehiclePriceINR.toLocaleString('en-IN')}</span>
+                          </div>
+                          {appliedVoucherDiscount > 0 && (
+                            <div className="flex justify-between text-emerald-400">
+                              <span>Applied Shopping Voucher:</span>
+                              <span className="font-bold">-₹{appliedVoucherDiscount.toLocaleString('en-IN')}</span>
+                            </div>
+                          )}
+                          {appliedShoppingCredit > 0 && (
+                            <div className="flex justify-between text-blue-400">
+                              <span>Applied Shopping Wallet Credit:</span>
+                              <span className="font-bold">-₹{appliedShoppingCredit.toLocaleString('en-IN')}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between border-t border-white/10 pt-2 text-sm font-black text-white">
+                            <span>Remaining Payable:</span>
+                            <span className="text-[#50D9FF]">₹{finalNetPayable.toLocaleString('en-IN')}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#AAB7C8]">Contact:</span>
-                          <span className="font-medium text-white">{phone}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-[#AAB7C8]">City:</span>
-                          <span className="font-medium text-white">{city}</span>
+
+                        <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 text-[11px] text-[#AAB7C8] space-y-1">
+                          <div className="font-semibold text-white">Double-Entry Accounting Notice:</div>
+                          <p>
+                            Simulated EV Booking deposit recorded under SIMULATION_ONLY mode (GL 2300 EV_BOOKING_DEPOSITS).
+                            Vouchers (GL 2100) and Shopping Wallet (GL 2150) balances debited.
+                          </p>
                         </div>
                       </div>
 
                       <div className="pt-2 flex justify-center gap-3">
                         <button
-                          onClick={() => setSubmitted(false)}
+                          onClick={() => {
+                            setSubmitted(false);
+                            setBookingResult(null);
+                          }}
                           className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 text-xs font-semibold text-white transition-colors"
                         >
                           Book Another Model
                         </button>
                         <Link
-                          href={`/bikes/${selectedVehicle.slug || selectedVehicle.id}`}
+                          href="/dashboard"
                           className="px-5 py-2.5 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-xs font-bold text-white transition-colors"
                         >
-                          View Vehicle Details
+                          View Member Dashboard
                         </Link>
                       </div>
                     </div>
                   ) : (
-                    <form onSubmit={handleSubmit} className="space-y-5">
+                    <form onSubmit={handleSubmit} className="space-y-6">
                       {/* Color Variant Selector */}
                       {selectedVehicle.colors && selectedVehicle.colors.length > 0 && (
                         <div className="space-y-2">
@@ -407,6 +524,151 @@ function BookingFlowContent() {
                               );
                             })}
                           </div>
+                        </div>
+                      )}
+
+                      {/* TASK 4: COMBINED SHOPPING CHECKOUT PANEL (VOUCHER + SHOPPING WALLET + PAYABLE) */}
+                      {currentUser ? (
+                        <div className="p-5 rounded-2xl bg-[#080B12] border border-blue-500/30 space-y-4 shadow-lg">
+                          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                            <div className="flex items-center gap-2">
+                              <ShoppingBag className="w-4 h-4 text-[#50D9FF]" />
+                              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                                Combined Shopping Checkout
+                              </h3>
+                            </div>
+                            <span className="text-[10px] font-bold text-[#50D9FF] bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                              3-Way Split Checkout
+                            </span>
+                          </div>
+
+                          {/* Balances Quick Summary */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-0.5">
+                              <span className="text-[10px] text-[#AAB7C8] uppercase font-semibold flex items-center gap-1">
+                                <Ticket className="w-3 h-3 text-emerald-400" />
+                                <span>Shopping Voucher</span>
+                              </span>
+                              <div className="text-base font-black text-emerald-400">
+                                ₹{voucherBalanceINR.toLocaleString('en-IN')}
+                              </div>
+                            </div>
+
+                            <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-0.5">
+                              <span className="text-[10px] text-[#AAB7C8] uppercase font-semibold flex items-center gap-1">
+                                <Wallet className="w-3 h-3 text-[#50D9FF]" />
+                                <span>Shopping Wallet</span>
+                              </span>
+                              <div className="text-base font-black text-[#50D9FF]">
+                                ₹{availableShoppingBalance.toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 1. Shopping Voucher Selector */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-[#AAB7C8] flex items-center justify-between">
+                              <span>1. Apply Shopping Voucher</span>
+                              {appliedVoucherDiscount > 0 && (
+                                <span className="text-emerald-400 font-bold">-₹{appliedVoucherDiscount.toLocaleString('en-IN')} applied</span>
+                              )}
+                            </label>
+                            {memberVouchers.length > 0 ? (
+                              <div className="space-y-2">
+                                <select
+                                  value={selectedVoucherId}
+                                  onChange={(e) => setSelectedVoucherId(e.target.value)}
+                                  className="w-full px-3 py-2 rounded-xl bg-[#101827] border border-white/15 text-xs text-white outline-none focus:border-[#267DFF]"
+                                >
+                                  <option value="">Do not apply Shopping Voucher</option>
+                                  {memberVouchers.map((v: any) => (
+                                    <option key={v.id} value={v.id}>
+                                      {v.code} — Balance: ₹{(v.currentBalanceINR || v.balanceINR || 0).toLocaleString('en-IN')} ({v.voucherType || 'SHOPPING_VOUCHER'})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-[#AAB7C8] bg-white/5 p-2.5 rounded-xl border border-white/5">
+                                No active Shopping Vouchers on your account. (Upgrade to EV ULTRA to receive ₹30,000 voucher credit).
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 2. Shopping Wallet Credit Input */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <label className="font-medium text-[#AAB7C8]">2. Apply Shopping Wallet Credit</label>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-[#AAB7C8]">Max eligible: ₹{maxShoppingAllowed.toLocaleString('en-IN')}</span>
+                                {maxShoppingAllowed > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShoppingWalletAmount(maxShoppingAllowed)}
+                                    className="text-[10px] text-[#50D9FF] hover:underline font-bold"
+                                  >
+                                    Apply Max
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-400 px-3 py-2 bg-white/5 rounded-xl border border-white/10">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max={maxShoppingAllowed}
+                                value={shoppingWalletAmount || ''}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  setShoppingWalletAmount(val < 0 ? 0 : val);
+                                }}
+                                placeholder="0"
+                                className="flex-1 px-3 py-2 rounded-xl bg-[#101827] border border-white/15 text-xs text-white outline-none focus:border-[#267DFF]"
+                              />
+                            </div>
+                            {shoppingWalletAmount > availableShoppingBalance && (
+                              <p className="text-[11px] text-red-400 font-medium">
+                                Amount exceeds your available Shopping Wallet balance of ₹{availableShoppingBalance.toLocaleString('en-IN')}.
+                              </p>
+                            )}
+                          </div>
+
+                          {/* 3. Authoritative Cost Breakdown Summary */}
+                          <div className="p-3.5 rounded-xl bg-[#101827] border border-white/10 space-y-2 text-xs">
+                            <div className="flex justify-between text-slate-400">
+                              <span>Product Price:</span>
+                              <span className="text-white font-semibold">₹{vehiclePriceINR.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="flex justify-between text-emerald-400">
+                              <span>Shopping Voucher Discount:</span>
+                              <span className="font-semibold">-₹{appliedVoucherDiscount.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="flex justify-between text-blue-400">
+                              <span>Shopping Wallet Credit:</span>
+                              <span className="font-semibold">-₹{appliedShoppingCredit.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="border-t border-white/10 pt-2 flex justify-between font-bold text-sm text-white">
+                              <span>Remaining Net Payable:</span>
+                              <span className="text-[#50D9FF]">₹{finalNetPayable.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 text-center pt-1 border-t border-white/5 font-mono">
+                              Product: ₹{vehiclePriceINR.toLocaleString('en-IN')} = Voucher: ₹{appliedVoucherDiscount.toLocaleString('en-IN')} + Wallet: ₹{appliedShoppingCredit.toLocaleString('en-IN')} + Net Cash: ₹{finalNetPayable.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-[#AAB7C8] flex items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <span className="text-white font-bold block">Are you an ASKR EV Member?</span>
+                            <span>Sign in to apply your Shopping Vouchers & EV Club Shopping Wallet to this booking.</span>
+                          </div>
+                          <Link
+                            href={`/auth/login?redirect=/book?product=${encodeURIComponent(selectedVehicle.slug || selectedVehicle.id)}`}
+                            className="px-3.5 py-1.5 rounded-lg bg-[#267DFF] text-white font-bold text-xs shrink-0 hover:bg-[#1A6EEB]"
+                          >
+                            Sign In
+                          </Link>
                         </div>
                       )}
 
@@ -449,25 +711,33 @@ function BookingFlowContent() {
                         />
                       </div>
 
+                      {/* Error Banner */}
+                      {bookingError && (
+                        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{bookingError}</span>
+                        </div>
+                      )}
+
                       {/* Submit Button */}
                       <div className="pt-2 space-y-2.5">
                         <button
                           type="submit"
-                          disabled={submitting}
-                          className="w-full py-4 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)] flex items-center justify-center gap-2 disabled:opacity-50"
+                          disabled={submitting || (shoppingWalletAmount > availableShoppingBalance) || (totalCombinedDiscount > vehiclePriceINR)}
+                          className="w-full py-4 rounded-full bg-[#267DFF] hover:bg-[#1A6EEB] text-white text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-[0_0_25px_rgba(38,125,255,0.4)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {submitting ? (
-                            <span>Confirming Reservation...</span>
+                            <span>Processing Combined Booking...</span>
                           ) : (
                             <>
-                              <span>Confirm Vehicle Reservation (₹0)</span>
+                              <span>Confirm Vehicle Booking (Pay ₹{finalNetPayable.toLocaleString('en-IN')})</span>
                               <Send className="w-4 h-4" />
                             </>
                           )}
                         </button>
                         <div className="flex items-center justify-center gap-2 text-[11px] text-[#AAB7C8]">
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Official Showroom Reservation • Non-Payment Pre-Booking • Priority Dispatch Queue</span>
+                          <span>Simulation Mode • Atomic Balanced Accounting • Priority Dispatch Queue</span>
                         </div>
                       </div>
                     </form>

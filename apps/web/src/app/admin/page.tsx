@@ -42,6 +42,7 @@ import {
   CreditCard,
   Sparkles,
   Layers,
+  ShoppingBag,
 } from 'lucide-react';
 import {
   fetchApi,
@@ -55,6 +56,8 @@ import {
   fetchAdminVouchersApi,
   initiateAdminSupportSessionApi,
   fetchAdminSupportAuditLogsApi,
+  fetchAdminSettlementPreviewApi,
+  fetchAdminShoppingLedgerApi,
 } from '../../lib/api';
 import { AdminProductCatalog } from '../../components/admin/AdminProductCatalog';
 import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
@@ -146,7 +149,14 @@ export default function AdminPage() {
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [ledgerFilterType, setLedgerFilterType] = useState('');
-  const [financeSubTab, setFinanceSubTab] = useState<'wallets' | 'ledger'>('wallets');
+  const [financeSubTab, setFinanceSubTab] = useState<'wallets' | 'ledger' | 'shopping'>('wallets');
+
+  // Shopping Wallet Admin Ledger State (Task 5)
+  const [adminShoppingLedger, setAdminShoppingLedger] = useState<any[]>([]);
+  const [adminShoppingTotal, setAdminShoppingTotal] = useState(0);
+  const [adminShoppingPage, setAdminShoppingPage] = useState(1);
+  const [adminShoppingSearch, setAdminShoppingSearch] = useState('');
+  const [loadingAdminShopping, setLoadingAdminShopping] = useState(false);
 
   // Vouchers Tab State
   const [vouchersData, setVouchersData] = useState<any | null>(null);
@@ -182,8 +192,13 @@ export default function AdminPage() {
   const [commissionHolds, setCommissionHolds] = useState<any[]>([]);
   const [holdFilterStatus, setHoldFilterStatus] = useState<'ALL' | 'HELD' | 'RELEASED'>('ALL');
   const [allVouchersData, setAllVouchersData] = useState<any[]>([]);
+  const [settlementPreviewData, setSettlementPreviewData] = useState<any | null>(null);
+  const [legacyIncomeSearch, setLegacyIncomeSearch] = useState('');
+  const [legacyIncomePage, setLegacyIncomePage] = useState(1);
+  const [clubFundSearch, setClubFundSearch] = useState('');
+  const [clubFundPage, setClubFundPage] = useState(1);
   const [loadingMatrix, setLoadingMatrix] = useState(false);
-  const [matrixSubTab, setMatrixSubTab] = useState<'tree' | 'qualifications' | 'flushes' | 'holds' | 'vouchers'>('tree');
+  const [matrixSubTab, setMatrixSubTab] = useState<'tree' | 'legacy-income' | 'club-fund' | 'qualifications' | 'flushes' | 'holds' | 'vouchers'>('tree');
 
   // TASK 3: Direct Admin View as Member States
   const [directViewLoadingMemberId, setDirectViewLoadingMemberId] = useState<string | null>(null);
@@ -235,15 +250,30 @@ export default function AdminPage() {
     }
   };
 
+  const fetchAdminShopping = async (page = 1, search = adminShoppingSearch) => {
+    setLoadingAdminShopping(true);
+    try {
+      const data = await fetchAdminShoppingLedgerApi(page, 50, search);
+      setAdminShoppingLedger(data?.transactions || []);
+      setAdminShoppingTotal(data?.total || 0);
+      setAdminShoppingPage(data?.page || page);
+    } catch (err: any) {
+      console.warn('Admin shopping ledger error:', err.message);
+    } finally {
+      setLoadingAdminShopping(false);
+    }
+  };
+
   const fetchMatrixAdminData = async () => {
     setLoadingMatrix(true);
     try {
-      const [report, tree, flushes, holds, vouchers] = await Promise.all([
+      const [report, tree, flushes, holds, vouchers, preview] = await Promise.all([
         fetchAdminMatrixReportApi().catch(() => null),
         fetchAdminMatrixTreeApi(1, 4).catch(() => null),
         fetchAdminBinaryFlushesApi().catch(() => []),
         fetchAdminCommissionHoldsApi().catch(() => []),
         fetchAdminVouchersApi().catch(() => null),
+        fetchAdminSettlementPreviewApi().catch(() => null),
       ]);
       setMatrixReport(report);
       setMatrixTreeData(tree);
@@ -251,6 +281,7 @@ export default function AdminPage() {
       setCommissionHolds(Array.isArray(holds) ? holds : []);
       const vList = vouchers?.vouchers || (Array.isArray(vouchers) ? vouchers : []);
       setAllVouchersData(vList);
+      setSettlementPreviewData(preview);
     } catch (err: any) {
       console.warn('Matrix admin data fetch notice:', err.message);
     } finally {
@@ -306,7 +337,7 @@ export default function AdminPage() {
         } else if (tab === 'binary') await fetchBinaryData(binaryTreeMemberId);
         else if (tab === 'matrix' || tab === 'sponsor-holds') await fetchMatrixAdminData();
         else if (tab === 'finance') {
-          await Promise.allSettled([fetchWallets(), fetchLedger()]);
+          await Promise.allSettled([fetchWallets(), fetchLedger(), fetchAdminShopping()]);
         } else if (tab === 'vouchers') await fetchVouchers();
         else if (tab === 'bookings') await fetchBookings();
         else if (tab === 'reconciliation') await fetchReconciliation();
@@ -2579,6 +2610,20 @@ export default function AdminPage() {
                     >
                       Double-Entry Journal Inspector ({ledgerTotal})
                     </button>
+                    <button
+                      onClick={() => {
+                        setFinanceSubTab('shopping');
+                        fetchAdminShopping(1);
+                      }}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                        financeSubTab === 'shopping'
+                          ? 'bg-[#165DAD] text-white shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span>Shopping Wallet Ledger ({adminShoppingTotal})</span>
+                    </button>
                   </div>
                 </div>
 
@@ -2719,6 +2764,105 @@ export default function AdminPage() {
                               </td>
                             </tr>
                           ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-view 3: Shopping Wallet Ledger (Task 5) */}
+                {financeSubTab === 'shopping' && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-2">
+                    <div className="p-3 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <Search className="w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by Reference ID, Member ID..."
+                          value={adminShoppingSearch}
+                          onChange={(e) => setAdminShoppingSearch(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && fetchAdminShopping(1, adminShoppingSearch)}
+                          className="text-xs w-full sm:w-72 border-none focus:outline-none"
+                        />
+                        <button
+                          onClick={() => fetchAdminShopping(1, adminShoppingSearch)}
+                          className="px-2.5 py-1 rounded bg-[#165DAD] text-white text-xs font-semibold cursor-pointer"
+                        >
+                          Search
+                        </button>
+                      </div>
+                      <span className="text-xs font-mono font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded border border-blue-200">
+                        Total Transactions: {adminShoppingTotal}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead className="bg-[#F7F9FC] text-slate-600 font-semibold border-b border-slate-200">
+                          <tr>
+                            <th className="py-3 px-4">Transaction Reference</th>
+                            <th className="py-3 px-4">Member ID</th>
+                            <th className="py-3 px-4">Member Name</th>
+                            <th className="py-3 px-4">Transaction Type</th>
+                            <th className="py-3 px-4 text-right">Credit</th>
+                            <th className="py-3 px-4 text-right">Debit</th>
+                            <th className="py-3 px-4 text-right">Balance</th>
+                            <th className="py-3 px-4 text-center">Date & Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {adminShoppingLedger.length > 0 ? (
+                            adminShoppingLedger.map((tx: any) => (
+                              <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                                  {tx.reference || tx.id}
+                                </td>
+                                <td className="py-3 px-4 font-mono font-bold text-[#165DAD]">
+                                  {tx.memberId}
+                                </td>
+                                <td className="py-3 px-4 font-medium text-slate-700">
+                                  {tx.memberName}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    tx.type === 'EV Club Fund Credit'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : tx.type === 'Shopping Purchase'
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  }`}>
+                                    {tx.type}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right font-bold">
+                                  {tx.credit > 0 ? (
+                                    <span className="text-[#15803D]">+₹{tx.credit.toLocaleString('en-IN')}</span>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-right font-bold">
+                                  {tx.debit > 0 ? (
+                                    <span className="text-[#DC2626]">-₹{tx.debit.toLocaleString('en-IN')}</span>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                                  ₹{(tx.balance || 0).toLocaleString('en-IN')}
+                                </td>
+                                <td className="py-3 px-4 text-center text-slate-500">
+                                  {new Date(tx.date).toLocaleString('en-IN')}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={8} className="py-8 text-center text-slate-400">
+                                {loadingAdminShopping ? 'Loading shopping ledger entries...' : 'No shopping ledger entries found.'}
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -3557,6 +3701,8 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
                   {[
                     { id: 'tree', label: `Matrix Placements (${matrixReport?.report?.length || 28})` },
+                    { id: 'legacy-income', label: 'EV Legacy Income Report' },
+                    { id: 'club-fund', label: 'EV Club Fund Report' },
                     { id: 'qualifications', label: '3-Active-Direct Qualifications' },
                     { id: 'flushes', label: `Binary Flush Audit (${binaryFlushes.length})` },
                     { id: 'holds', label: `Held Sponsor Bonuses (${commissionHolds.length})` },
@@ -3575,6 +3721,310 @@ export default function AdminPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* TASK 5: EV LEGACY INCOME REPORT */}
+                {matrixSubTab === 'legacy-income' && (() => {
+                  const allMembers = settlementPreviewData?.members || [];
+                  const filtered = allMembers.filter((m: any) => {
+                    const q = legacyIncomeSearch.toLowerCase().trim();
+                    if (!q) return true;
+                    return (
+                      (m.memberId && m.memberId.toLowerCase().includes(q)) ||
+                      (m.fullName && m.fullName.toLowerCase().includes(q)) ||
+                      (m.email && m.email.toLowerCase().includes(q))
+                    );
+                  });
+
+                  const pageSize = 15;
+                  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+                  const currentPage = Math.min(legacyIncomePage, totalPages);
+                  const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+                  return (
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-4 sm:p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                        <div>
+                          <h3 className="text-sm font-bold text-[#253247]">EV Legacy Income Settlement Report (Even Levels)</h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Authoritative breakdown of Even level allocations (Levels 2, 4, 6, 8) credited to Earnings Wallet (GL 2000)
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md border border-purple-200">
+                            Proposed Release: ₹{(settlementPreviewData?.evenLevelsProjectedINR ?? 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Search Bar */}
+                      <div className="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                        <div className="relative w-full sm:w-80">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            placeholder="Search by Member ID, Name..."
+                            value={legacyIncomeSearch}
+                            onChange={(e) => {
+                              setLegacyIncomeSearch(e.target.value);
+                              setLegacyIncomePage(1);
+                            }}
+                            className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-[#165DAD]"
+                          />
+                        </div>
+                        <span className="text-xs text-slate-500 font-mono">
+                          {filtered.length} member(s) found
+                        </span>
+                      </div>
+
+                      {/* Table */}
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                          <thead className="bg-[#F7F9FC] text-slate-600 font-semibold border-b border-slate-200">
+                            <tr>
+                              <th className="py-3 px-4">Member ID</th>
+                              <th className="py-3 px-4">Member Name</th>
+                              <th className="py-3 px-4 text-center">Active Directs</th>
+                              <th className="py-3 px-4 text-center">Qualification Status</th>
+                              <th className="py-3 px-4 text-right">Accumulated Income</th>
+                              <th className="py-3 px-4 text-right">Qualified Income</th>
+                              <th className="py-3 px-4 text-right">Credited Income</th>
+                              <th className="py-3 px-4 text-right">Pending Income</th>
+                              <th className="py-3 px-4 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-[#253247]">
+                            {paged.length > 0 ? (
+                              paged.map((m: any) => (
+                                <tr key={m.userId || m.memberId} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-4 font-mono font-bold text-[#165DAD]">
+                                    {m.memberId}
+                                  </td>
+                                  <td className="py-3 px-4 font-semibold text-slate-900">
+                                    {m.fullName}
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-mono font-bold">
+                                    {m.activeDirectsCount} / 3
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                      m.isQualified
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                                    }`}>
+                                      {m.isQualified ? 'QUALIFIED' : 'UNQUALIFIED'}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-slate-700">
+                                    ₹{(m.accumulatedLegacyIncomeINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-emerald-700">
+                                    ₹{(m.qualifiedLegacyIncomeINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-blue-700">
+                                    ₹{(m.actuallyCreditedLegacyIncomeINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-amber-700">
+                                    ₹{(m.pendingLegacyIncomeINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDirectViewMember(m)}
+                                      disabled={directViewLoadingMemberId === m.memberId}
+                                      className="px-2.5 py-1 text-[11px] font-semibold text-[#165DAD] bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors cursor-pointer"
+                                    >
+                                      View Dashboard
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={9} className="py-8 text-center text-slate-400">
+                                  {loadingMatrix ? 'Loading settlement preview records...' : 'No member records found matching the query.'}
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+                          <div>
+                            Showing page <span className="font-bold text-slate-800">{currentPage}</span> of <span className="font-bold text-slate-800">{totalPages}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setLegacyIncomePage((p) => Math.max(1, p - 1))}
+                              disabled={currentPage === 1}
+                              className="px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLegacyIncomePage((p) => Math.min(totalPages, p + 1))}
+                              disabled={currentPage === totalPages}
+                              className="px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* TASK 5: EV CLUB FUND REPORT */}
+                {matrixSubTab === 'club-fund' && (() => {
+                  const allMembers = settlementPreviewData?.members || [];
+                  const filtered = allMembers.filter((m: any) => {
+                    const q = clubFundSearch.toLowerCase().trim();
+                    if (!q) return true;
+                    return (
+                      (m.memberId && m.memberId.toLowerCase().includes(q)) ||
+                      (m.fullName && m.fullName.toLowerCase().includes(q)) ||
+                      (m.email && m.email.toLowerCase().includes(q))
+                    );
+                  });
+
+                  const pageSize = 15;
+                  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+                  const currentPage = Math.min(clubFundPage, totalPages);
+                  const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+                  return (
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-4 sm:p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                        <div>
+                          <h3 className="text-sm font-bold text-[#253247]">EV Club Fund Settlement Report (Odd Levels)</h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Authoritative breakdown of Odd level allocations (Levels 1, 3, 5, 7) credited to Shopping Wallet (GL 2150)
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold bg-teal-50 text-teal-700 px-2.5 py-1 rounded-md border border-teal-200">
+                            Total Club Fund: ₹{(settlementPreviewData?.oddLevelsProjectedINR ?? 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Search Bar */}
+                      <div className="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+                        <div className="relative w-full sm:w-80">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            placeholder="Search by Member ID, Name..."
+                            value={clubFundSearch}
+                            onChange={(e) => {
+                              setClubFundSearch(e.target.value);
+                              setClubFundPage(1);
+                            }}
+                            className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-[#165DAD]"
+                          />
+                        </div>
+                        <span className="text-xs text-slate-500 font-mono">
+                          {filtered.length} member(s) found
+                        </span>
+                      </div>
+
+                      {/* Table */}
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                          <thead className="bg-[#F7F9FC] text-slate-600 font-semibold border-b border-slate-200">
+                            <tr>
+                              <th className="py-3 px-4">Member ID</th>
+                              <th className="py-3 px-4">Member Name</th>
+                              <th className="py-3 px-4 text-right">Accumulated Club Fund</th>
+                              <th className="py-3 px-4 text-right">Qualified Club Fund</th>
+                              <th className="py-3 px-4 text-right">Credited Amount</th>
+                              <th className="py-3 px-4 text-right">Shopping Utilization</th>
+                              <th className="py-3 px-4 text-right">Available Shopping Balance</th>
+                              <th className="py-3 px-4 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-[#253247]">
+                            {paged.length > 0 ? (
+                              paged.map((m: any) => (
+                                <tr key={m.userId || m.memberId} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-4 font-mono font-bold text-[#165DAD]">
+                                    {m.memberId}
+                                  </td>
+                                  <td className="py-3 px-4 font-semibold text-slate-900">
+                                    {m.fullName}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-slate-700">
+                                    ₹{(m.accumulatedEvClubFundINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-teal-700">
+                                    ₹{(m.qualifiedEvClubFundINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-emerald-700">
+                                    ₹{(m.actuallyCreditedEvClubFundINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-purple-700">
+                                    ₹{(m.shoppingUtilizationINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-mono font-bold text-blue-700">
+                                    ₹{(m.availableShoppingBalanceINR || 0).toLocaleString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDirectViewMember(m)}
+                                      disabled={directViewLoadingMemberId === m.memberId}
+                                      className="px-2.5 py-1 text-[11px] font-semibold text-[#165DAD] bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors cursor-pointer"
+                                    >
+                                      View Dashboard
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={8} className="py-8 text-center text-slate-400">
+                                  {loadingMatrix ? 'Loading club fund records...' : 'No member records found matching the query.'}
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+                          <div>
+                            Showing page <span className="font-bold text-slate-800">{currentPage}</span> of <span className="font-bold text-slate-800">{totalPages}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setClubFundPage((p) => Math.max(1, p - 1))}
+                              disabled={currentPage === 1}
+                              className="px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setClubFundPage((p) => Math.min(totalPages, p + 1))}
+                              disabled={currentPage === totalPages}
+                              className="px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* SUBTAB 1: MATRIX PLACEMENTS */}
                 {matrixSubTab === 'tree' && (

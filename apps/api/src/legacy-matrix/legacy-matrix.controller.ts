@@ -81,6 +81,16 @@ export class LegacyMatrixController {
   }
 
   /**
+   * Admin Portal: System-wide READ-ONLY Settlement Preview (Task 5)
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  @Get('admin/settlement-preview')
+  async getAdminSettlementPreview() {
+    return await this.legacyMatrixService.getAdminSettlementPreview();
+  }
+
+  /**
    * Admin Portal: Controlled Prospective Settlement Execution (Task 4)
    */
   @UseGuards(JwtAuthGuard, RolesGuard)

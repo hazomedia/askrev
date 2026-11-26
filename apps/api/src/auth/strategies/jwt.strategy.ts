@@ -179,6 +179,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         '/wallet/eligibility',
         '/wallet/my-withdrawals',
         '/wallet/club-fund',
+        '/wallet/shopping-wallet',
         // Vehicles & Bookings
         '/ev-bikes',
         '/ev-bikes/my-bookings',

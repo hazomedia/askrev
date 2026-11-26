@@ -43,11 +43,11 @@ async function bootstrap() {
     process.env.NODE_ENV === 'production'
       ? prodOrigins
       : [
-          'http://localhost:3000',
-          'http://127.0.0.1:3000',
-          'http://admin.localhost:3000',
-          ...prodOrigins,
-        ];
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://admin.localhost:3000',
+        ...prodOrigins,
+      ];
   const allowedOrigins = new Set([...configuredOrigins, ...devFallbackOrigins]);
 
   app.enableCors({

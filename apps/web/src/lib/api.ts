@@ -1324,6 +1324,83 @@ export async function revokeMemberSupportConsentApi(): Promise<any> {
   });
 }
 
+// =============================================================================
+// SHOPPING WALLET & COMBINED CHECKOUT APIS
+// =============================================================================
+
+export interface ShoppingWalletData {
+  userId: string;
+  availableShoppingWalletPaise: string;
+  availableShoppingWalletINR: number;
+  totalCreditedPaise: string;
+  totalCreditedINR: number;
+  totalDebitedPaise: string;
+  totalDebitedINR: number;
+  isWithdrawable: boolean;
+  isTransferable: boolean;
+  rulesNotice: string;
+  transactions: Array<{
+    id: string;
+    referenceId: string | null;
+    eventType: string | null;
+    narration: string;
+    creditINR: number;
+    debitINR: number;
+    createdAt: string;
+  }>;
+}
+
+export async function fetchShoppingWalletBalanceApi(): Promise<ShoppingWalletData> {
+  return fetchApi<ShoppingWalletData>('/wallet/shopping-wallet');
+}
+
+export async function fetchAdminShoppingLedgerApi(
+  page: number = 1,
+  limit: number = 50,
+  search: string = ''
+): Promise<{
+  transactions: Array<{
+    id: string;
+    reference: string;
+    memberId: string;
+    memberName: string;
+    type: string;
+    credit: number;
+    debit: number;
+    balance: number;
+    date: string;
+    description: string;
+  }>;
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const query = new URLSearchParams();
+  query.append('page', String(page));
+  query.append('limit', String(limit));
+  if (search) query.append('search', search);
+  return fetchApi<any>(`/wallet/admin/shopping-ledger?${query.toString()}`);
+}
+
+export async function fetchAdminSettlementPreviewApi(): Promise<any> {
+  return fetchApi<any>('/legacy-matrix/admin/settlement-preview');
+}
+
+export async function bookEvBikeWithCombinedCheckoutApi(dto: {
+  bikeId: string;
+  voucherId?: string;
+  voucherAmountINR?: number;
+  shoppingWalletAmountINR?: number;
+  deliveryAddress?: string;
+  notes?: string;
+}): Promise<any> {
+  return fetchApi<any>('/ev-bikes/book', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+
 
 
 

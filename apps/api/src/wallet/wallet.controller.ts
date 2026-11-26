@@ -56,12 +56,32 @@ export class WalletController {
     return this.walletService.getEvClubFundOverview(user.id);
   }
 
+  @Get('shopping-wallet')
+  async getShoppingWallet(@CurrentUser() user: any) {
+    return this.walletService.getShoppingWalletBalance(user.id);
+  }
+
   @Post('club-fund/utilize')
   async requestClubFundUtilization(
     @CurrentUser() user: any,
     @Body() body: { programId: string; amountINR: number }
   ) {
     return this.walletService.requestClubFundUtilization(user.id, body.programId, body.amountINR);
+  }
+
+  @Get('admin/shopping-ledger')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  async getAdminShoppingLedger(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string
+  ) {
+    return this.walletService.getAdminShoppingLedger({
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+      search,
+    });
   }
 
   @Get('admin/reconciliation')
