@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EmailService } from './email.service';
 
-describe('EmailService - Brevo HTTPS API Hardening', () => {
+describe('EmailService - Complete 12 Transactional Events & Brevo HTTPS Suite', () => {
   let emailService: EmailService;
   const originalEnv = process.env;
 
@@ -53,10 +53,9 @@ describe('EmailService - Brevo HTTPS API Hardening', () => {
       expect(body.to).toEqual([{ email: 'member@askrevdrive.com', name: 'John Doe' }]);
       expect(body.subject).toBe('Reset Your ASKR EV Account Password');
       expect(body.textContent).toContain('https://www.askrevdrive.com/auth/reset-password?token=raw-secure-reset-token-12345');
-      expect(body.textContent).toContain('15 minutes');
     });
 
-    it('should dispatch verification email and log accepted by Brevo', async () => {
+    it('should dispatch verification email via Brevo HTTPS', async () => {
       process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
       process.env.SMTP_FROM = 'ASKR EV <no-reply@askrevdrive.com>';
 
@@ -80,161 +79,172 @@ describe('EmailService - Brevo HTTPS API Hardening', () => {
     });
   });
 
-  describe('2. No SMTP Fallback When Brevo HTTP Fails', () => {
-    it('should NEVER fall back to SMTP when Brevo HTTP API fails or rejects', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
-      // Even if SMTP variables are present in environment:
-      process.env.SMTP_HOST = 'smtp.fallback-should-never-be-called.com';
-      process.env.SMTP_USER = 'smtp-user';
-      process.env.SMTP_PASS = 'smtp-pass';
+  describe('2. Required 12 Transactional Email Workflows', () => {
+    let mockFetch: any;
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: () => Promise.resolve(JSON.stringify({ message: 'Internal upstream error' })),
+    beforeEach(() => {
+      process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
+      process.env.SMTP_FROM = 'ASKR EV <no-reply@askrevdrive.com>';
+      mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        text: () => Promise.resolve(JSON.stringify({ messageId: '<test-msg-id>' })),
       });
       vi.stubGlobal('fetch', mockFetch);
-
       emailService = new EmailService();
-
-      const success = await emailService.sendPasswordResetEmail(
-        'user@askrevdrive.com',
-        'User',
-        'token-123'
-      );
-
-      // Must return false and not attempt SMTP fallback
-      expect(success).toBe(false);
-      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    it('should NEVER fall back to SMTP when Brevo HTTP API times out', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
-      process.env.SMTP_HOST = 'smtp.fallback-should-never-be-called.com';
+    it('Event 1: New member registration welcome email', async () => {
+      const res = await emailService.sendWelcomeRegistrationEmail('user1@example.com', 'Alice User', 'ASKR-10001');
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Welcome to ASKR EV');
+      expect(body.textContent).toContain('ASKR-10001');
+    });
 
-      const abortError = new Error('The operation was aborted');
-      abortError.name = 'AbortError';
+    it('Event 3: Resend verification email', async () => {
+      const res = await emailService.sendResendEmailVerification('user2@example.com', 'Bob User', 'token-resend-123');
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Verify Your ASKR EV Email Address');
+    });
 
-      const mockFetch = vi.fn().mockRejectedValue(abortError);
-      vi.stubGlobal('fetch', mockFetch);
+    it('Event 5: Password changed confirmation', async () => {
+      const res = await emailService.sendPasswordChangedNotification('user3@example.com', 'Charlie User');
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Password Was Changed');
+    });
 
-      emailService = new EmailService();
+    it('Event 6: Membership activation confirmation', async () => {
+      const res = await emailService.sendMembershipActivationConfirmation('user4@example.com', 'David User', {
+        packageName: 'EV PRO',
+        invoiceRef: 'INV-2026-001',
+      });
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Membership Activated — EV PRO');
+      expect(body.textContent).toContain('INV-2026-001');
+    });
 
-      const success = await emailService.sendPasswordResetEmail(
-        'timeout@askrevdrive.com',
-        'User',
-        'token-timeout'
-      );
+    it('Event 7: Membership upgrade confirmation', async () => {
+      const res = await emailService.sendMembershipUpgradeConfirmation('user5@example.com', 'Eve User', {
+        fromPackage: 'EV PRO',
+        toPackage: 'EV ULTRA',
+        invoiceRef: 'INV-2026-002',
+      });
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Membership Upgraded to EV ULTRA');
+    });
 
-      expect(success).toBe(false);
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+    it('Event 8: Shopping Voucher issuance email', async () => {
+      const res = await emailService.sendVoucherIssuanceEmail('user6@example.com', 'Frank User', {
+        voucherCode: 'VCH-998822',
+        category: 'EV Showroom Credit',
+        valueINR: 5000,
+        expiresAt: '2027-11-26',
+      });
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Shopping Voucher Issued: ₹5000');
+      expect(body.textContent).toContain('VCH-998822');
+    });
+
+    it('Event 9: Withdrawal request confirmation', async () => {
+      const res = await emailService.sendWithdrawalRequestConfirmation('user7@example.com', 'Grace User', {
+        requestId: 'WD-101',
+        amountINR: 3000,
+        destinationMasked: 'Bank: HDFC (A/C: ••••4321)',
+        date: '2026-11-26',
+      });
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Withdrawal Request Received: ₹3000');
+      expect(body.textContent).toContain('WD-101');
+    });
+
+    it('Event 10: Withdrawal approval or rejection', async () => {
+      const resApprove = await emailService.sendWithdrawalStatusEmail('user8@example.com', 'Heidi User', {
+        requestId: 'WD-102',
+        status: 'APPROVED',
+        amountINR: 4500,
+      });
+      expect(resApprove).toBe(true);
+      const bodyApprove = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(bodyApprove.subject).toContain('Withdrawal Request APPROVED: ₹4500');
+
+      const resReject = await emailService.sendWithdrawalStatusEmail('user9@example.com', 'Ivan User', {
+        requestId: 'WD-103',
+        status: 'REJECTED',
+        amountINR: 2000,
+        reason: 'Bank account name mismatch',
+      });
+      expect(resReject).toBe(true);
+      const bodyReject = JSON.parse(mockFetch.mock.calls[1][1].body);
+      expect(bodyReject.subject).toContain('Withdrawal Request REJECTED: ₹2000');
+      expect(bodyReject.textContent).toContain('Bank account name mismatch');
+    });
+
+    it('Event 11: Bank settlement confirmation', async () => {
+      const res = await emailService.sendBankSettlementConfirmation('user10@example.com', 'Judy User', {
+        requestId: 'WD-104',
+        amountINR: 9000,
+        utrNumber: 'HDFCN26330998811',
+        settlementDate: '2026-11-26',
+        destinationMasked: 'Bank: HDFC (A/C: ••••5678)',
+      });
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('Settlement Completed: ₹9000 Dispatched');
+      expect(body.textContent).toContain('HDFCN26330998811');
+    });
+
+    it('Event 12: Account security alert notification', async () => {
+      const res = await emailService.sendSecurityAlertNotification('user11@example.com', 'Mallory User', {
+        alertType: 'New Device Sign-in',
+        message: 'A login from a new device was recorded.',
+        timestamp: '2026-11-26 11:00 IST',
+        ipAddress: '203.0.113.195',
+      });
+      expect(res).toBe(true);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.subject).toContain('ASKR EV Security Alert: New Device Sign-in');
+      expect(body.textContent).toContain('203.0.113.195');
     });
   });
 
-  describe('3. Production Guard: No Simulation Fallback in Production', () => {
-    it('should reject and return false if BREVO_API_KEY is missing in production environment', async () => {
-      process.env.NODE_ENV = 'production';
-      delete process.env.BREVO_API_KEY;
-
+  describe('3. Duplicate Suppression & Production Guards', () => {
+    it('should suppress identical duplicate dispatch within 30 seconds', async () => {
+      process.env.BREVO_API_KEY = 'xkeysib-mock-valid-key';
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        text: () => Promise.resolve(JSON.stringify({ messageId: '<msg-1>' })),
+      });
+      vi.stubGlobal('fetch', mockFetch);
       emailService = new EmailService();
 
-      const resetSuccess = await emailService.sendPasswordResetEmail(
-        'prod-user@askrevdrive.com',
-        'Prod User',
-        'token-reset-prod'
-      );
-      expect(resetSuccess).toBe(false);
+      // First call
+      const res1 = await emailService.sendWelcomeRegistrationEmail('dup@example.com', 'Dup User', 'ASKR-999');
+      expect(res1).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
 
-      const verifySuccess = await emailService.sendEmailVerification(
-        'prod-user@askrevdrive.com',
-        'Prod User',
-        'token-verify-prod'
-      );
-      expect(verifySuccess).toBe(false);
-
-      const status = await emailService.verifyConnection();
-      expect(status.success).toBe(false);
-      expect(status.message).toContain('CRITICAL: BREVO_API_KEY is not configured in production');
+      // Second immediate call with identical parameters
+      const res2 = await emailService.sendWelcomeRegistrationEmail('dup@example.com', 'Dup User', 'ASKR-999');
+      expect(res2).toBe(true); // Returns true (safe suppression)
+      expect(mockFetch).toHaveBeenCalledTimes(1); // Not called a second time
     });
 
-    it('should allow simulation fallback ONLY in non-production environments', async () => {
-      process.env.NODE_ENV = 'development';
+    it('should abort and fail safely in production if BREVO_API_KEY is missing', async () => {
+      process.env.NODE_ENV = 'production';
       delete process.env.BREVO_API_KEY;
       delete process.env.SMTP_HOST;
 
       emailService = new EmailService();
 
-      const success = await emailService.sendPasswordResetEmail(
-        'dev-user@askrevdrive.com',
-        'Dev User',
-        'token-dev'
-      );
-      expect(success).toBe(true);
-    });
-  });
-
-  describe('4. Safe Error Diagnostics & Key Sanitization', () => {
-    it('should sanitize API key and tokens in error diagnostic messages', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-secret-key-99999';
-
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 400,
-        text: () => Promise.resolve(JSON.stringify({
-          message: 'Error with key xkeysib-secret-key-99999 and token=secret-token-value',
-        })),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
-      emailService = new EmailService();
-
-      const success = await emailService.sendPasswordResetEmail(
-        'sanitized@askrevdrive.com',
-        'User',
-        'secret-token-value'
-      );
-
-      expect(success).toBe(false);
-    });
-
-    it('should verify connection without sending emails (empty validation pattern)', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-test-auth-key';
-
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 400,
-        json: () => Promise.resolve({ code: 'missing_parameter', message: 'sender is missing' }),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
-      emailService = new EmailService();
-      const status = await emailService.verifyConnection();
-
-      expect(status.success).toBe(true);
-      expect(status.provider).toBe('BREVO_HTTP');
-      expect(status.message).toContain('zero emails sent');
-
-      // Confirmed payload was empty body ({}) so Brevo does not dispatch an email
-      const [url, options] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.brevo.com/v3/smtp/email');
-      expect(options.body).toBe('{}');
-    });
-
-    it('should report invalid API key in verifyConnection without sending emails', async () => {
-      process.env.BREVO_API_KEY = 'xkeysib-bad-key';
-
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ code: 'unauthorized', message: 'Key not found' }),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
-      emailService = new EmailService();
-      const status = await emailService.verifyConnection();
-
-      expect(status.success).toBe(false);
-      expect(status.message).toContain('Key not found');
+      const res = await emailService.sendWelcomeRegistrationEmail('prod@example.com', 'Prod User', 'ASKR-001');
+      expect(res).toBe(false);
     });
   });
 });

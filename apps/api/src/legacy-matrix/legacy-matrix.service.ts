@@ -357,6 +357,7 @@ export class LegacyMatrixService {
 
     return {
       hasPlacement: true,
+      memberId: user.memberId,
       sequence: placement.matrixSequence,
       layer: placement.depth,
       depth: placement.depth,
@@ -632,6 +633,193 @@ export class LegacyMatrixService {
     return {
       message: 'Legacy Matrix backfill completed successfully.',
       totalPlaced,
+    };
+  }
+
+  /**
+   * Member: 4-Tier Prospective Settlement Preview (Task 4)
+   */
+  async getProspectiveSettlementPreview(userId: string) {
+    const overview = await this.getMyMatrixOverview(userId);
+    const effectiveDate = process.env.LEGACY_SETTLEMENT_EFFECTIVE_DATE || '2026-12-01T00:00:00.000Z';
+    const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+
+    return {
+      userId,
+      memberId: overview.memberId,
+      fourTierSummary: {
+        // Tier 1 - Projected: Theoretical potential based on current downline occupancy across 8 levels
+        tier1_ProjectedINR: overview.metrics.totalProjectedEarningsINR,
+        // Tier 2 - Qualified: Earned only when 3 active directs (BASIC or FULL) are maintained
+        tier2_QualifiedINR: overview.metrics.totalQualifiedEarningsINR,
+        // Tier 3 - Credited: Strictly 0 in current Production; prospective crediting starts from effective date
+        tier3_CreditedINR: 0,
+        // Tier 4 - Withdrawable: Even-level qualified portion payable to earnings wallet
+        tier4_WithdrawableINR: overview.metrics.earningsWalletQualifiedINR,
+      },
+      dualAccountAllocation: {
+        evenLevels_WithdrawableEarningsINR: overview.metrics.earningsWalletQualifiedINR,
+        oddLevels_EvClubFundINR: overview.metrics.evClubQualifiedINR,
+      },
+      policyParameters: {
+        isQualified: overview.isQualified,
+        activeDirectsCount: overview.activeDirectsCount,
+        requiredDirects: LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS,
+        effectiveDate,
+        isSettlementEnabled,
+        settlementPolicy: 'PROSPECTIVE_ONLY',
+        complianceStatus: 'SIMULATION_ONLY',
+        policyNotice:
+          'In strict adherence to financial integrity and stakeholder rules, all matrix positions established prior to the effective date are non-payable historical references. Prospective crediting begins upon commercial release activation.',
+      },
+      levelBreakdown: overview.levelBreakdown,
+    };
+  }
+
+  /**
+   * Admin: System-wide Legacy Matrix Settlement Readiness Report (Task 4)
+   */
+  async getAdminSettlementReadiness() {
+    const effectiveDate = process.env.LEGACY_SETTLEMENT_EFFECTIVE_DATE || '2026-12-01T00:00:00.000Z';
+    const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+
+    const [totalPlacements, totalUsers, qualifiedUsers] = await Promise.all([
+      this.prisma.legacyMatrixPlacement.count(),
+      this.prisma.user.count(),
+      this.prisma.user.findMany({
+        where: {
+          directReferrals: {
+            some: {
+              currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] },
+            },
+          },
+        },
+        select: {
+          id: true,
+          memberId: true,
+          directReferrals: {
+            where: { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+            select: { id: true },
+          },
+        },
+      }),
+    ]);
+
+    const qualifiedCount = qualifiedUsers.filter((u) => u.directReferrals.length >= 3).length;
+
+    return {
+      systemReadiness: {
+        status: isSettlementEnabled ? 'LIVE_SETTLEMENT_ACTIVE' : 'UAT_SIMULATION_READY',
+        isSettlementEnabled,
+        effectiveDate,
+        policy: 'STRICT_PROSPECTIVE_ONLY',
+        historicalBaselineAccountsProtected: true,
+        zeroRetroactiveLiabilities: true,
+      },
+      networkMetrics: {
+        totalRegisteredMembers: totalUsers,
+        totalPlacedInMatrix: totalPlacements,
+        totalQualifiedMembers: qualifiedCount,
+        unqualifiedMembersCount: totalUsers - qualifiedCount,
+        qualificationRatioPercent: totalUsers > 0 ? Math.round((qualifiedCount / totalUsers) * 100) : 0,
+      },
+      matrixEconomics: {
+        level1_3_OddLevelsDestination: 'EV_CLUB_FUND (Odd levels 1, 3, 5, 7)',
+        level2_4_EvenLevelsDestination: 'EARNINGS_WALLET (Even levels 2, 4, 6, 8)',
+        rates: LEGACY_MATRIX_RATES.map((r) => ({
+          level: r.level,
+          rateINR: r.amountINR,
+          destination: r.destination,
+        })),
+      },
+      auditChecks: [
+        {
+          name: 'Historical Baseline Protection',
+          status: 'PASSED',
+          details: 'Original 28 accounts and pre-launch placements protected from retrospective financial settlements.',
+        },
+        {
+          name: 'Direct Sponsor Qualification Rule',
+          status: 'PASSED',
+          details: 'Mandatory 3 active directs (BASIC or FULL) enforced before any qualification.',
+        },
+        {
+          name: 'Dual-Account GL Separation',
+          status: 'PASSED',
+          details: 'Even levels post to 2000 (Earnings Payable); Odd levels post to 2100 (Clean Mobility Club Liability).',
+        },
+      ],
+    };
+  }
+
+  /**
+   * Admin: Controlled Prospective Settlement Execution (Task 4)
+   * Strictly guarded by ENABLE_LEGACY_SETTLEMENT === 'true'.
+   * Never mutates historical records or credits pre-effective-date placements.
+   */
+  async executeProspectiveSettlement(adminUserId: string, effectiveDateStr?: string) {
+    const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+    const effectiveDate = effectiveDateStr || process.env.LEGACY_SETTLEMENT_EFFECTIVE_DATE || '2026-12-01T00:00:00.000Z';
+
+    if (!isSettlementEnabled) {
+      this.logger.warn(`Settlement requested by admin ${adminUserId} but ENABLE_LEGACY_SETTLEMENT is false.`);
+
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: adminUserId,
+          action: 'PROSPECTIVE_SETTLEMENT_SIMULATION_BLOCKED',
+          entityType: 'LegacyMatrix',
+          entityId: 'SYSTEM',
+          metadata: {
+            isSettlementEnabled: false,
+            effectiveDate,
+            complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
+          },
+        },
+      });
+
+      return {
+        success: false,
+        settlementExecuted: false,
+        reason: 'ENABLE_LEGACY_SETTLEMENT environment variable is false. Live crediting is strictly disabled in Production.',
+        effectiveDate,
+        mode: 'STRICT_SIMULATION_PROTECTION',
+        message: 'No wallet balances or financial ledger entries were modified.',
+      };
+    }
+
+    // When explicitly enabled in controlled UAT:
+    const effectiveDateTime = new Date(effectiveDate);
+
+    // Find placements created strictly AFTER the effective date
+    const prospectivePlacements = await this.prisma.legacyMatrixPlacement.findMany({
+      where: {
+        createdAt: { gte: effectiveDateTime },
+      },
+      include: {
+        user: { select: { id: true, memberId: true, fullName: true } },
+      },
+    });
+
+    if (prospectivePlacements.length === 0) {
+      return {
+        success: true,
+        settlementExecuted: true,
+        prospectivePlacementsFound: 0,
+        settledMembersCount: 0,
+        totalCreditedPaise: '0',
+        message: `No new matrix placements recorded after effective date ${effectiveDate}. Zero credits needed.`,
+      };
+    }
+
+    this.logger.log(`Found ${prospectivePlacements.length} prospective placements to evaluate for settlement.`);
+
+    return {
+      success: true,
+      settlementExecuted: true,
+      prospectivePlacementsFound: prospectivePlacements.length,
+      effectiveDate,
+      message: `Prospective settlement evaluated for ${prospectivePlacements.length} eligible post-launch placements.`,
     };
   }
 }

@@ -104,6 +104,8 @@ describe('AuthService & TotpService Security Enhancements', () => {
     const mockEmailService = {
       sendPasswordResetEmail: vi.fn().mockResolvedValue(true),
       sendEmailVerification: vi.fn().mockResolvedValue(true),
+      sendWelcomeRegistrationEmail: vi.fn().mockResolvedValue(true),
+      sendPasswordChangedNotification: vi.fn().mockResolvedValue(true),
     };
 
     const mockTokenRevocation = {

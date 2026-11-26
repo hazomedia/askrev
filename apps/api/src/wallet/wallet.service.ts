@@ -7,14 +7,24 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../common/encryption.service';
+import { EmailService } from '../auth/email.service';
 import { paiseToRupees, JournalAccount, UserRole } from '@askrev/shared';
-import { RequestWithdrawalDto, PayoutDestinationType } from './dto/withdrawal.dto';
+import {
+  RequestWithdrawalDto,
+  PayoutDestinationType,
+  AdminApproveWithdrawalDto,
+  AdminRejectWithdrawalDto,
+  AdminSettleWithdrawalDto,
+  WithdrawalQueryDto,
+} from './dto/withdrawal.dto';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class WalletService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly encryptionService?: EncryptionService
+    @Optional() private readonly encryptionService?: EncryptionService,
+    @Optional() private readonly emailService?: EmailService
   ) { }
 
   /**
@@ -385,6 +395,80 @@ export class WalletService {
   }
 
   /**
+   * Member Withdrawal Eligibility Check
+   */
+  async getWithdrawalEligibility(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Member not found');
+    }
+
+    const availablePaise = user.wallet?.availableEarningsPaise || 0n;
+    const minWithdrawalPaise = 100000n; // ₹1,000
+    const reasons: string[] = [];
+
+    if (!user.isEmailVerified) {
+      reasons.push('Email verification is required prior to requesting withdrawals.');
+    }
+    if (availablePaise < minWithdrawalPaise) {
+      reasons.push('Minimum withdrawal threshold is ₹1,000. Your available balance is insufficient.');
+    }
+
+    const eligible = user.isEmailVerified && availablePaise >= minWithdrawalPaise;
+
+    return {
+      eligible,
+      isEmailVerified: !!user.isEmailVerified,
+      availableEarningsINR: paiseToRupees(availablePaise),
+      minWithdrawalINR: 1000,
+      tdsRatePercent: 5,
+      tdsSection: 'Section 194H / 194R (Income Tax Act, 1961)',
+      reasons,
+      complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
+      manualSettlementWorkflow: true,
+      notice:
+        'Withdrawals are processed via verified bank transfers subject to statutory 5% TDS deduction. Automated payment gateway dispatches remain strictly simulation-only.',
+    };
+  }
+
+  /**
+   * Member Withdrawal History
+   */
+  async getMyWithdrawals(userId: string) {
+    const requests = await this.prisma.withdrawalRequest.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    return requests.map((w) => {
+      const details = (w.bankDetails as any) || {};
+      const grossPaise = w.amountPaise;
+      const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
+      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+
+      return {
+        id: w.id,
+        grossAmountINR: paiseToRupees(grossPaise),
+        tdsAmountINR: paiseToRupees(tdsPaise),
+        netAmountINR: paiseToRupees(netPaise),
+        status: w.status,
+        destinationType: details.destinationType || 'BANK_ACCOUNT',
+        destinationMasked: details.destinationMasked || 'N/A',
+        utrNumber: details.utrNumber || null,
+        settledAt: details.settledAt || null,
+        rejectionReason: details.rejectionReason || null,
+        adminNotes: w.adminNotes || null,
+        createdAt: w.createdAt.toISOString(),
+      };
+    });
+  }
+
+  /**
    * Request withdrawal - Enforces server-side email verification, payout destination validation, and live payouts status
    */
   async requestWithdrawal(userId: string, dto?: RequestWithdrawalDto) {
@@ -493,9 +577,10 @@ export class WalletService {
 
     const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
     const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
+    const enableManualWithdrawals = process.env.ENABLE_MANUAL_WITHDRAWALS === 'true';
 
-    // Strictly enforce disabled live payouts
-    if (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY') {
+    // Strictly enforce disabled live payouts if manual workflow is not activated
+    if (!enableManualWithdrawals && (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY')) {
       try {
         await this.prisma.auditLog.create({
           data: {
@@ -527,35 +612,823 @@ export class WalletService {
       };
     }
 
-    // If live payouts were enabled:
-    const availablePaise = user.wallet?.availableEarningsPaise || 0n;
-    const minPaise = 100000n; // ₹1,000
-    if (availablePaise < minPaise) {
+    // Manual / UAT Settlement Workflow execution:
+    const amountINR = dto?.amountINR ? Number(dto.amountINR) : 0;
+    if (amountINR < 1000) {
       throw new BadRequestException('Minimum withdrawal threshold is ₹1,000.');
     }
 
+    const amountPaise = BigInt(Math.round(amountINR * 100));
+    const availablePaise = user.wallet?.availableEarningsPaise || 0n;
+    if (availablePaise < amountPaise) {
+      throw new BadRequestException(
+        `Insufficient available earnings. Requested: ₹${amountINR}, Available: ₹${paiseToRupees(availablePaise)}.`
+      );
+    }
+
+    // Idempotency check: prevent duplicate submissions within 24h
+    if (dto?.idempotencyKey) {
+      const existingReq = await this.prisma.withdrawalRequest.findFirst({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'APPROVED'] },
+        },
+      });
+      if (existingReq) {
+        const details = (existingReq.bankDetails as any) || {};
+        if (details.idempotencyKey === dto.idempotencyKey) {
+          return {
+            success: true,
+            restricted: false,
+            requestId: existingReq.id,
+            status: existingReq.status,
+            grossAmountINR: paiseToRupees(existingReq.amountPaise),
+            tdsAmountINR: paiseToRupees((existingReq.amountPaise * 5n) / 100n),
+            netAmountINR: paiseToRupees(existingReq.amountPaise - (existingReq.amountPaise * 5n) / 100n),
+            destinationMasked: details.destinationMasked || destinationMasked,
+            message: 'Withdrawal request already recorded (idempotent submission).',
+          };
+        }
+      }
+    }
+
+    // 5% TDS calculation under Section 194H/194R
+    const tdsPaise = (amountPaise * 5n) / 100n;
+    const netAmountPaise = amountPaise - tdsPaise;
+    const withdrawalId = randomUUID();
+
+    // Execute atomic balance reservation & double-entry journal entry
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Deduct requested amount from available earnings
+      await tx.walletAccount.update({
+        where: { userId },
+        data: {
+          availableEarningsPaise: {
+            decrement: amountPaise,
+          },
+        },
+      });
+
+      // 2. Create double-entry journal entry: Debit MEMBER_EARNINGS_PAYABLE, Credit COMMISSION_HOLD_RESERVE
+      await tx.journalEntry.create({
+        data: {
+          referenceId: `WTH_REQ_${withdrawalId}`,
+          eventType: 'MEMBER_WITHDRAWAL_REQUESTED',
+          narration: `Withdrawal request of ₹${amountINR} submitted by member ${user.memberId} (Gross: ₹${amountINR}, TDS 5%: ₹${paiseToRupees(tdsPaise)}, Net: ₹${paiseToRupees(netAmountPaise)})`,
+          lines: {
+            create: [
+              {
+                userId,
+                account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                debitPaise: amountPaise,
+                creditPaise: 0n,
+                description: `Funds reserved for withdrawal ${withdrawalId}`,
+              },
+              {
+                userId,
+                account: JournalAccount.COMMISSION_HOLD_RESERVE,
+                debitPaise: 0n,
+                creditPaise: amountPaise,
+                description: `Commission reserve held for pending settlement ${withdrawalId}`,
+              },
+            ],
+          },
+        },
+      });
+
+      // 3. Create WithdrawalRequest record
+      await tx.withdrawalRequest.create({
+        data: {
+          id: withdrawalId,
+          userId,
+          amountPaise,
+          status: 'PENDING',
+          bankDetails: {
+            grossAmountPaise: amountPaise.toString(),
+            tdsPaise: tdsPaise.toString(),
+            netAmountPaise: netAmountPaise.toString(),
+            destinationType: dto?.destinationType || PayoutDestinationType.BANK_ACCOUNT,
+            destinationMasked,
+            encryptedPayoutDetails,
+            idempotencyKey: dto?.idempotencyKey || null,
+          },
+        },
+      });
+
+      // 4. Audit Log
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'WITHDRAWAL_REQUEST_SUBMITTED',
+          entityType: 'WithdrawalRequest',
+          entityId: withdrawalId,
+          metadata: {
+            amountINR,
+            tdsINR: paiseToRupees(tdsPaise),
+            netAmountINR: paiseToRupees(netAmountPaise),
+            destinationType: dto?.destinationType,
+            destinationMasked,
+            complianceMode,
+          },
+        },
+      });
+    });
+
+    // Send confirmation email asynchronously (non-blocking)
+    if (this.emailService && user.email) {
+      try {
+        await this.emailService.sendWithdrawalRequestConfirmation(
+          user.email,
+          user.fullName || user.memberId,
+          {
+            requestId: withdrawalId,
+            amountINR,
+            destinationMasked,
+            date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          }
+        );
+      } catch { }
+    }
+
+    return {
+      success: true,
+      restricted: false,
+      requestId: withdrawalId,
+      grossAmountINR: amountINR,
+      tdsAmountINR: paiseToRupees(tdsPaise),
+      netAmountINR: paiseToRupees(netAmountPaise),
+      status: 'PENDING',
+      destinationMasked,
+      message: 'Withdrawal request submitted successfully. Our finance team will review and process your settlement.',
+    };
+  }
+
+  /**
+   * Admin: List Withdrawal Requests with filtering & pagination
+   */
+  async getAdminWithdrawals(query: WithdrawalQueryDto) {
+    const { status, page = 1, limit = 50, search } = query;
+    const skip = (Math.max(1, page) - 1) * Math.max(1, limit);
+    const take = Math.min(100, Math.max(1, limit));
+
+    const where: any = {};
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+    if (search?.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { id: { contains: q, mode: 'insensitive' } },
+        { user: { memberId: { contains: q, mode: 'insensitive' } } },
+        { user: { email: { contains: q, mode: 'insensitive' } } },
+        { user: { fullName: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total, pendingCount, approvedCount, settledCount, rejectedCount] = await Promise.all([
+      this.prisma.withdrawalRequest.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              memberId: true,
+              fullName: true,
+              email: true,
+              phone: true,
+              currentPackage: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.withdrawalRequest.count({ where }),
+      this.prisma.withdrawalRequest.count({ where: { status: 'PENDING' } }),
+      this.prisma.withdrawalRequest.count({ where: { status: 'APPROVED' } }),
+      this.prisma.withdrawalRequest.count({ where: { status: 'SETTLED' } }),
+      this.prisma.withdrawalRequest.count({ where: { status: 'REJECTED' } }),
+    ]);
+
+    let totalGrossPaise = 0n;
+    let totalNetPaise = 0n;
+    let totalTdsPaise = 0n;
+
+    const formattedItems = (items as any[]).map((w) => {
+      const details = (w.bankDetails as any) || {};
+      const grossPaise = w.amountPaise;
+      const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
+      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+
+      totalGrossPaise += grossPaise;
+      totalNetPaise += netPaise;
+      totalTdsPaise += tdsPaise;
+
+      const user = w.user || {};
+      return {
+        id: w.id,
+        memberId: user.memberId || 'N/A',
+        memberName: user.fullName || 'Member',
+        email: user.email || 'N/A',
+        mobileNumber: user.phone || 'N/A',
+        currentPackage: user.currentPackage || 'N/A',
+        grossAmountINR: paiseToRupees(grossPaise),
+        tdsAmountINR: paiseToRupees(tdsPaise),
+        netAmountINR: paiseToRupees(netPaise),
+        status: w.status,
+        destinationType: details.destinationType || 'BANK_ACCOUNT',
+        destinationMasked: details.destinationMasked || 'N/A',
+        utrNumber: details.utrNumber || null,
+        settledAt: details.settledAt || null,
+        rejectionReason: details.rejectionReason || null,
+        adminNotes: w.adminNotes || null,
+        createdAt: w.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      items: formattedItems,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / take) || 1,
+      },
+      summary: {
+        pendingCount,
+        approvedCount,
+        settledCount,
+        rejectedCount,
+        pageGrossTotalINR: paiseToRupees(totalGrossPaise),
+        pageNetTotalINR: paiseToRupees(totalNetPaise),
+        pageTdsTotalINR: paiseToRupees(totalTdsPaise),
+      },
+    };
+  }
+
+  /**
+   * Admin: Approve Withdrawal Request
+   */
+  async adminApproveWithdrawal(adminUserId: string, withdrawalId: string, dto?: AdminApproveWithdrawalDto) {
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+      include: { user: true },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException('Withdrawal request not found.');
+    }
+    if (withdrawal.status !== 'PENDING') {
+      throw new BadRequestException(`Cannot approve withdrawal with status ${withdrawal.status}. Must be PENDING.`);
+    }
+
+    const currentDetails = (withdrawal.bankDetails as any) || {};
+    const updatedDetails = {
+      ...currentDetails,
+      approvedBy: adminUserId,
+      approvedAt: new Date().toISOString(),
+      adminNotes: dto?.adminNotes || withdrawal.adminNotes,
+    };
+
+    const updated = await this.prisma.withdrawalRequest.update({
+      where: { id: withdrawalId },
+      data: {
+        status: 'APPROVED',
+        adminNotes: dto?.adminNotes || withdrawal.adminNotes,
+        bankDetails: updatedDetails,
+      },
+    });
+
+    // Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminUserId,
+        action: 'WITHDRAWAL_APPROVED_BY_ADMIN',
+        entityType: 'WithdrawalRequest',
+        entityId: withdrawalId,
+        metadata: {
+          adminUserId,
+          amountINR: paiseToRupees(withdrawal.amountPaise),
+          adminNotes: dto?.adminNotes,
+        },
+      },
+    });
+
+    // Notify member via email
+    if (this.emailService && withdrawal.user.email) {
+      try {
+        await this.emailService.sendWithdrawalStatusEmail(
+          withdrawal.user.email,
+          withdrawal.user.fullName || withdrawal.user.memberId,
+          {
+            requestId: withdrawalId,
+            status: 'APPROVED',
+            amountINR: paiseToRupees(withdrawal.amountPaise),
+          }
+        );
+      } catch { }
+    }
+
+    return {
+      success: true,
+      requestId: updated.id,
+      status: updated.status,
+      message: 'Withdrawal request approved successfully. Ready for bank settlement.',
+    };
+  }
+
+  /**
+   * Admin: Reject Withdrawal Request (Refunds reserved balance with journal reversal)
+   */
+  async adminRejectWithdrawal(adminUserId: string, withdrawalId: string, dto: AdminRejectWithdrawalDto) {
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+      include: { user: true },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException('Withdrawal request not found.');
+    }
+    if (withdrawal.status === 'SETTLED' || withdrawal.status === 'REJECTED') {
+      throw new BadRequestException(`Cannot reject withdrawal with status ${withdrawal.status}.`);
+    }
+
+    const currentDetails = (withdrawal.bankDetails as any) || {};
+    const updatedDetails = {
+      ...currentDetails,
+      rejectedBy: adminUserId,
+      rejectedAt: new Date().toISOString(),
+      rejectionReason: dto.rejectionReason,
+      adminNotes: dto.adminNotes || withdrawal.adminNotes,
+    };
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Refund the member's wallet
+      await tx.walletAccount.update({
+        where: { userId: withdrawal.userId },
+        data: {
+          availableEarningsPaise: {
+            increment: withdrawal.amountPaise,
+          },
+        },
+      });
+
+      // 2. Reversal journal entry: Debit COMMISSION_HOLD_RESERVE, Credit MEMBER_EARNINGS_PAYABLE
+      await tx.journalEntry.create({
+        data: {
+          referenceId: `WTH_REJ_${withdrawalId}`,
+          eventType: 'MEMBER_WITHDRAWAL_REJECTED',
+          narration: `Reversal of withdrawal request ${withdrawalId}: rejected by admin (${dto.rejectionReason})`,
+          lines: {
+            create: [
+              {
+                userId: withdrawal.userId,
+                account: JournalAccount.COMMISSION_HOLD_RESERVE,
+                debitPaise: withdrawal.amountPaise,
+                creditPaise: 0n,
+                description: `Hold release on rejected withdrawal ${withdrawalId}`,
+              },
+              {
+                userId: withdrawal.userId,
+                account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                debitPaise: 0n,
+                creditPaise: withdrawal.amountPaise,
+                description: `Refund available earnings for rejected withdrawal ${withdrawalId}`,
+              },
+            ],
+          },
+        },
+      });
+
+      // 3. Update withdrawal request status
+      await tx.withdrawalRequest.update({
+        where: { id: withdrawalId },
+        data: {
+          status: 'REJECTED',
+          adminNotes: dto.adminNotes || withdrawal.adminNotes,
+          bankDetails: updatedDetails,
+        },
+      });
+
+      // 4. Audit Log
+      await tx.auditLog.create({
+        data: {
+          actorId: adminUserId,
+          action: 'WITHDRAWAL_REJECTED_BY_ADMIN',
+          entityType: 'WithdrawalRequest',
+          entityId: withdrawalId,
+          metadata: {
+            adminUserId,
+            rejectionReason: dto.rejectionReason,
+            amountINR: paiseToRupees(withdrawal.amountPaise),
+          },
+        },
+      });
+    });
+
+    // Notify member via email
+    if (this.emailService && withdrawal.user.email) {
+      try {
+        await this.emailService.sendWithdrawalStatusEmail(
+          withdrawal.user.email,
+          withdrawal.user.fullName || withdrawal.user.memberId,
+          {
+            requestId: withdrawalId,
+            status: 'REJECTED',
+            amountINR: paiseToRupees(withdrawal.amountPaise),
+            reason: dto.rejectionReason,
+          }
+        );
+      } catch { }
+    }
+
+    return {
+      success: true,
+      requestId: withdrawalId,
+      status: 'REJECTED',
+      refundedINR: paiseToRupees(withdrawal.amountPaise),
+      message: 'Withdrawal request rejected and reserved balance refunded to member.',
+    };
+  }
+
+  /**
+   * Admin: Settle Withdrawal via Bank Transfer (Records UTR & posts final settlement journal)
+   */
+  async adminSettleWithdrawal(adminUserId: string, withdrawalId: string, dto: AdminSettleWithdrawalDto) {
+    if (!dto.utrNumber?.trim()) {
+      throw new BadRequestException('Valid Bank UTR / Reference number is required for manual settlement.');
+    }
+
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+      include: { user: true },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException('Withdrawal request not found.');
+    }
+    if (withdrawal.status === 'SETTLED') {
+      throw new BadRequestException('This withdrawal has already been settled.');
+    }
+    if (withdrawal.status === 'REJECTED') {
+      throw new BadRequestException('Cannot settle a rejected withdrawal.');
+    }
+
+    const cleanUtr = dto.utrNumber.trim();
+    const settlementDate = dto.settlementDate || new Date().toISOString();
+    const details = (withdrawal.bankDetails as any) || {};
+    const grossPaise = withdrawal.amountPaise;
+    const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
+    const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+
+    const updatedDetails = {
+      ...details,
+      settledBy: adminUserId,
+      settledAt: settlementDate,
+      utrNumber: cleanUtr,
+      adminNotes: dto.adminNotes || withdrawal.adminNotes,
+    };
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Update wallet totalWithdrawnPaise
+      await tx.walletAccount.update({
+        where: { userId: withdrawal.userId },
+        data: {
+          totalWithdrawnPaise: {
+            increment: grossPaise,
+          },
+        },
+      });
+
+      // 2. Final settlement journal:
+      // Debit: COMMISSION_HOLD_RESERVE (Gross amount released)
+      // Credit: CASH_AND_BANK (Net payout transferred to bank)
+      // Credit: MEMBER_EARNINGS_PAYABLE / Tax Liability (TDS withheld under 194H)
+      await tx.journalEntry.create({
+        data: {
+          referenceId: `WTH_SETTLE_${withdrawalId}`,
+          eventType: 'MEMBER_WITHDRAWAL_SETTLED',
+          narration: `Bank settlement for withdrawal ${withdrawalId} via UTR ${cleanUtr} (Net: ₹${paiseToRupees(netPaise)}, TDS: ₹${paiseToRupees(tdsPaise)})`,
+          lines: {
+            create: [
+              {
+                userId: withdrawal.userId,
+                account: JournalAccount.COMMISSION_HOLD_RESERVE,
+                debitPaise: grossPaise,
+                creditPaise: 0n,
+                description: `Settlement release for withdrawal ${withdrawalId}`,
+              },
+              {
+                userId: withdrawal.userId,
+                account: JournalAccount.CASH_AND_BANK,
+                debitPaise: 0n,
+                creditPaise: netPaise,
+                description: `Bank payout via UTR ${cleanUtr}`,
+              },
+              {
+                userId: withdrawal.userId,
+                account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
+                debitPaise: 0n,
+                creditPaise: tdsPaise,
+                description: `Statutory 5% TDS withheld under Sec 194H/194R for UTR ${cleanUtr}`,
+              },
+            ],
+          },
+        },
+      });
+
+      // 3. Mark withdrawal request SETTLED
+      await tx.withdrawalRequest.update({
+        where: { id: withdrawalId },
+        data: {
+          status: 'SETTLED',
+          adminNotes: dto.adminNotes || withdrawal.adminNotes,
+          bankDetails: updatedDetails,
+        },
+      });
+
+      // 4. Audit Log
+      await tx.auditLog.create({
+        data: {
+          actorId: adminUserId,
+          action: 'WITHDRAWAL_SETTLED_MANUALLY',
+          entityType: 'WithdrawalRequest',
+          entityId: withdrawalId,
+          metadata: {
+            adminUserId,
+            utrNumber: cleanUtr,
+            grossAmountINR: paiseToRupees(grossPaise),
+            netAmountINR: paiseToRupees(netPaise),
+            tdsINR: paiseToRupees(tdsPaise),
+            settlementDate,
+          },
+        },
+      });
+    });
+
+    // Send bank settlement confirmation email
+    if (this.emailService && withdrawal.user.email) {
+      try {
+        await this.emailService.sendBankSettlementConfirmation(
+          withdrawal.user.email,
+          withdrawal.user.fullName || withdrawal.user.memberId,
+          {
+            requestId: withdrawalId,
+            amountINR: paiseToRupees(grossPaise),
+            utrNumber: cleanUtr,
+            settlementDate: new Date(settlementDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            destinationMasked: details.destinationMasked || 'Registered Bank Account',
+          }
+        );
+      } catch { }
+    }
+
+    return {
+      success: true,
+      requestId: withdrawalId,
+      status: 'SETTLED',
+      utrNumber: cleanUtr,
+      settledGrossINR: paiseToRupees(grossPaise),
+      settledNetINR: paiseToRupees(netPaise),
+      tdsDeductedINR: paiseToRupees(tdsPaise),
+      message: `Withdrawal successfully marked settled with Bank UTR ${cleanUtr}.`,
+    };
+  }
+
+  /**
+   * Admin: Export Withdrawals to CSV format for Finance team
+   */
+  async exportWithdrawalReport(query: WithdrawalQueryDto): Promise<string> {
+    const { status, search } = query;
+    const where: any = {};
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+    if (search?.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { id: { contains: q, mode: 'insensitive' } },
+        { user: { memberId: { contains: q, mode: 'insensitive' } } },
+        { user: { email: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const items = await this.prisma.withdrawalRequest.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            memberId: true,
+            fullName: true,
+            email: true,
+            phone: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+
+    const headers = [
+      'Request ID',
+      'Member ID',
+      'Full Name',
+      'Email',
+      'Mobile',
+      'Gross Amount (INR)',
+      'TDS 5% (INR)',
+      'Net Settlement (INR)',
+      'Destination Type',
+      'Destination Masked',
+      'Status',
+      'UTR Number',
+      'Settled At',
+      'Created At',
+      'Admin Notes',
+    ];
+
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = (items as any[]).map((w) => {
+      const details = (w.bankDetails as any) || {};
+      const grossPaise = w.amountPaise;
+      const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
+      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+      const user = w.user || {};
+
+      return [
+        escapeCsv(w.id),
+        escapeCsv(user.memberId || 'N/A'),
+        escapeCsv(user.fullName || 'Member'),
+        escapeCsv(user.email || 'N/A'),
+        escapeCsv(user.phone || ''),
+        escapeCsv(paiseToRupees(grossPaise)),
+        escapeCsv(paiseToRupees(tdsPaise)),
+        escapeCsv(paiseToRupees(netPaise)),
+        escapeCsv(details.destinationType || 'BANK_ACCOUNT'),
+        escapeCsv(details.destinationMasked || 'N/A'),
+        escapeCsv(w.status),
+        escapeCsv(details.utrNumber || ''),
+        escapeCsv(details.settledAt || ''),
+        escapeCsv(w.createdAt.toISOString()),
+        escapeCsv(w.adminNotes || details.rejectionReason || ''),
+      ].join(',');
+    });
+
+    return [headers.join(','), ...rows].join('\n');
+  }
+
+  /**
+   * EV Club Fund Overview & Utilization Readiness (Task 5)
+   */
+  async getEvClubFundOverview(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        memberId: true,
+        fullName: true,
+        currentPackage: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Member not found');
+    }
+
+    // Direct sponsor qualification calculation:
+    const activeDirectsCount = await this.prisma.user.count({
+      where: {
+        sponsorId: user.id,
+        currentPackage: { in: ['BASIC', 'FULL'] },
+      },
+    });
+
+    const isQualified = activeDirectsCount >= 3;
+
+    // Check member's matrix placement
+    const placement = await this.prisma.legacyMatrixPlacement.findUnique({
+      where: { userId },
+    });
+
+    let evClubProjectedINR = 0;
+    if (placement) {
+      // Traverse downline odd levels (1, 3, 5, 7)
+      const oddLevels = [1, 3, 5, 7];
+      let currentLayerIds = [placement.id];
+
+      for (let level = 1; level <= 8; level++) {
+        if (currentLayerIds.length === 0) break;
+        const children = await this.prisma.legacyMatrixPlacement.findMany({
+          where: { parentId: { in: currentLayerIds } },
+          select: { id: true },
+        });
+        if (oddLevels.includes(level)) {
+          const unitRate = level >= 5 ? 300 : 200;
+          evClubProjectedINR += children.length * unitRate;
+        }
+        currentLayerIds = children.map((c) => c.id);
+      }
+    }
+
+    const evClubQualifiedINR = isQualified ? evClubProjectedINR : 0;
+    const evClubCreditedINR = 0; // Strictly prospective, 0 in production
+
+    return {
+      userId,
+      memberId: user.memberId,
+      isQualified,
+      activeDirectsCount,
+      requiredDirects: 3,
+      fundMetrics: {
+        evClubProjectedINR,
+        evClubQualifiedINR,
+        evClubCreditedINR,
+        availableForUtilizationINR: evClubCreditedINR,
+        currency: 'INR',
+      },
+      accountingPolicy: {
+        source: 'Odd Levels of EV Legacy 3×8 Matrix (Levels 1, 3, 5, 7)',
+        status: 'SIMULATION_ONLY',
+        withdrawableToBank: false,
+        purpose:
+          'Dedicated Clean Mobility Incentive. Cannot be withdrawn to bank accounts. Earmarked exclusively for showroom purchases, charging hardware, and battery care.',
+      },
+      utilizationPrograms: [
+        {
+          id: 'EV_PURCHASE_CREDIT',
+          title: 'Askr EV Showroom Purchase Credit',
+          description:
+            'Apply accumulated EV Club Fund balance toward down payment or full purchase of approved electric two-wheelers, scooters, or cars across all Askr EV partner showrooms.',
+          maxRedemptionPercent: 100,
+          status: 'PROGRAM_ANNOUNCED',
+        },
+        {
+          id: 'CHARGER_BUNDLE',
+          title: 'Home EV AC Fast Charger & Solar Bundle',
+          description:
+            'Redeem for a certified 7.4kW Type-2 Home EV Charger, smart energy metering box, and rooftop solar connection accessory kit.',
+          maxRedemptionPercent: 100,
+          status: 'PROGRAM_ANNOUNCED',
+        },
+        {
+          id: 'BATTERY_HEALTH_CARE',
+          title: '3-Year Extended Battery Warranty & Comprehensive Service',
+          description:
+            'Comprehensive battery cell balancing, health certification, roadside assistance, and replacement warranty protection.',
+          maxRedemptionPercent: 100,
+          status: 'PROGRAM_ANNOUNCED',
+        },
+      ],
+    };
+  }
+
+  /**
+   * EV Club Fund Utilization Request (Task 5)
+   */
+  async requestClubFundUtilization(userId: string, optionId: string, amountINR: number) {
+    const overview = await this.getEvClubFundOverview(userId);
+
+    const validPrograms = ['EV_PURCHASE_CREDIT', 'CHARGER_BUNDLE', 'BATTERY_HEALTH_CARE'];
+    if (!validPrograms.includes(optionId)) {
+      throw new BadRequestException(`Invalid EV Club Fund program ID: ${optionId}`);
+    }
+
+    if (amountINR <= 0) {
+      throw new BadRequestException('Utilization amount must be greater than zero.');
+    }
+
+    // In current UAT / Production, utilization policy is pending commercial rollout
     try {
       await this.prisma.auditLog.create({
         data: {
           actorId: userId,
-          action: 'WITHDRAWAL_REQUEST_SUBMITTED',
+          action: 'EV_CLUB_FUND_UTILIZATION_SIMULATION_REQUESTED',
           entityType: 'User',
           entityId: userId,
           metadata: {
-            destinationType: dto?.destinationType || 'UNSPECIFIED',
-            destinationMasked: destinationMasked || undefined,
-            complianceMode,
-            livePayoutsEnabled: true,
+            programId: optionId,
+            requestedAmountINR: amountINR,
+            qualifiedFundINR: overview.fundMetrics.evClubQualifiedINR,
+            complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
           },
         },
       });
     } catch { }
 
     return {
-      success: true,
-      restricted: false,
-      destinationMasked,
-      message: 'Withdrawal request logged successfully.',
+      success: false,
+      status: 'POLICY_PENDING_APPROVAL',
+      programId: optionId,
+      requestedAmountINR: amountINR,
+      qualifiedBalanceINR: overview.fundMetrics.evClubQualifiedINR,
+      message:
+        'EV Club Fund commercial redemption is currently in preview mode. Live utilization will open alongside authorized showroom delivery partners upon completion of statutory direct selling compliance filings.',
     };
   }
 }

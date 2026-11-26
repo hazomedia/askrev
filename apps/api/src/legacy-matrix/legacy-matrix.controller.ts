@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
@@ -36,6 +37,15 @@ export class LegacyMatrixController {
   }
 
   /**
+   * Member Dashboard: 4-Tier Prospective Settlement Preview (Task 4)
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('settlement-preview')
+  async getSettlementPreview(@CurrentUser() user: any) {
+    return await this.legacyMatrixService.getProspectiveSettlementPreview(user.id);
+  }
+
+  /**
    * Admin Portal: Global 3x8 Matrix Tree Visualization
    */
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -58,6 +68,29 @@ export class LegacyMatrixController {
   @Get('admin/report')
   async getAdminReport() {
     return await this.legacyMatrixService.getQualificationReport();
+  }
+
+  /**
+   * Admin Portal: Settlement Readiness Report (Task 4)
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  @Get('admin/settlement-readiness')
+  async getAdminSettlementReadiness() {
+    return await this.legacyMatrixService.getAdminSettlementReadiness();
+  }
+
+  /**
+   * Admin Portal: Controlled Prospective Settlement Execution (Task 4)
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @Post('admin/execute-settlement')
+  async executeSettlement(
+    @CurrentUser() admin: any,
+    @Body() body?: { effectiveDate?: string }
+  ) {
+    return await this.legacyMatrixService.executeProspectiveSettlement(admin.id, body?.effectiveDate);
   }
 
   /**

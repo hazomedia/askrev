@@ -24,7 +24,7 @@ const adminPayload = {
   email: 'admin@askrevdrive.com',
   role: 'SUPER_ADMIN',
   memberId: 'ASKR-SUPERADMIN',
-  sessionVersion: 32,
+  sessionVersion: 35,
   iat: now,
   exp: now + 7200,
 };

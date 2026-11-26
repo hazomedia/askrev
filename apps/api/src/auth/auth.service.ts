@@ -167,14 +167,15 @@ export class AuthService {
       return createdUser;
     });
 
-    // Automatically trigger 24-hr verification email immediately after registration
+    // Automatically trigger welcome & 24-hr verification email immediately after registration
     let emailVerificationSent = false;
     try {
+      await this.emailService.sendWelcomeRegistrationEmail(user.email, user.fullName, user.memberId);
       await this.sendEmailVerification(user.id);
       emailVerificationSent = true;
     } catch (err: any) {
       this.logger.warn(
-        `Immediate verification email delivery warning for member ${user.memberId}: ${err.message}`
+        `Immediate registration/verification email delivery warning for member ${user.memberId}: ${err.message}`
       );
     }
 
@@ -1278,6 +1279,12 @@ export class AuthService {
         },
       }),
     ]);
+
+    try {
+      await this.emailService.sendPasswordChangedNotification(tokenRecord.user.email, tokenRecord.user.fullName);
+    } catch (err: any) {
+      this.logger.warn(`Password change confirmation email delivery warning: ${err.message}`);
+    }
 
     return {
       message: 'Your password has been successfully reset. Please sign in with your new password.',
