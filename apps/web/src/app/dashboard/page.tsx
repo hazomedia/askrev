@@ -391,14 +391,17 @@ function DashboardContent() {
         window.history.replaceState({}, '', window.location.pathname);
       }
       setIsSupportMode(true);
+      setLoading(true);
       exchangeAdminSupportSessionApi(exchangeCodeParam)
         .then((res) => {
-          if (res?.success) {
+          if (res?.success && res.targetUser) {
+            // 3. Complete support-session initialization before fetching Dashboard data
             setSupportSession({
               targetUser: res.targetUser,
               adminEmail: res.adminEmail || '',
               reason: res.reason || '',
               expiresAt: res.expiresAt,
+              supportToken: res.supportToken,
             });
             setUser(res.targetUser);
             setSupportMeta({
@@ -407,26 +410,28 @@ function DashboardContent() {
               consentReference: 'VERIFIED_MEMBER_CONSENT',
               expiresAt: res.expiresAt,
             });
-            loadData();
+            loadData(res.targetUser);
           } else {
-            throw new Error('Exchange failed');
+            throw new Error('Support authorization exchange failed to return valid target member.');
           }
         })
         .catch((err) => {
           console.error('Support authorization exchange failed:', err);
           clearSupportSession();
+          setError('Support session could not be established. Returning to login.');
           router.push('/auth/login?redirect=/dashboard');
         });
       return;
-    } else if (existingSupport) {
+    } else if (existingSupport && existingSupport.targetUser) {
       setIsSupportMode(true);
+      setUser(existingSupport.targetUser);
       setSupportMeta({
         adminEmail: existingSupport.adminEmail,
         reason: existingSupport.reason,
         consentReference: 'VERIFIED_MEMBER_CONSENT',
         expiresAt: existingSupport.expiresAt,
       });
-      loadData();
+      loadData(existingSupport.targetUser);
       return;
     }
 
@@ -547,9 +552,12 @@ function DashboardContent() {
     } catch { }
   };
 
-  const loadData = async () => {
+  const loadData = async (expectedUser?: any) => {
     setLoading(true);
     try {
+      const activeSupport = getSupportSession();
+      const targetMember = expectedUser || activeSupport?.targetUser || null;
+
       // STAGE 1: Fast Essential Profile, Income, Holds & Banners First
       const [
         profileData,
@@ -565,15 +573,47 @@ function DashboardContent() {
         fetchActiveBanners().catch(() => ({ topBanner: null, slides: [], popupCampaign: null })),
       ]);
 
-      setUser(profileData);
-      if (profileData && !isSupportMode && typeof window !== 'undefined') {
-        localStorage.setItem('askrev_user', JSON.stringify(profileData));
+      // 4. Validate that the /auth/me response matches the selected target member ID before rendering any member data
+      if (isSupportMode || activeSupport) {
+        const expectedId = (targetMember?.memberId || targetMember?.id || '').trim().toLowerCase();
+        const returnedId = (profileData?.memberId || profileData?.id || '').trim().toLowerCase();
+
+        if (expectedId && returnedId && expectedId !== returnedId) {
+          console.error(`Identity mismatch detected! Expected target member ${expectedId}, but received ${returnedId}`);
+          clearSupportSession();
+          setIsSupportMode(false);
+          setUser(null);
+          setError(`Support session security error: Identity mismatch (expected ${targetMember?.memberId || targetMember?.id}, received ${profileData?.memberId || profileData?.id}). Session terminated.`);
+          setLoading(false);
+          return;
+        }
+
+        // 5. Prevent stale API responses from overwriting the selected member identity
+        const verifiedMember = {
+          ...(targetMember || {}),
+          ...(profileData || {}),
+          id: targetMember?.id || profileData?.id,
+          memberId: targetMember?.memberId || profileData?.memberId,
+          fullName: targetMember?.fullName || profileData?.fullName,
+          email: targetMember?.email || profileData?.email,
+          role: profileData?.role || targetMember?.role || 'MEMBER',
+          isSupportMode: true,
+        };
+        setUser(verifiedMember);
+      } else {
+        setUser(profileData);
+        if (profileData && typeof window !== 'undefined') {
+          localStorage.setItem('askrev_user', JSON.stringify(profileData));
+        }
       }
+
       setWalletOverview(walletData);
       setBinaryFlushData(flushData);
       setMyCommissionHolds(Array.isArray(myHoldsData) ? myHoldsData : []);
-      if (profileData?.memberId) {
-        setBinaryBreadcrumb([{ memberId: profileData.memberId, fullName: profileData.fullName || 'Me' }]);
+      const effectiveMemberId = targetMember?.memberId || profileData?.memberId;
+      const effectiveFullName = targetMember?.fullName || profileData?.fullName || 'Me';
+      if (effectiveMemberId) {
+        setBinaryBreadcrumb([{ memberId: effectiveMemberId, fullName: effectiveFullName }]);
       }
 
       // Handle Dashboard Banners and Welcome Popup (respecting Admin enable/disable)

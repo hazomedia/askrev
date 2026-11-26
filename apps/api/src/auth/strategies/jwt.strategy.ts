@@ -25,8 +25,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
               (typeof req.query?.is_support === 'string' && req.query.is_support === 'true');
 
             // 1. Explicit support request priority when support mode is active
-            if (isSupportRequested && req.cookies['askrev_support_token']) {
-              return req.cookies['askrev_support_token'];
+            if (isSupportRequested) {
+              if (req.cookies['askrev_support_token']) {
+                return req.cookies['askrev_support_token'];
+              }
+              // Never fall back to Admin or ordinary member identity when support mode is explicitly requested
+              return null;
             }
 
             // 2. Admin portal route isolation
@@ -86,7 +90,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       );
     }
 
+    const isSupportRequested =
+      req.headers['x-support-mode'] === 'true' ||
+      req.headers['x-admin-support-mode'] === 'true' ||
+      (typeof req.query?.is_support === 'string' && req.query.is_support === 'true');
+
     const isSupportSession = payload.isSupportMode === true || payload.scope === 'admin_support:read_only';
+
+    if (isSupportRequested && !isSupportSession) {
+      throw new UnauthorizedException(
+        'SUPPORT_SESSION_REQUIRED: An administrative support session was requested, but normal credentials were provided.'
+      );
+    }
 
     // =========================================================================
     // SECURITY CORRECTIONS 3, 5, 6, 7 FOR ADMIN SUPPORT MODE:

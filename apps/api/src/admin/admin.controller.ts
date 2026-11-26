@@ -114,6 +114,7 @@ export class AdminController {
     return {
       success: true,
       isSupportMode: true,
+      supportToken: result.supportToken,
       targetUser: result.targetUser,
       adminEmail: result.adminEmail,
       reason: result.reason,

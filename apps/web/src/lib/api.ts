@@ -48,12 +48,34 @@ export function getCsrfToken(): string | null {
   return inMemoryCsrfToken;
 }
 
+export interface SupportSessionData {
+  targetUser: any;
+  adminEmail: string;
+  reason: string;
+  expiresAt: string;
+  supportToken?: string;
+}
+
+// In-memory support session storage (NOT persisted in localStorage)
+let inMemorySupportSession: SupportSessionData | null = null;
+
+export function isSupportModeActive(): boolean {
+  if (inMemorySupportSession) return true;
+  if (typeof window !== 'undefined') {
+    return sessionStorage.getItem('askrev_support_active') === 'true';
+  }
+  return false;
+}
+
 /**
  * Browser Session Security Handler:
  * Pure HttpOnly cookie authentication for normal user/admin sessions.
- * When in Admin Support Mode, returns the ephemeral support token from sessionStorage.
+ * When in Admin Support Mode, returns the ephemeral support token from in-memory context or sessionStorage.
  */
 export function getAuthToken(): string | null {
+  if (inMemorySupportSession?.supportToken) {
+    return inMemorySupportSession.supportToken;
+  }
   if (typeof window !== 'undefined') {
     return sessionStorage.getItem('askrev_support_token') || null;
   }
@@ -295,10 +317,11 @@ export async function fetchApi<T>(
     ...(options.headers as Record<string, string>),
   };
 
+  const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
     headers['X-Support-Mode'] = 'true';
-  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+  } else if (supportActive) {
     headers['X-Support-Mode'] = 'true';
   }
 
@@ -409,10 +432,11 @@ export async function uploadProductImageApi(
   formData.append('file', file);
 
   const headers: Record<string, string> = {};
+  const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
     headers['X-Support-Mode'] = 'true';
-  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+  } else if (supportActive) {
     headers['X-Support-Mode'] = 'true';
   }
   if (csrf) {
@@ -536,10 +560,11 @@ export async function fetchPublishedCatalog(params?: {
 
   let token = getAuthToken();
   const headers: Record<string, string> = {};
+  const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
     headers['X-Support-Mode'] = 'true';
-  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+  } else if (supportActive) {
     headers['X-Support-Mode'] = 'true';
   }
 
@@ -588,10 +613,11 @@ export async function fetchHeroSlides(preview: boolean = false): Promise<any[]> 
   const qs = preview ? '?preview=true' : '';
   const token = getAuthToken();
   const headers: Record<string, string> = {};
+  const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
     headers['X-Support-Mode'] = 'true';
-  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+  } else if (supportActive) {
     headers['X-Support-Mode'] = 'true';
   }
 
@@ -612,10 +638,11 @@ export async function fetchProductBySlug(slug: string, preview: boolean = false)
   const qs = preview ? '?preview=true' : '';
   const token = getAuthToken();
   const headers: Record<string, string> = {};
+  const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
     headers['X-Support-Mode'] = 'true';
-  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+  } else if (supportActive) {
     headers['X-Support-Mode'] = 'true';
   }
 
@@ -643,10 +670,11 @@ export async function fetchHeroSliderSlides(preview: boolean = false): Promise<a
   const qs = preview ? '?preview=true' : '';
   const token = getAuthToken();
   const headers: Record<string, string> = {};
+  const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
     headers['X-Support-Mode'] = 'true';
-  } else if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_token')) {
+  } else if (supportActive) {
     headers['X-Support-Mode'] = 'true';
   }
 
@@ -1169,36 +1197,65 @@ export async function fetchAdminVouchersApi(): Promise<any> {
  * =============================================================================
  */
 
-export interface SupportSessionData {
-  targetUser: any;
-  adminEmail: string;
-  reason: string;
-  expiresAt: string;
-}
-
-// In-memory support session storage (NOT persisted in localStorage or sessionStorage)
-let inMemorySupportSession: SupportSessionData | null = null;
-
 export function setSupportSession(data: SupportSessionData) {
   inMemorySupportSession = data;
   if (typeof window !== 'undefined') {
-    // Clean up any legacy bearer tokens from storage
-    sessionStorage.removeItem('askrev_support_token');
-    sessionStorage.removeItem('askrev_support_meta');
+    sessionStorage.setItem('askrev_support_active', 'true');
+    if (data.supportToken) {
+      sessionStorage.setItem('askrev_support_token', data.supportToken);
+    }
+    if (data.targetUser) {
+      sessionStorage.setItem('askrev_support_target_id', data.targetUser.memberId || data.targetUser.id || '');
+      sessionStorage.setItem(
+        'askrev_support_meta',
+        JSON.stringify({
+          targetUser: data.targetUser,
+          adminEmail: data.adminEmail,
+          reason: data.reason,
+          expiresAt: data.expiresAt,
+        })
+      );
+    }
   }
 }
 
 export function getSupportSession(): (SupportSessionData & { isSupportMode: boolean }) | null {
-  if (!inMemorySupportSession) return null;
-  return {
-    ...inMemorySupportSession,
-    isSupportMode: true,
-  };
+  if (inMemorySupportSession) {
+    return {
+      ...inMemorySupportSession,
+      isSupportMode: true,
+    };
+  }
+  if (typeof window !== 'undefined' && sessionStorage.getItem('askrev_support_active') === 'true') {
+    try {
+      const meta = sessionStorage.getItem('askrev_support_meta');
+      const token = sessionStorage.getItem('askrev_support_token') || undefined;
+      if (meta) {
+        const parsed = JSON.parse(meta);
+        inMemorySupportSession = { ...parsed, supportToken: token };
+        return {
+          ...parsed,
+          supportToken: token,
+          isSupportMode: true,
+        };
+      }
+    } catch {}
+    return {
+      targetUser: null,
+      adminEmail: '',
+      reason: '',
+      expiresAt: '',
+      isSupportMode: true,
+    };
+  }
+  return null;
 }
 
 export function clearSupportSession() {
   inMemorySupportSession = null;
   if (typeof window !== 'undefined') {
+    sessionStorage.removeItem('askrev_support_active');
+    sessionStorage.removeItem('askrev_support_target_id');
     sessionStorage.removeItem('askrev_support_token');
     sessionStorage.removeItem('askrev_support_meta');
     sessionStorage.removeItem('askrev_support_mode');
