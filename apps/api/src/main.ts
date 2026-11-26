@@ -71,7 +71,17 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-CSRF-Token', 'x-csrf-token'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Idempotency-Key',
+      'X-CSRF-Token',
+      'x-csrf-token',
+      'X-Support-Mode',
+      'x-support-mode',
+      'X-Admin-Support-Mode',
+      'x-admin-support-mode',
+    ],
     exposedHeaders: ['Retry-After', 'X-CSRF-Token'],
   });
 
