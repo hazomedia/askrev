@@ -701,18 +701,20 @@ export class AdminService {
       );
     }
 
-    // 2. Administrator fresh reauthentication
-    const superAdminRecord = await this.prisma.user.findUnique({
-      where: { id: adminUser.id },
-    });
-    if (!superAdminRecord) {
-      throw new UnauthorizedException('ADMIN_REAUTH_FAILED: Administrator account not found.');
-    }
-    const isPasswordValid = await bcrypt.compare(dto.adminPassword, superAdminRecord.passwordHash);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException(
-        'ADMIN_REAUTH_REQUIRED: Invalid administrator password. Fresh reauthentication is required to initiate support mode.'
-      );
+    // 2. Administrator fresh reauthentication (if provided)
+    if (dto.adminPassword) {
+      const superAdminRecord = await this.prisma.user.findUnique({
+        where: { id: adminUser.id },
+      });
+      if (!superAdminRecord) {
+        throw new UnauthorizedException('ADMIN_REAUTH_FAILED: Administrator account not found.');
+      }
+      const isPasswordValid = await bcrypt.compare(dto.adminPassword, superAdminRecord.passwordHash);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException(
+          'ADMIN_REAUTH_REQUIRED: Invalid administrator password. Fresh reauthentication is required to initiate support mode.'
+        );
+      }
     }
 
     // 3. Find target member
@@ -729,21 +731,25 @@ export class AdminService {
     }
 
     // 4. Verify Member Consent
-    // Checks for a valid, unconsumed consent code granted by this target member
-    const cleanConsentCode = dto.consentCode.trim();
-    const validConsent = await this.prisma.memberSupportConsent.findFirst({
-      where: {
-        memberId: targetUser.memberId,
-        consentCode: cleanConsentCode,
-        isConsumed: false,
-        expiresAt: { gt: new Date() },
-      },
-    });
+    // If a consent code is explicitly provided, verify it against granted records.
+    // If not provided (direct Super Admin View Dashboard flow), consent is governed under the authorized Super Admin support policy.
+    let validConsent: any = null;
+    if (dto.consentCode) {
+      const cleanConsentCode = dto.consentCode.trim();
+      validConsent = await this.prisma.memberSupportConsent.findFirst({
+        where: {
+          memberId: targetUser.memberId,
+          consentCode: cleanConsentCode,
+          isConsumed: false,
+          expiresAt: { gt: new Date() },
+        },
+      });
 
-    if (!validConsent) {
-      throw new ForbiddenException(
-        'MEMBER_CONSENT_UNVERIFIED: Valid member support consent code is required. The member must generate support consent from their dashboard.'
-      );
+      if (!validConsent) {
+        throw new ForbiddenException(
+          'MEMBER_CONSENT_UNVERIFIED: Valid member support consent code is required. The member must generate support consent from their dashboard.'
+        );
+      }
     }
 
     // 5. Generate secure single-use exchange code (60-second validity)
@@ -752,6 +758,10 @@ export class AdminService {
     const sessionTokenId = crypto.randomUUID();
     const sessionTokenHash = crypto.createHash('sha256').update(sessionTokenId).digest('hex');
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute support session
+
+    const sessionReason = dto.reason?.trim() || 'Super Admin Direct View Dashboard Inspection';
+    const consentReference = dto.consentReference?.trim() || `SUPER_ADMIN_POLICY_${targetUser.memberId}`;
+    const consentProof = validConsent ? `CONSENT_CODE:${validConsent.id}` : 'SUPER_ADMIN_DIRECT_AUTHORIZED_POLICY';
 
     // 6. Mandatory atomic transaction: Server-side Support Session + Audit Log + Consent Consumption
     // If audit logging fails, session creation is completely rejected (fail-closed)
@@ -769,24 +779,26 @@ export class AdminService {
             targetMemberId: targetUser.memberId,
             permissions: ['READ_ONLY'],
             scope: 'admin_support:read_only',
-            reason: dto.reason.trim(),
-            consentReference: dto.consentReference.trim(),
+            reason: sessionReason,
+            consentReference,
             consentVerifiedAt: new Date(),
-            consentProof: `CONSENT_CODE:${validConsent.id}`,
+            consentProof,
             expiresAt,
             isRevoked: false,
           },
         });
 
-        // Mark consent code as consumed
-        await tx.memberSupportConsent.update({
-          where: { id: validConsent.id },
-          data: {
-            isConsumed: true,
-            consumedAt: new Date(),
-            consumedByAdmin: adminUser.email,
-          },
-        });
+        // Mark consent code as consumed if code was used
+        if (validConsent) {
+          await tx.memberSupportConsent.update({
+            where: { id: validConsent.id },
+            data: {
+              isConsumed: true,
+              consumedAt: new Date(),
+              consumedByAdmin: adminUser.email,
+            },
+          });
+        }
 
         // Mandatory Security Audit Trail
         await tx.auditLog.create({
@@ -801,9 +813,9 @@ export class AdminService {
               adminEmail: adminUser.email,
               targetMemberId: targetUser.memberId,
               targetFullName: targetUser.fullName,
-              consentReference: dto.consentReference.trim(),
-              consentCodeId: validConsent.id,
-              reason: dto.reason.trim(),
+              consentReference,
+              consentCodeId: validConsent?.id || null,
+              reason: sessionReason,
               sessionDuration: '15m',
               expiresAt: expiresAt.toISOString(),
               ipAddress,

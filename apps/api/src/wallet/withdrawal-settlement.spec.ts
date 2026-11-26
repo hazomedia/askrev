@@ -98,7 +98,7 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
       expect(res.eligible).toBe(true);
       expect(res.reasons.length).toBe(0);
       expect(res.minWithdrawalINR).toBe(1000);
-      expect(res.tdsRatePercent).toBe(5);
+      expect(res.withdrawalChargePercent).toBe(10);
     });
   });
 
@@ -127,8 +127,8 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
 
       expect(res.success).toBe(true);
       expect(res.grossAmountINR).toBe(2000);
-      expect(res.tdsAmountINR).toBe(100); // 5% of 2000
-      expect(res.netAmountINR).toBe(1900);
+      expect(res.withdrawalChargeINR).toBe(200); // 10% of 2000
+      expect(res.netAmountINR).toBe(1800);
       expect(res.status).toBe('PENDING');
 
       // Verify wallet deduction
@@ -321,8 +321,8 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
         status: 'APPROVED',
         amountPaise: 200000n, // ₹2,000 gross
         bankDetails: {
-          tdsPaise: '10000', // ₹100 TDS (5%)
-          netAmountPaise: '190000', // ₹1,900 net
+          withdrawalChargePaise: '20000', // ₹200 Charge (10%)
+          netAmountPaise: '180000', // ₹1,800 net
           destinationMasked: 'Bank: HDFC Bank (A/C: ••••9012, IFSC: HDFC0001234)',
         },
         user: { email: 'test@askrev.com', fullName: 'Test Member', memberId: 'EV10003' },
@@ -337,8 +337,8 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
       expect(res.status).toBe('SETTLED');
       expect(res.utrNumber).toBe('CMS98765432101');
       expect(res.settledGrossINR).toBe(2000);
-      expect(res.settledNetINR).toBe(1900);
-      expect(res.tdsDeductedINR).toBe(100);
+      expect(res.settledNetINR).toBe(1800);
+      expect(res.withdrawalChargeINR).toBe(200);
 
       // Verify totalWithdrawnPaise updated
       expect(mockPrisma.walletAccount.update).toHaveBeenCalledWith({
@@ -350,7 +350,7 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
         },
       });
 
-      // Verify double-entry journal: Debit COMMISSION_HOLD_RESERVE, Credit CASH_AND_BANK, Credit MEMBER_EARNINGS_PAYABLE (TDS)
+      // Verify double-entry journal: Debit COMMISSION_HOLD_RESERVE, Credit CASH_AND_BANK, Credit MEMBER_EARNINGS_PAYABLE (Charge)
       expect(mockPrisma.journalEntry.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -363,11 +363,11 @@ describe('Withdrawal & Bank Settlement System (UAT)', () => {
                 }),
                 expect.objectContaining({
                   account: JournalAccount.CASH_AND_BANK,
-                  creditPaise: 190000n,
+                  creditPaise: 180000n,
                 }),
                 expect.objectContaining({
                   account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
-                  creditPaise: 10000n,
+                  creditPaise: 20000n,
                 }),
               ],
             },

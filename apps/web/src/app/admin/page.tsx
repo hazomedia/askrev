@@ -185,41 +185,21 @@ export default function AdminPage() {
   const [loadingMatrix, setLoadingMatrix] = useState(false);
   const [matrixSubTab, setMatrixSubTab] = useState<'tree' | 'qualifications' | 'flushes' | 'holds' | 'vouchers'>('tree');
 
-  // TASK 3: Admin Support Mode ("View as Member") States
-  const [supportModalTarget, setSupportModalTarget] = useState<any | null>(null);
-  const [supportAdminPassword, setSupportAdminPassword] = useState('');
-  const [supportConsentCode, setSupportConsentCode] = useState('');
-  const [supportReason, setSupportReason] = useState('');
-  const [supportConsentRef, setSupportConsentRef] = useState('');
-  const [isInitiatingSupport, setIsInitiatingSupport] = useState(false);
-  const [supportError, setSupportError] = useState<string | null>(null);
+  // TASK 3: Direct Admin View as Member States
+  const [directViewLoadingMemberId, setDirectViewLoadingMemberId] = useState<string | null>(null);
   const [supportAuditLogs, setSupportAuditLogs] = useState<any[]>([]);
   const [supportAuditTotal, setSupportAuditTotal] = useState(0);
   const [supportAuditPage, setSupportAuditPage] = useState(1);
   const [auditSubTab, setAuditSubTab] = useState<'system' | 'support'>('system');
 
-  const handleOpenSupportModal = (targetMember: any) => {
-    setSupportModalTarget(targetMember);
-    setSupportAdminPassword('');
-    setSupportConsentCode('');
-    setSupportReason('');
-    setSupportConsentRef('');
-    setSupportError(null);
-  };
-
-  const handleInitiateSupportSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supportModalTarget) return;
-    setIsInitiatingSupport(true);
-    setSupportError(null);
-
+  const handleDirectViewMember = async (targetMember: any) => {
+    const memberId = targetMember?.memberId || targetMember?.id;
+    if (!memberId) return;
+    setDirectViewLoadingMemberId(memberId);
+    setError(null);
     try {
       const res = await initiateAdminSupportSessionApi({
-        targetMemberId: supportModalTarget.memberId,
-        adminPassword: supportAdminPassword,
-        consentCode: supportConsentCode.trim(),
-        reason: supportReason.trim(),
-        consentReference: supportConsentRef.trim(),
+        targetMemberId: memberId,
       });
 
       if (!res?.exchangeCode) {
@@ -232,18 +212,13 @@ export default function AdminPage() {
         ? `https://askrevdrive.com/dashboard?exchange_code=${encodeURIComponent(res.exchangeCode)}`
         : `/dashboard?exchange_code=${encodeURIComponent(res.exchangeCode)}`;
 
-      window.open(targetUrl, '_blank');
-
-      setActionSuccess(`Support mode initiated for member ${supportModalTarget.memberId}. Single-use exchange opened in new tab.`);
-      setSupportModalTarget(null);
-      setSupportAdminPassword('');
-      setSupportConsentCode('');
-      setSupportReason('');
-      setSupportConsentRef('');
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      setActionSuccess(`Opening Member Dashboard for ${targetMember.fullName || memberId} in a new tab...`);
+      setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setSupportError(err.message || 'Failed to initiate support mode session.');
+      setError(err.message || 'Failed to open View as Member session.');
     } finally {
-      setIsInitiatingSupport(false);
+      setDirectViewLoadingMemberId(null);
     }
   };
 
@@ -1713,11 +1688,16 @@ export default function AdminPage() {
                                   </button>
                                   {currentUser?.role === 'SUPER_ADMIN' && (
                                     <button
-                                      onClick={() => handleOpenSupportModal(m)}
-                                      title="View portal as member in read-only support mode"
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200 hover:border-amber-600 text-[11px] font-bold transition-all shadow-2xs"
+                                      onClick={() => handleDirectViewMember(m)}
+                                      disabled={directViewLoadingMemberId === m.memberId}
+                                      title="View member dashboard in read-only support mode"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 border border-amber-200 hover:border-amber-600 text-[11px] font-bold transition-all shadow-2xs disabled:opacity-50"
                                     >
-                                      <Eye className="w-3 h-3" />
+                                      {directViewLoadingMemberId === m.memberId ? (
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Eye className="w-3 h-3" />
+                                      )}
                                       <span>View</span>
                                     </button>
                                   )}
@@ -4043,11 +4023,16 @@ export default function AdminPage() {
               <div className="flex items-center gap-2">
                 {currentUser?.role === 'SUPER_ADMIN' && (
                   <button
-                    onClick={() => handleOpenSupportModal(selectedMemberDetails.profile)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-900 border border-amber-300 hover:border-amber-600 text-xs font-bold transition-all shadow-xs"
+                    onClick={() => handleDirectViewMember(selectedMemberDetails.profile)}
+                    disabled={directViewLoadingMemberId === selectedMemberDetails.profile?.memberId}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-900 border border-amber-300 hover:border-amber-600 text-xs font-bold transition-all shadow-xs disabled:opacity-50"
                   >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View as Member</span>
+                    {directViewLoadingMemberId === selectedMemberDetails.profile?.memberId ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                    <span>View Dashboard</span>
                   </button>
                 )}
                 <button
@@ -4261,176 +4246,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL 1B: ADMIN "VIEW AS MEMBER" SUPPORT ACCESS DIALOG */}
-      {supportModalTarget && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-5 animate-in fade-in-50 zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <Eye className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#0C2348]">
-                    Initiate Member Support Mode
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Inspect member portal directly in a read-only support session
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSupportModalTarget(null);
-                  setSupportReason('');
-                  setSupportConsentRef('');
-                  setSupportError(null);
-                }}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Target Member Banner */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-              <div>
-                <div className="font-bold text-[#0C2348] text-sm">
-                  {supportModalTarget.fullName}
-                </div>
-                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                  ID: <strong className="text-[#165DAD]">{supportModalTarget.memberId}</strong> • Email: {supportModalTarget.email}
-                </div>
-              </div>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-[#165DAD] uppercase">
-                {supportModalTarget.currentPackage || 'MEMBER'}
-              </span>
-            </div>
-
-            {/* Security & Audit Notice */}
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-amber-950">
-                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Mandatory Security & Compliance Notice</span>
-              </div>
-              <p className="text-[11px] text-amber-800 leading-relaxed">
-                Support sessions are strictly <strong>READ-ONLY</strong> and automatically expire after 15 minutes. All inspections are permanently logged in the audit ledger. Financial mutations, package activations, and password updates are blocked.
-              </p>
-            </div>
-
-            {supportError && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{supportError}</span>
-              </div>
-            )}
-
-            {/* Form Fields */}
-            <form onSubmit={handleInitiateSupportSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#253247] mb-1">
-                  Administrator Reauthentication Password <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={supportAdminPassword}
-                  onChange={(e) => setSupportAdminPassword(e.target.value)}
-                  placeholder="Enter your current Super Admin password"
-                  className="w-full p-2.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Mandatory reauthentication required to issue support authorization.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#253247] mb-1">
-                  Verified Member Consent Code (6 digits) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  value={supportConsentCode}
-                  onChange={(e) => setSupportConsentCode(e.target.value.trim().toUpperCase())}
-                  placeholder="e.g. 948201"
-                  className="w-full p-2.5 text-xs font-mono font-bold tracking-widest text-[#165DAD] rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Single-use 6-character code granted by the member from their portal.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#253247] mb-1">
-                  Support Inquiry Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  value={supportReason}
-                  onChange={(e) => setSupportReason(e.target.value)}
-                  placeholder="e.g. Investigating reported voucher balance inquiry or tree display issue..."
-                  className="w-full p-2.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Minimum 8 characters explaining the inquiry.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#253247] mb-1">
-                  Member Consent Reference / Ticket ID <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={supportConsentRef}
-                  onChange={(e) => setSupportConsentRef(e.target.value)}
-                  placeholder="e.g. TICKET-4921 or CALL-REF-20261125"
-                  className="w-full p-2.5 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-[#165DAD] placeholder:text-slate-400"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Proof of user inquiry, support ticket, or customer authorization.</p>
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSupportModalTarget(null);
-                    setSupportAdminPassword('');
-                    setSupportConsentCode('');
-                    setSupportReason('');
-                    setSupportConsentRef('');
-                    setSupportError(null);
-                  }}
-                  className="px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    isInitiatingSupport ||
-                    !supportAdminPassword ||
-                    supportConsentCode.length !== 6 ||
-                    supportReason.trim().length < 8 ||
-                    supportConsentRef.trim().length < 3
-                  }
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-                >
-                  {isInitiatingSupport ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Generating Session...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Generate Authorization Exchange</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL 2: MEMBERSHIP REVIEW / APPROVE / REJECT MODAL */}
       {selectedRequestToReview && (

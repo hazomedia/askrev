@@ -4085,13 +4085,16 @@ function DashboardContent() {
                       <button
                         type="button"
                         onClick={handleInitiateWithdrawal}
-                        disabled={Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                        disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                        title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
                         className="mt-4 w-full py-2.5 px-4 bg-[#15803D] hover:bg-[#126F61] text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <ArrowDownToLine className="w-4 h-4" />
-                        <span>Withdraw Earnings</span>
+                        <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Withdraw Earnings'}</span>
                       </button>
-                      {Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 ? (
+                      {isSupportMode ? (
+                        <p className="text-[10px] text-amber-600 font-semibold mt-1.5 text-center">Admin View Mode: Withdrawal submission is disabled</p>
+                      ) : Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 ? (
                         <p className="text-[10px] text-slate-400 mt-1.5 text-center">Min. threshold: ₹1,000</p>
                       ) : !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified) ? (
                         <p className="text-[10px] text-amber-600 mt-1.5 text-center font-medium">Email verification required</p>
@@ -4347,11 +4350,12 @@ function DashboardContent() {
                   <button
                     type="button"
                     onClick={handleInitiateWithdrawal}
-                    disabled={Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                    disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                    title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
                     className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ArrowDownToLine className="w-4 h-4" />
-                    <span>Request Withdrawal</span>
+                    <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Request Withdrawal'}</span>
                   </button>
                 </div>
               </div>
@@ -5915,12 +5919,23 @@ function DashboardContent() {
                   <CheckCircle2 className="w-5 h-5 text-[#165DAD]" />
                   <span>Withdrawal Request Registered (Simulation)</span>
                 </div>
-                <div className="space-y-1 text-slate-700 text-[11px]">
-                  <div><strong>Status:</strong> {withdrawResult.status || 'PROCESSED'}</div>
-                  <div><strong>Transaction Reference:</strong> <span className="font-mono">{withdrawResult.reference || withdrawResult.id || 'WTH-SIMULATED'}</span></div>
-                  <div><strong>Amount:</strong> ₹{(withdrawResult.amountINR || (withdrawResult.amountPaise ? withdrawResult.amountPaise / 100 : withdrawAmount)).toLocaleString('en-IN')}</div>
-                  {withdrawResult.payoutDestination && (
-                    <div><strong>Destination:</strong> {withdrawResult.payoutDestination.type === 'BANK_ACCOUNT' ? `Bank (${withdrawResult.payoutDestination.maskedAccount})` : `UPI (${withdrawResult.payoutDestination.maskedUpi})`}</div>
+                <div className="space-y-1.5 text-slate-700 text-[11px]">
+                  <div><strong>Status:</strong> <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">{withdrawResult.status || 'PENDING'}</span></div>
+                  <div><strong>Request ID:</strong> <span className="font-mono text-slate-900">{withdrawResult.requestId || withdrawResult.reference || 'WTH-SIMULATED'}</span></div>
+                  <div className="flex justify-between border-t border-blue-200/60 pt-1 mt-1">
+                    <span>Gross Amount:</span>
+                    <strong className="text-slate-900">₹{(withdrawResult.grossAmountINR || withdrawAmount).toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div className="flex justify-between text-amber-700">
+                    <span>Withdrawal Charge (10%):</span>
+                    <strong className="font-bold">-₹{(withdrawResult.withdrawalChargeINR || Math.round(withdrawAmount * 0.1)).toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div className="flex justify-between text-[#15803D] font-bold border-t border-blue-200/60 pt-1">
+                    <span>Net Settlement (Pre-Tax):</span>
+                    <strong>₹{(withdrawResult.netAmountINR || Math.round(withdrawAmount * 0.9)).toLocaleString('en-IN')}</strong>
+                  </div>
+                  {withdrawResult.destinationMasked && (
+                    <div className="text-slate-500 pt-1"><strong>Destination:</strong> {withdrawResult.destinationMasked}</div>
                   )}
                   <p className="pt-1 text-slate-500 italic">{withdrawResult.message}</p>
                 </div>
@@ -5953,6 +5968,25 @@ function DashboardContent() {
                     placeholder="1000"
                     required
                   />
+                </div>
+
+                {/* Real-time 10% Withdrawal Policy Breakdown */}
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Gross Withdrawal Amount:</span>
+                    <span className="font-semibold text-slate-800">₹{withdrawAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between text-amber-700">
+                    <span>Withdrawal Charge (10%):</span>
+                    <span className="font-semibold">-₹{Math.round(withdrawAmount * 0.1).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="pt-1.5 border-t border-slate-200 flex justify-between font-bold text-slate-900">
+                    <span>Net Settlement (Pre-Tax):</span>
+                    <span className="text-[#15803D]">₹{Math.round(withdrawAmount * 0.9).toLocaleString('en-IN')}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 italic pt-0.5">
+                    Standard 10% business withdrawal charge applied. Any statutory tax deductions require separate confirmation.
+                  </p>
                 </div>
 
                 {/* Payout Destination Selector */}

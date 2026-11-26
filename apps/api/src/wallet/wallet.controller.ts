@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Res, UseGuards, ForbiddenException } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -45,6 +45,9 @@ export class WalletController {
 
   @Post('request-withdrawal')
   async requestWithdrawal(@CurrentUser() user: any, @Body() dto?: RequestWithdrawalDto) {
+    if (user.isSupportMode || user.supportSessionId || user.role === 'SUPPORT_READ_ONLY') {
+      throw new ForbiddenException('Withdrawal requests are strictly prohibited during Admin View Mode.');
+    }
     return this.walletService.requestWithdrawal(user.id, dto);
   }
 

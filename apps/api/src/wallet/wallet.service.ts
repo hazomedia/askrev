@@ -425,13 +425,13 @@ export class WalletService {
       isEmailVerified: !!user.isEmailVerified,
       availableEarningsINR: paiseToRupees(availablePaise),
       minWithdrawalINR: 1000,
-      tdsRatePercent: 5,
-      tdsSection: 'Section 194H / 194R (Income Tax Act, 1961)',
+      withdrawalChargePercent: 10,
+      withdrawalChargePolicy: 'Standard 10% Business Withdrawal Charge',
       reasons,
       complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
       manualSettlementWorkflow: true,
       notice:
-        'Withdrawals are processed via verified bank transfers subject to statutory 5% TDS deduction. Automated payment gateway dispatches remain strictly simulation-only.',
+        'Withdrawals are subject to a 10% business withdrawal charge (Net settlement = Gross - 10%). Any statutory tax deductions require separate confirmation. Automated payment gateway dispatches remain strictly simulation-only.',
     };
   }
 
@@ -448,13 +448,17 @@ export class WalletService {
     return requests.map((w) => {
       const details = (w.bankDetails as any) || {};
       const grossPaise = w.amountPaise;
-      const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
-      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+      const withdrawalChargePaise = details.withdrawalChargePaise
+        ? BigInt(details.withdrawalChargePaise)
+        : details.tdsPaise
+        ? BigInt(details.tdsPaise)
+        : (grossPaise * 10n) / 100n;
+      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - withdrawalChargePaise;
 
       return {
         id: w.id,
         grossAmountINR: paiseToRupees(grossPaise),
-        tdsAmountINR: paiseToRupees(tdsPaise),
+        withdrawalChargeINR: paiseToRupees(withdrawalChargePaise),
         netAmountINR: paiseToRupees(netPaise),
         status: w.status,
         destinationType: details.destinationType || 'BANK_ACCOUNT',
@@ -637,14 +641,20 @@ export class WalletService {
       if (existingReq) {
         const details = (existingReq.bankDetails as any) || {};
         if (details.idempotencyKey === dto.idempotencyKey) {
+          const reqGrossPaise = existingReq.amountPaise;
+          const reqChargePaise = details.withdrawalChargePaise
+            ? BigInt(details.withdrawalChargePaise)
+            : (reqGrossPaise * 10n) / 100n;
+          const reqNetPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : reqGrossPaise - reqChargePaise;
+
           return {
             success: true,
             restricted: false,
             requestId: existingReq.id,
             status: existingReq.status,
-            grossAmountINR: paiseToRupees(existingReq.amountPaise),
-            tdsAmountINR: paiseToRupees((existingReq.amountPaise * 5n) / 100n),
-            netAmountINR: paiseToRupees(existingReq.amountPaise - (existingReq.amountPaise * 5n) / 100n),
+            grossAmountINR: paiseToRupees(reqGrossPaise),
+            withdrawalChargeINR: paiseToRupees(reqChargePaise),
+            netAmountINR: paiseToRupees(reqNetPaise),
             destinationMasked: details.destinationMasked || destinationMasked,
             message: 'Withdrawal request already recorded (idempotent submission).',
           };
@@ -652,9 +662,9 @@ export class WalletService {
       }
     }
 
-    // 5% TDS calculation under Section 194H/194R
-    const tdsPaise = (amountPaise * 5n) / 100n;
-    const netAmountPaise = amountPaise - tdsPaise;
+    // Approved 10% Business Withdrawal Charge
+    const withdrawalChargePaise = (amountPaise * 10n) / 100n;
+    const netAmountPaise = amountPaise - withdrawalChargePaise;
     const withdrawalId = randomUUID();
 
     // Execute atomic balance reservation & double-entry journal entry
@@ -674,7 +684,7 @@ export class WalletService {
         data: {
           referenceId: `WTH_REQ_${withdrawalId}`,
           eventType: 'MEMBER_WITHDRAWAL_REQUESTED',
-          narration: `Withdrawal request of ₹${amountINR} submitted by member ${user.memberId} (Gross: ₹${amountINR}, TDS 5%: ₹${paiseToRupees(tdsPaise)}, Net: ₹${paiseToRupees(netAmountPaise)})`,
+          narration: `Withdrawal request of ₹${amountINR} submitted by member ${user.memberId} (Gross: ₹${amountINR}, 10% Charge: ₹${paiseToRupees(withdrawalChargePaise)}, Net: ₹${paiseToRupees(netAmountPaise)})`,
           lines: {
             create: [
               {
@@ -705,7 +715,7 @@ export class WalletService {
           status: 'PENDING',
           bankDetails: {
             grossAmountPaise: amountPaise.toString(),
-            tdsPaise: tdsPaise.toString(),
+            withdrawalChargePaise: withdrawalChargePaise.toString(),
             netAmountPaise: netAmountPaise.toString(),
             destinationType: dto?.destinationType || PayoutDestinationType.BANK_ACCOUNT,
             destinationMasked,
@@ -724,7 +734,7 @@ export class WalletService {
           entityId: withdrawalId,
           metadata: {
             amountINR,
-            tdsINR: paiseToRupees(tdsPaise),
+            withdrawalChargeINR: paiseToRupees(withdrawalChargePaise),
             netAmountINR: paiseToRupees(netAmountPaise),
             destinationType: dto?.destinationType,
             destinationMasked,
@@ -755,7 +765,7 @@ export class WalletService {
       restricted: false,
       requestId: withdrawalId,
       grossAmountINR: amountINR,
-      tdsAmountINR: paiseToRupees(tdsPaise),
+      withdrawalChargeINR: paiseToRupees(withdrawalChargePaise),
       netAmountINR: paiseToRupees(netAmountPaise),
       status: 'PENDING',
       destinationMasked,
@@ -813,17 +823,21 @@ export class WalletService {
 
     let totalGrossPaise = 0n;
     let totalNetPaise = 0n;
-    let totalTdsPaise = 0n;
+    let totalWithdrawalChargePaise = 0n;
 
     const formattedItems = (items as any[]).map((w) => {
       const details = (w.bankDetails as any) || {};
       const grossPaise = w.amountPaise;
-      const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
-      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+      const withdrawalChargePaise = details.withdrawalChargePaise
+        ? BigInt(details.withdrawalChargePaise)
+        : details.tdsPaise
+        ? BigInt(details.tdsPaise)
+        : (grossPaise * 10n) / 100n;
+      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - withdrawalChargePaise;
 
       totalGrossPaise += grossPaise;
       totalNetPaise += netPaise;
-      totalTdsPaise += tdsPaise;
+      totalWithdrawalChargePaise += withdrawalChargePaise;
 
       const user = w.user || {};
       return {
@@ -834,7 +848,7 @@ export class WalletService {
         mobileNumber: user.phone || 'N/A',
         currentPackage: user.currentPackage || 'N/A',
         grossAmountINR: paiseToRupees(grossPaise),
-        tdsAmountINR: paiseToRupees(tdsPaise),
+        withdrawalChargeINR: paiseToRupees(withdrawalChargePaise),
         netAmountINR: paiseToRupees(netPaise),
         status: w.status,
         destinationType: details.destinationType || 'BANK_ACCOUNT',
@@ -862,7 +876,7 @@ export class WalletService {
         rejectedCount,
         pageGrossTotalINR: paiseToRupees(totalGrossPaise),
         pageNetTotalINR: paiseToRupees(totalNetPaise),
-        pageTdsTotalINR: paiseToRupees(totalTdsPaise),
+        pageWithdrawalChargeTotalINR: paiseToRupees(totalWithdrawalChargePaise),
       },
     };
   }
@@ -1079,8 +1093,12 @@ export class WalletService {
     const settlementDate = dto.settlementDate || new Date().toISOString();
     const details = (withdrawal.bankDetails as any) || {};
     const grossPaise = withdrawal.amountPaise;
-    const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
-    const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+    const withdrawalChargePaise = details.withdrawalChargePaise
+      ? BigInt(details.withdrawalChargePaise)
+      : details.tdsPaise
+      ? BigInt(details.tdsPaise)
+      : (grossPaise * 10n) / 100n;
+    const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - withdrawalChargePaise;
 
     const updatedDetails = {
       ...details,
@@ -1104,12 +1122,12 @@ export class WalletService {
       // 2. Final settlement journal:
       // Debit: COMMISSION_HOLD_RESERVE (Gross amount released)
       // Credit: CASH_AND_BANK (Net payout transferred to bank)
-      // Credit: MEMBER_EARNINGS_PAYABLE / Tax Liability (TDS withheld under 194H)
+      // Credit: MEMBER_EARNINGS_PAYABLE / Withdrawal Charge Revenue (10% Business Withdrawal Charge)
       await tx.journalEntry.create({
         data: {
           referenceId: `WTH_SETTLE_${withdrawalId}`,
           eventType: 'MEMBER_WITHDRAWAL_SETTLED',
-          narration: `Bank settlement for withdrawal ${withdrawalId} via UTR ${cleanUtr} (Net: ₹${paiseToRupees(netPaise)}, TDS: ₹${paiseToRupees(tdsPaise)})`,
+          narration: `Bank settlement for withdrawal ${withdrawalId} via UTR ${cleanUtr} (Net: ₹${paiseToRupees(netPaise)}, 10% Charge: ₹${paiseToRupees(withdrawalChargePaise)})`,
           lines: {
             create: [
               {
@@ -1130,8 +1148,8 @@ export class WalletService {
                 userId: withdrawal.userId,
                 account: JournalAccount.MEMBER_EARNINGS_PAYABLE,
                 debitPaise: 0n,
-                creditPaise: tdsPaise,
-                description: `Statutory 5% TDS withheld under Sec 194H/194R for UTR ${cleanUtr}`,
+                creditPaise: withdrawalChargePaise,
+                description: `10% Business Withdrawal Charge for UTR ${cleanUtr}`,
               },
             ],
           },
@@ -1160,7 +1178,7 @@ export class WalletService {
             utrNumber: cleanUtr,
             grossAmountINR: paiseToRupees(grossPaise),
             netAmountINR: paiseToRupees(netPaise),
-            tdsINR: paiseToRupees(tdsPaise),
+            withdrawalChargeINR: paiseToRupees(withdrawalChargePaise),
             settlementDate,
           },
         },
@@ -1191,7 +1209,7 @@ export class WalletService {
       utrNumber: cleanUtr,
       settledGrossINR: paiseToRupees(grossPaise),
       settledNetINR: paiseToRupees(netPaise),
-      tdsDeductedINR: paiseToRupees(tdsPaise),
+      withdrawalChargeINR: paiseToRupees(withdrawalChargePaise),
       message: `Withdrawal successfully marked settled with Bank UTR ${cleanUtr}.`,
     };
   }
@@ -1237,7 +1255,7 @@ export class WalletService {
       'Email',
       'Mobile',
       'Gross Amount (INR)',
-      'TDS 5% (INR)',
+      'Withdrawal Charge 10% (INR)',
       'Net Settlement (INR)',
       'Destination Type',
       'Destination Masked',
@@ -1257,8 +1275,12 @@ export class WalletService {
     const rows = (items as any[]).map((w) => {
       const details = (w.bankDetails as any) || {};
       const grossPaise = w.amountPaise;
-      const tdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : (grossPaise * 5n) / 100n;
-      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - tdsPaise;
+      const withdrawalChargePaise = details.withdrawalChargePaise
+        ? BigInt(details.withdrawalChargePaise)
+        : details.tdsPaise
+        ? BigInt(details.tdsPaise)
+        : (grossPaise * 10n) / 100n;
+      const netPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : grossPaise - withdrawalChargePaise;
       const user = w.user || {};
 
       return [
@@ -1268,7 +1290,7 @@ export class WalletService {
         escapeCsv(user.email || 'N/A'),
         escapeCsv(user.phone || ''),
         escapeCsv(paiseToRupees(grossPaise)),
-        escapeCsv(paiseToRupees(tdsPaise)),
+        escapeCsv(paiseToRupees(withdrawalChargePaise)),
         escapeCsv(paiseToRupees(netPaise)),
         escapeCsv(details.destinationType || 'BANK_ACCOUNT'),
         escapeCsv(details.destinationMasked || 'N/A'),

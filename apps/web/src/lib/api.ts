@@ -1188,10 +1188,10 @@ export function clearSupportSession() {
 
 export async function initiateAdminSupportSessionApi(dto: {
   targetMemberId: string;
-  adminPassword: string;
-  consentCode: string;
-  reason: string;
-  consentReference: string;
+  adminPassword?: string;
+  consentCode?: string;
+  reason?: string;
+  consentReference?: string;
 }): Promise<any> {
   return fetchApi<any>('/admin/support/initiate-session', {
     method: 'POST',
