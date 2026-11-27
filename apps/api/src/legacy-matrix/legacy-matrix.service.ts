@@ -231,7 +231,14 @@ export class LegacyMatrixService {
           const isAncestorQualified = activeDirectsCount >= LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS;
           const settlementRef = `LEGACY-SETTLE-${ancestorUser.id}-${newPlacement.id}-L${level}`;
 
-          if (isAncestorQualified && process.env.ENABLE_LEGACY_SETTLEMENT === 'true') {
+          // Consistent fail-closed financial authorization guard across all mutation paths:
+          // Automated placement settlement is triggered server-side by authorized activation transactions
+          // (does not require interactive Super Admin session), but strictly requires both live flags.
+          const isLiveSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+          const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
+          const isSettlementLive = isLiveSettlementEnabled && !isSimulationMode;
+
+          if (isAncestorQualified && isSettlementLive) {
             const existingEntry = await tx.journalEntry.findUnique({ where: { referenceId: settlementRef } });
             if (!existingEntry) {
               const journalLines: any[] = [];
@@ -318,7 +325,9 @@ export class LegacyMatrixService {
                   sourceMemberId: user.memberId,
                   reason: !isAncestorQualified
                     ? 'Pending 3 active direct referrals'
-                    : 'Simulation mode active (ENABLE_LEGACY_SETTLEMENT is not true)',
+                    : isSimulationMode
+                      ? 'Simulation mode active (COMPLIANCE_MODE is SIMULATION_ONLY)'
+                      : 'Simulation mode active (ENABLE_LEGACY_SETTLEMENT is not true)',
                 },
               },
             });
@@ -842,6 +851,7 @@ export class LegacyMatrixService {
     const overview = await this.getMyMatrixOverview(userId);
     const effectiveDate = process.env.LEGACY_SETTLEMENT_EFFECTIVE_DATE || '2026-12-01T00:00:00.000Z';
     const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+    const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
 
     return {
       userId,
@@ -881,6 +891,7 @@ export class LegacyMatrixService {
   async getAdminSettlementReadiness() {
     const effectiveDate = process.env.LEGACY_SETTLEMENT_EFFECTIVE_DATE || '2026-12-01T00:00:00.000Z';
     const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+    const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
 
     const [totalPlacements, totalUsers, qualifiedUsers] = await Promise.all([
       this.prisma.legacyMatrixPlacement.count(),
@@ -908,8 +919,9 @@ export class LegacyMatrixService {
 
     return {
       systemReadiness: {
-        status: isSettlementEnabled ? 'LIVE_SETTLEMENT_ACTIVE' : 'UAT_SIMULATION_READY',
+        status: isSettlementEnabled && !isSimulationMode ? 'LIVE_SETTLEMENT_ACTIVE' : 'UAT_SIMULATION_READY',
         isSettlementEnabled,
+        complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
         effectiveDate,
         policy: 'STRICT_PROSPECTIVE_ONLY',
         historicalBaselineAccountsProtected: true,

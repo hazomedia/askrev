@@ -595,4 +595,160 @@ describe('EV Legacy Income & EV Club Fund Settlement Suite', () => {
       })
     );
   });
+
+  // Task 1 settlement safety guard on automatic placement: blocked when COMPLIANCE_MODE is SIMULATION_ONLY
+  it('Task 1: placeMemberInMatrix blocks live crediting when ENABLE_LEGACY_SETTLEMENT is true but COMPLIANCE_MODE is SIMULATION_ONLY', async () => {
+    process.env.ENABLE_LEGACY_SETTLEMENT = 'true';
+    process.env.COMPLIANCE_MODE = 'SIMULATION_ONLY';
+
+    mockPrisma.legacyMatrixPlacement.findUnique.mockImplementation(async (params) => {
+      if (params?.where?.userId === 'child-user-1') return null; // Not placed yet
+      if (params?.where?.id === 'root-plc-1') {
+        return {
+          id: 'root-plc-1',
+          parentId: null,
+          user: {
+            id: 'root-user-id',
+            memberId: 'EV10001',
+            role: 'SUPER_ADMIN',
+            directReferrals: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
+          },
+        };
+      }
+      return null;
+    });
+
+    mockPrisma.user.findUnique.mockImplementation(async (params) => {
+      if (params?.where?.id === 'child-user-1') {
+        return {
+          id: 'child-user-1',
+          memberId: 'EV10002',
+          fullName: 'Child Member',
+          currentPackage: MembershipPackage.BASIC,
+          role: 'MEMBER',
+        };
+      }
+      return null;
+    });
+
+    mockPrisma.legacyMatrixPlacement.count.mockResolvedValue(1);
+    mockPrisma.legacyMatrixPlacement.findMany.mockImplementation(async (params) => {
+      if (params?.where?.depth === 0) {
+        return [{ id: 'root-plc-1', depth: 0 }];
+      }
+      if (params?.where?.parentId?.in) {
+        return []; // No existing children
+      }
+      return [];
+    });
+
+    mockPrisma.legacyMatrixPlacement.findFirst.mockResolvedValue({ matrixSequence: 1 });
+    mockPrisma.legacyMatrixPlacement.create.mockResolvedValue({
+      id: 'new-plc-2',
+      userId: 'child-user-1',
+      parentId: 'root-plc-1',
+      positionIndex: 1,
+      matrixSequence: 2,
+      depth: 1,
+      parent: { user: { memberId: 'EV10001', fullName: 'Root User' } },
+    });
+
+    // Invoke automated placement settlement during activation (server-side context, no interactive admin login)
+    const result = await matrixService.placeMemberInMatrix('child-user-1');
+
+    expect(result.isNew).toBe(true);
+    expect(mockPrisma.walletAccount.update).not.toHaveBeenCalled();
+    expect(mockPrisma.journalEntry.create).not.toHaveBeenCalled();
+    expect(mockPrisma.legacyMatrixAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'INCOME_SIMULATED_QUALIFIED',
+          details: expect.objectContaining({
+            isQualified: true,
+            reason: 'Simulation mode active (COMPLIANCE_MODE is SIMULATION_ONLY)',
+          }),
+        }),
+      })
+    );
+  });
+
+  // Task 1 settlement execution on automatic placement: credits live when both gates are authorized
+  it('Task 1: placeMemberInMatrix credits live when ENABLE_LEGACY_SETTLEMENT is true and COMPLIANCE_MODE is not SIMULATION_ONLY', async () => {
+    delete process.env.COMPLIANCE_MODE;
+    process.env.ENABLE_LEGACY_SETTLEMENT = 'true';
+
+    mockPrisma.legacyMatrixPlacement.findUnique.mockImplementation(async (params) => {
+      if (params?.where?.userId === 'child-user-live') return null; // Not placed yet
+      if (params?.where?.id === 'root-plc-live') {
+        return {
+          id: 'root-plc-live',
+          parentId: null,
+          user: {
+            id: 'root-user-live',
+            memberId: 'EV10001',
+            role: 'SUPER_ADMIN',
+            directReferrals: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
+          },
+        };
+      }
+      return null;
+    });
+
+    mockPrisma.user.findUnique.mockImplementation(async (params) => {
+      if (params?.where?.id === 'child-user-live') {
+        return {
+          id: 'child-user-live',
+          memberId: 'EV10002',
+          fullName: 'Child Member Live',
+          currentPackage: MembershipPackage.BASIC,
+          role: 'MEMBER',
+        };
+      }
+      return null;
+    });
+
+    mockPrisma.legacyMatrixPlacement.count.mockResolvedValue(1);
+    mockPrisma.legacyMatrixPlacement.findMany.mockImplementation(async (params) => {
+      if (params?.where?.depth === 0) {
+        return [{ id: 'root-plc-live', depth: 0 }];
+      }
+      if (params?.where?.parentId?.in) {
+        return [];
+      }
+      return [];
+    });
+
+    mockPrisma.legacyMatrixPlacement.findFirst.mockResolvedValue({ matrixSequence: 1 });
+    mockPrisma.legacyMatrixPlacement.create.mockResolvedValue({
+      id: 'new-plc-live',
+      userId: 'child-user-live',
+      parentId: 'root-plc-live',
+      positionIndex: 1,
+      matrixSequence: 2,
+      depth: 1,
+      parent: { user: { memberId: 'EV10001', fullName: 'Root User' } },
+    });
+
+    mockPrisma.journalEntry.findUnique.mockResolvedValue(null); // Not settled yet
+
+    const result = await matrixService.placeMemberInMatrix('child-user-live');
+
+    expect(result.isNew).toBe(true);
+    // Level 1 destination is EV_CLUB_FUND (odd level) -> journalEntry created
+    expect(mockPrisma.journalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          referenceId: 'LEGACY-SETTLE-root-user-live-new-plc-live-L1',
+          eventType: 'LEGACY_MATRIX_SETTLEMENT',
+        }),
+      })
+    );
+    expect(mockPrisma.legacyMatrixAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'LEGACY_INCOME_CREDITED',
+        }),
+      })
+    );
+  });
 });
