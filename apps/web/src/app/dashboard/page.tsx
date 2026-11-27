@@ -1520,19 +1520,19 @@ function DashboardContent() {
     switch (pkg) {
       case 'FULL':
         return {
-          label: 'EV ULTRA — Active',
-          className: 'bg-purple-50 text-purple-700 border-purple-200 font-semibold',
+          label: 'EV ULTRA',
+          className: 'bg-blue-50 text-[#165DAD] border-blue-200 font-bold',
         };
       case 'BASIC':
         return {
-          label: 'EV PRO — Active',
-          className: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold',
+          label: 'EV PRO',
+          className: 'bg-blue-50 text-[#165DAD] border-blue-200 font-bold',
         };
       case 'FREE':
       default:
         return {
-          label: 'EV GO — Free Member',
-          className: 'bg-slate-100 text-slate-700 border-slate-200 font-semibold',
+          label: 'EV GO',
+          className: 'bg-slate-100 text-slate-700 border-slate-200 font-bold',
         };
     }
   };
@@ -1969,67 +1969,66 @@ function DashboardContent() {
                 {/* =========================================================================
                     SECTION 4 — SALES EXECUTIVE IDENTITY CARD
                     ========================================================================= */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm">
+                  <div className="flex flex-row items-center justify-between gap-3 sm:gap-6">
                     {/* Left: Sales Executive Details & Badges */}
-                    <div className="space-y-2 flex-1 min-w-0">
-                      <div className="text-xs uppercase tracking-wider font-bold text-slate-400">
+                    <div className="space-y-1 sm:space-y-2 flex-1 min-w-0">
+                      <div className="text-[10px] sm:text-xs uppercase tracking-wider font-bold text-slate-400">
                         SALES EXECUTIVE
                       </div>
-                      <div className="flex flex-col gap-1.5">
-                        <div className="text-xl sm:text-2xl lg:text-3xl font-black text-[#0C2348] tracking-tight truncate">
-                          {user.fullName}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                          <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 border border-slate-300">
-                            ID: {user.memberId}
-                          </span>
+                      <div className="text-base sm:text-2xl lg:text-3xl font-black text-[#0C2348] tracking-tight leading-snug break-words">
+                        {user.fullName}
+                      </div>
+                      <div>
+                        <span className="font-mono text-[11px] sm:text-xs font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-slate-50 text-slate-700 border border-slate-200 inline-block">
+                          ID: {user.memberId}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5">
+                        {/* EV Package Badge (Separate clean blue badge for ULTRA/PRO, slate for GO) */}
+                        {(() => {
+                          const badge = getPackageFullBadge(user.currentPackage);
+                          return (
+                            <span className={`text-[11px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full border ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
 
-                          {/* EV Package Badge */}
-                          {(() => {
-                            const badge = getPackageFullBadge(user.currentPackage);
+                        {/* Activation Status Badge (Separate green Active badge with pulsing dot) */}
+                        {(() => {
+                          const status = getActivationStatusInfo(user);
+                          if (status.variant === 'active') {
                             return (
-                              <span className={`text-xs px-2.5 py-1 rounded-full border ${badge.className}`}>
-                                {badge.label}
+                              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold px-2.5 py-0.5 sm:py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span className="relative flex h-1.5 w-1.5 sm:h-2 sm:w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 sm:h-2 sm:w-2 bg-emerald-500"></span>
+                                </span>
+                                <span>Active</span>
                               </span>
                             );
-                          })()}
-
-                          {/* Activation Status Badge with pulsing / colored dot */}
-                          {(() => {
-                            const status = getActivationStatusInfo(user);
-                            if (status.variant === 'active') {
-                              return (
-                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                  </span>
-                                  <span>Active</span>
-                                </span>
-                              );
-                            } else if (status.variant === 'pending') {
-                              return (
-                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                                  <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-                                  <span>Pending</span>
-                                </span>
-                              );
-                            } else {
-                              return (
-                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                                  <span className="h-2 w-2 rounded-full bg-slate-400"></span>
-                                  <span>Inactive</span>
-                                </span>
-                              );
-                            }
-                          })()}
-                        </div>
+                          } else if (status.variant === 'pending') {
+                            return (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold px-2.5 py-0.5 sm:py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-amber-500"></span>
+                                <span>Pending</span>
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold px-2.5 py-0.5 sm:py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-slate-400"></span>
+                                <span>Free Member</span>
+                              </span>
+                            );
+                          }
+                        })()}
                       </div>
 
                       {/* Upgrade / Book EV Button for non-FULL members */}
                       {!user.isFullQualified && user.currentPackage !== 'FULL' && (
-                        <div className="pt-2">
+                        <div className="pt-1 sm:pt-2">
                           <button
                             onClick={() => {
                               setSelectedRequestType(
@@ -2039,18 +2038,18 @@ function DashboardContent() {
                               );
                               setPaymentModalOpen(true);
                             }}
-                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-sm hover:shadow-md inline-flex items-center gap-2"
+                            className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all shadow-xs hover:shadow-sm inline-flex items-center gap-1.5 sm:gap-2"
                           >
-                            <Bike className="w-4 h-4" />
+                            <Bike className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             <span>{user.currentPackage === 'BASIC' ? 'Upgrade to ULTRA' : 'Book EV'}</span>
                           </button>
                         </div>
                       )}
                     </div>
 
-                    {/* Right: Portrait 4:5 Profile Photo */}
-                    <div className="shrink-0 self-start sm:self-center">
-                      <div className="w-20 h-25 sm:w-24 sm:h-30 rounded-xl border border-slate-200 shadow-sm overflow-hidden bg-slate-100 relative flex items-center justify-center">
+                    {/* Right: Portrait 4:5 Profile Photo, Vertically Centered */}
+                    <div className="shrink-0 self-center">
+                      <div className="w-[72px] h-[90px] xs:w-20 xs:h-25 sm:w-24 sm:h-30 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs overflow-hidden bg-slate-100 relative flex items-center justify-center">
                         {user.profilePhoto ? (
                           <img
                             src={user.profilePhoto}
@@ -2059,7 +2058,7 @@ function DashboardContent() {
                           />
                         ) : (
                           <div className="w-full h-full bg-gradient-to-b from-slate-100 to-slate-200 flex flex-col items-center justify-center text-slate-400">
-                            <User className="w-10 h-10 sm:w-12 sm:h-12 text-slate-400" />
+                            <User className="w-8 h-8 sm:w-12 sm:h-12 text-slate-400" />
                           </div>
                         )}
                       </div>
