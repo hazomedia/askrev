@@ -676,31 +676,52 @@ export class WalletService {
       throw new NotFoundException('Member not found');
     }
 
+    const finSettings = (this.prisma as any).financialSettings
+      ? await (this.prisma as any).financialSettings.findUnique({ where: { id: 'GLOBAL' } })
+      : null;
+
     const availablePaise = user.wallet?.availableEarningsPaise || 0n;
-    const minWithdrawalPaise = 100000n; // ₹1,000
+    const minWithdrawalINR = finSettings?.minWithdrawalINR ?? 1000;
+    const maxWithdrawalINR = finSettings?.maxWithdrawalINR ?? null;
+    const adminChargePercent = finSettings?.adminChargePercent ?? 10;
+    const tdsEnabled = finSettings?.tdsEnabled ?? false;
+    const tdsPercent = (tdsEnabled && finSettings?.tdsPercent) ? finSettings.tdsPercent : 0;
+    const withdrawalRequestsEnabled = finSettings?.withdrawalRequestsEnabled ?? true;
+    const disabledReason = finSettings?.withdrawalDisabledReason || null;
+
+    const minWithdrawalPaise = BigInt(Math.round(minWithdrawalINR * 100));
     const reasons: string[] = [];
 
+    if (!withdrawalRequestsEnabled) {
+      reasons.push(disabledReason || 'Withdrawal requests are temporarily paused by administration.');
+    }
     if (!user.isEmailVerified) {
       reasons.push('Email verification is required prior to requesting withdrawals.');
     }
     if (availablePaise < minWithdrawalPaise) {
-      reasons.push('Minimum withdrawal threshold is ₹1,000. Your available balance is insufficient.');
+      reasons.push(`Minimum withdrawal threshold is ₹${minWithdrawalINR.toLocaleString('en-IN')}. Your available balance is insufficient.`);
     }
 
-    const eligible = user.isEmailVerified && availablePaise >= minWithdrawalPaise;
+    const eligible = withdrawalRequestsEnabled && user.isEmailVerified && availablePaise >= minWithdrawalPaise;
 
     return {
       eligible,
       isEmailVerified: !!user.isEmailVerified,
       availableEarningsINR: paiseToRupees(availablePaise),
-      minWithdrawalINR: 1000,
-      withdrawalChargePercent: 10,
-      withdrawalChargePolicy: 'Standard 10% Business Withdrawal Charge',
+      minWithdrawalINR,
+      maxWithdrawalINR,
+      withdrawalChargePercent: adminChargePercent,
+      tdsPercent,
+      tdsEnabled,
+      withdrawalRequestsEnabled,
+      payoutExecutionEnabled: finSettings?.payoutExecutionEnabled ?? false,
+      disabledReason,
+      withdrawalChargePolicy: `Standard ${adminChargePercent}% Business Withdrawal Charge`,
       reasons,
       complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
       manualSettlementWorkflow: true,
       notice:
-        'Withdrawals are subject to a 10% business withdrawal charge (Net settlement = Gross - 10%). Any statutory tax deductions require separate confirmation. Automated payment gateway dispatches remain strictly simulation-only.',
+        `Withdrawals are subject to a ${adminChargePercent}% business withdrawal charge (Net settlement = Gross - ${adminChargePercent}%).${tdsPercent > 0 ? ` Statutory TDS deduction: ${tdsPercent}%.` : ''} Automated payment gateway dispatches remain strictly simulation-only.`,
     };
   }
 
@@ -848,9 +869,19 @@ export class WalletService {
       }
     }
 
+    const finSettings = (this.prisma as any).financialSettings
+      ? await (this.prisma as any).financialSettings.findUnique({ where: { id: 'GLOBAL' } })
+      : null;
+
     const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
-    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
-    const enableManualWithdrawals = process.env.ENABLE_MANUAL_WITHDRAWALS === 'true';
+    const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true' || (finSettings?.payoutExecutionEnabled ?? false);
+    const enableManualWithdrawals = process.env.ENABLE_MANUAL_WITHDRAWALS === 'true' || (finSettings?.withdrawalRequestsEnabled ?? false);
+
+    if (finSettings && !finSettings.withdrawalRequestsEnabled) {
+      throw new BadRequestException(
+        finSettings.withdrawalDisabledReason || 'Withdrawal requests are currently disabled by administration.'
+      );
+    }
 
     // Strictly enforce disabled live payouts if manual workflow is not activated
     if (!enableManualWithdrawals && (!enableLivePayouts || complianceMode === 'SIMULATION_ONLY')) {
@@ -877,7 +908,7 @@ export class WalletService {
         restricted: true,
         livePayoutsEnabled: false,
         complianceMode,
-        minWithdrawalINR: 1000,
+        minWithdrawalINR: finSettings?.minWithdrawalINR ?? 1000,
         availableBalanceINR: paiseToRupees(user.wallet?.availableEarningsPaise || 0n),
         destinationMasked: destinationMasked || undefined,
         message:
@@ -886,9 +917,18 @@ export class WalletService {
     }
 
     // Manual / UAT Settlement Workflow execution:
+    const minINR = finSettings?.minWithdrawalINR ?? 1000;
+    const maxINR = finSettings?.maxWithdrawalINR ?? null;
+    const adminChargePct = finSettings?.adminChargePercent ?? 10;
+    const tdsEnabled = finSettings?.tdsEnabled ?? false;
+    const tdsPct = (tdsEnabled && finSettings?.tdsPercent) ? finSettings.tdsPercent : 0;
+
     const amountINR = dto?.amountINR ? Number(dto.amountINR) : 0;
-    if (amountINR < 1000) {
-      throw new BadRequestException('Minimum withdrawal threshold is ₹1,000.');
+    if (amountINR < minINR) {
+      throw new BadRequestException(`Minimum withdrawal threshold is ₹${minINR.toLocaleString('en-IN')}.`);
+    }
+    if (maxINR && amountINR > maxINR) {
+      throw new BadRequestException(`Maximum withdrawal threshold is ₹${maxINR.toLocaleString('en-IN')}.`);
     }
 
     const amountPaise = BigInt(Math.round(amountINR * 100));
@@ -913,8 +953,11 @@ export class WalletService {
           const reqGrossPaise = existingReq.amountPaise;
           const reqChargePaise = details.withdrawalChargePaise
             ? BigInt(details.withdrawalChargePaise)
-            : (reqGrossPaise * 10n) / 100n;
-          const reqNetPaise = details.netAmountPaise ? BigInt(details.netAmountPaise) : reqGrossPaise - reqChargePaise;
+            : (reqGrossPaise * BigInt(adminChargePct)) / 100n;
+          const reqTdsPaise = details.tdsPaise ? BigInt(details.tdsPaise) : 0n;
+          const reqNetPaise = details.netAmountPaise
+            ? BigInt(details.netAmountPaise)
+            : reqGrossPaise - reqChargePaise - reqTdsPaise;
 
           return {
             success: true,
@@ -931,9 +974,10 @@ export class WalletService {
       }
     }
 
-    // Approved 10% Business Withdrawal Charge
-    const withdrawalChargePaise = (amountPaise * 10n) / 100n;
-    const netAmountPaise = amountPaise - withdrawalChargePaise;
+    // Calculated Business Withdrawal Charge and optional TDS
+    const withdrawalChargePaise = (amountPaise * BigInt(adminChargePct)) / 100n;
+    const tdsPaise = tdsPct > 0 ? (amountPaise * BigInt(tdsPct)) / 100n : 0n;
+    const netAmountPaise = amountPaise - withdrawalChargePaise - tdsPaise;
     const withdrawalId = randomUUID();
 
     // Execute atomic balance reservation & double-entry journal entry
@@ -985,6 +1029,9 @@ export class WalletService {
           bankDetails: {
             grossAmountPaise: amountPaise.toString(),
             withdrawalChargePaise: withdrawalChargePaise.toString(),
+            withdrawalChargePercent: adminChargePct,
+            tdsPaise: tdsPaise.toString(),
+            tdsPercent: tdsPct,
             netAmountPaise: netAmountPaise.toString(),
             destinationType: dto?.destinationType || PayoutDestinationType.BANK_ACCOUNT,
             destinationMasked,
@@ -1154,14 +1201,21 @@ export class WalletService {
    * Enforces financial activation gates on all financial mutation operations.
    * In Production SIMULATION_ONLY mode, live financial activations and manual withdrawals are disabled.
    */
-  private ensureFinancialMutationAllowed(actionName: string) {
+  private async ensureFinancialMutationAllowed(actionName: string) {
     const complianceMode = process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY';
     const enableLivePayouts = process.env.ENABLE_LIVE_PAYOUTS === 'true';
     const enableManualWithdrawals = process.env.ENABLE_MANUAL_WITHDRAWALS === 'true';
 
-    if (!enableManualWithdrawals && !enableLivePayouts) {
+    const finSettings = (this.prisma as any).financialSettings
+      ? await (this.prisma as any).financialSettings.findUnique({ where: { id: 'GLOBAL' } })
+      : null;
+
+    const withdrawalsAllowed = enableManualWithdrawals || (finSettings?.withdrawalRequestsEnabled ?? false);
+    const payoutsAllowed = enableLivePayouts || (finSettings?.payoutExecutionEnabled ?? false);
+
+    if (!withdrawalsAllowed && !payoutsAllowed) {
       throw new ForbiddenException(
-        `Financial mutations are strictly disabled in Production (${actionName} blocked). Live financial activations and manual withdrawals are disabled (ENABLE_MANUAL_WITHDRAWALS=false, ENABLE_LIVE_PAYOUTS=false).`
+        `Financial mutations are strictly disabled in Production (${actionName} blocked). Live financial activations and manual withdrawals are disabled.`
       );
     }
   }
@@ -1170,7 +1224,7 @@ export class WalletService {
    * Admin: Approve Withdrawal Request
    */
   async adminApproveWithdrawal(adminUserId: string, withdrawalId: string, dto?: AdminApproveWithdrawalDto) {
-    this.ensureFinancialMutationAllowed('Withdrawal Approval');
+    await this.ensureFinancialMutationAllowed('Withdrawal Approval');
     const withdrawal = await this.prisma.withdrawalRequest.findUnique({
       where: { id: withdrawalId },
       include: { user: true },
@@ -1242,7 +1296,7 @@ export class WalletService {
    * Admin: Reject Withdrawal Request (Refunds reserved balance with journal reversal)
    */
   async adminRejectWithdrawal(adminUserId: string, withdrawalId: string, dto: AdminRejectWithdrawalDto) {
-    this.ensureFinancialMutationAllowed('Withdrawal Rejection');
+    await this.ensureFinancialMutationAllowed('Withdrawal Rejection');
     const withdrawal = await this.prisma.withdrawalRequest.findUnique({
       where: { id: withdrawalId },
       include: { user: true },
@@ -1357,7 +1411,7 @@ export class WalletService {
    * Admin: Settle Withdrawal via Bank Transfer (Records UTR & posts final settlement journal)
    */
   async adminSettleWithdrawal(adminUserId: string, withdrawalId: string, dto: AdminSettleWithdrawalDto) {
-    this.ensureFinancialMutationAllowed('Withdrawal Settlement');
+    await this.ensureFinancialMutationAllowed('Withdrawal Settlement');
     if (!dto.utrNumber?.trim()) {
       throw new BadRequestException('Valid Bank UTR / Reference number is required for manual settlement.');
     }

@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -12,6 +13,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AdminService } from './admin.service';
+import { FinancialSettingsService, UpdateFinancialSettingsDto } from './financial-settings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -26,7 +28,25 @@ import {
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly financialSettingsService: FinancialSettingsService
+  ) {}
+
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
+  @Get('financial-settings')
+  async getFinancialSettings() {
+    return this.financialSettingsService.getFinancialSettings();
+  }
+
+  @Roles(UserRole.SUPER_ADMIN)
+  @Put('financial-settings')
+  async updateFinancialSettings(
+    @CurrentUser() admin: any,
+    @Body() dto: UpdateFinancialSettingsDto
+  ) {
+    return this.financialSettingsService.updateFinancialSettings(admin.id, dto);
+  }
 
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN_OPERATIONS, UserRole.FINANCE_MANAGER)
   @Get('overview')

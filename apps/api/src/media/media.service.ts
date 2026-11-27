@@ -216,6 +216,17 @@ export class MediaService {
       return true;
     }
 
+    // 6. Check User Profile Photo (Avatars)
+    if (keyPattern.startsWith('avatars/')) {
+      const userWithAvatar = await this.prisma.user.findFirst({
+        where: {
+          profilePhoto: { contains: keyPattern },
+        },
+        select: { id: true },
+      });
+      if (userWithAvatar) return true;
+    }
+
     return false;
   }
 

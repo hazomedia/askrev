@@ -317,6 +317,10 @@ export async function fetchApi<T>(
     ...(options.headers as Record<string, string>),
   };
 
+  if (typeof FormData !== 'undefined' && options.body instanceof FormData) {
+    delete headers['Content-Type'];
+  }
+
   const supportActive = isSupportModeActive();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -1399,6 +1403,100 @@ export async function bookEvBikeWithCombinedCheckoutApi(dto: {
     body: JSON.stringify(dto),
   });
 }
+
+// ============================================================================
+// FINANCIAL SETTINGS APIS
+// ============================================================================
+export async function fetchAdminFinancialSettingsApi(): Promise<any> {
+  return fetchApi<any>('/admin/financial-settings');
+}
+
+export async function updateAdminFinancialSettingsApi(payload: any): Promise<any> {
+  return fetchApi<any>('/admin/financial-settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+// ============================================================================
+// WITHDRAWAL MANAGEMENT APIS
+// ============================================================================
+export async function fetchWithdrawalEligibilityApi(): Promise<any> {
+  return fetchApi<any>('/wallet/eligibility');
+}
+
+export async function fetchMyWithdrawalsApi(): Promise<any[]> {
+  return fetchApi<any[]>('/wallet/my-withdrawals');
+}
+
+export async function requestWithdrawalApi(payload: any): Promise<any> {
+  return fetchApi<any>('/wallet/request-withdrawal', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAdminWithdrawalsApi(query: {
+  status?: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+} = {}): Promise<any> {
+  const params = new URLSearchParams();
+  if (query.status && query.status !== 'ALL') params.append('status', query.status);
+  if (query.page) params.append('page', String(query.page));
+  if (query.limit) params.append('limit', String(query.limit));
+  if (query.search?.trim()) params.append('search', query.search.trim());
+  return fetchApi<any>(`/wallet/admin/withdrawals?${params.toString()}`);
+}
+
+export async function approveAdminWithdrawalApi(withdrawalId: string, adminNotes?: string): Promise<any> {
+  return fetchApi<any>(`/wallet/admin/withdrawals/${withdrawalId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ adminNotes }),
+  });
+}
+
+export async function rejectAdminWithdrawalApi(
+  withdrawalId: string,
+  rejectionReason: string,
+  adminNotes?: string
+): Promise<any> {
+  return fetchApi<any>(`/wallet/admin/withdrawals/${withdrawalId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ rejectionReason, adminNotes }),
+  });
+}
+
+export async function settleAdminWithdrawalApi(
+  withdrawalId: string,
+  utrNumber: string,
+  adminNotes?: string
+): Promise<any> {
+  return fetchApi<any>(`/wallet/admin/withdrawals/${withdrawalId}/settle`, {
+    method: 'POST',
+    body: JSON.stringify({ utrNumber, adminNotes }),
+  });
+}
+
+// ============================================================================
+// PROFILE PHOTO MANAGEMENT APIS
+// ============================================================================
+export async function uploadProfilePhotoApi(file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('photo', file);
+  return fetchApi<any>('/auth/profile/photo', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function removeProfilePhotoApi(): Promise<any> {
+  return fetchApi<any>('/auth/profile/photo', {
+    method: 'DELETE',
+  });
+}
+
 
 
 

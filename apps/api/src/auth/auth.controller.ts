@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Get, Patch, Param, UseGuards, Req, Res, HttpCode, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, UseGuards, Req, Res, HttpCode, HttpStatus, ServiceUnavailableException, UseInterceptors, UploadedFile, ForbiddenException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { UserRole } from '@askrev/shared';
@@ -409,6 +410,32 @@ export class AuthController {
     @Body() dto: UpdateProfileDto
   ) {
     return this.authService.updateProfile(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('profile/photo')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadProfilePhoto(
+    @CurrentUser() user: any,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request
+  ) {
+    if ((user as any)?.isSupportSession || (req as any)?.isSupportSession) {
+      throw new ForbiddenException('Profile photo modifications are strictly prohibited during Admin View Mode.');
+    }
+    return this.authService.uploadProfilePhoto(user.id, file);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('profile/photo')
+  async removeProfilePhoto(
+    @CurrentUser() user: any,
+    @Req() req: Request
+  ) {
+    if ((user as any)?.isSupportSession || (req as any)?.isSupportSession) {
+      throw new ForbiddenException('Profile photo modifications are strictly prohibited during Admin View Mode.');
+    }
+    return this.authService.removeProfilePhoto(user.id);
   }
 
   @UseGuards(JwtAuthGuard)

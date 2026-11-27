@@ -9,12 +9,14 @@ import { TotpService } from './totp.service';
 import { EmailService } from './email.service';
 import { TokenRevocationService } from './token-revocation.service';
 import { MembersModule } from '../members/members.module';
+import { ProductsModule } from '../products/products.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({}),
     forwardRef(() => MembersModule),
+    forwardRef(() => ProductsModule),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard, TotpService, EmailService, TokenRevocationService],

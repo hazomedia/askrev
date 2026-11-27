@@ -43,6 +43,7 @@ import {
   Sparkles,
   Layers,
   ShoppingBag,
+  ArrowDownToLine,
 } from 'lucide-react';
 import {
   fetchApi,
@@ -64,6 +65,8 @@ import { AdminHeroSlider } from '../../components/admin/AdminHeroSlider';
 import { AdminBannerManagement } from '../../components/admin/AdminBannerManagement';
 import { AdminSecuritySettings } from '../../components/admin/AdminSecuritySettings';
 import { AdminPaymentSettings } from '../../components/admin/AdminPaymentSettings';
+import { AdminFinancialSettings } from '../../components/admin/AdminFinancialSettings';
+import { AdminWithdrawalManagement } from '../../components/admin/AdminWithdrawalManagement';
 import AskrLogo from '../../components/AskrLogo';
 
 type AdminTab =
@@ -77,10 +80,12 @@ type AdminTab =
   | 'matrix'
   | 'sponsor-holds'
   | 'finance'
+  | 'withdrawals'
   | 'vouchers'
   | 'bookings'
   | 'reconciliation'
   | 'audit'
+  | 'financial-settings'
   | 'payment-settings'
   | 'security';
 
@@ -386,6 +391,8 @@ export default function AdminPage() {
           tabParam === 'security' ||
           tabParam === 'payment-settings' ||
           tabParam === 'sponsor-holds' ||
+          tabParam === 'financial-settings' ||
+          tabParam === 'withdrawals' ||
           (tabParam === 'banners' && stored.role === 'SUPER_ADMIN')
         ) {
           targetTab = tabParam as AdminTab;
@@ -848,6 +855,7 @@ export default function AdminPage() {
       badgeColor: 'bg-amber-500 text-white',
     },
     { id: 'finance', label: 'Financial Ledger', icon: Wallet },
+    { id: 'withdrawals', label: 'Withdrawal Requests', icon: ArrowDownToLine },
     { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: vouchersData?.metrics?.totalVouchers },
     { id: 'bookings', label: 'EV Bookings', icon: Bike, count: bookingsData?.metrics?.totalBookings },
     {
@@ -858,6 +866,7 @@ export default function AdminPage() {
       badgeColor: 'bg-red-500 text-white',
     },
     { id: 'audit', label: 'Audit Trail', icon: FileText, count: auditTotal },
+    { id: 'financial-settings', label: 'Financial Activation & Settings', icon: Sliders },
     { id: 'payment-settings', label: 'Payment Settings', icon: CreditCard },
     { id: 'security', label: 'Settings → Security', icon: ShieldCheck },
   ];
@@ -3611,6 +3620,18 @@ export default function AdminPage() {
             {activeTab === 'payment-settings' && (
               <div className="space-y-6">
                 <AdminPaymentSettings currentUser={currentUser} />
+              </div>
+            )}
+
+            {activeTab === 'financial-settings' && (
+              <div className="space-y-6">
+                <AdminFinancialSettings currentUser={currentUser} />
+              </div>
+            )}
+
+            {activeTab === 'withdrawals' && (
+              <div className="space-y-6">
+                <AdminWithdrawalManagement currentUser={currentUser} />
               </div>
             )}
 

@@ -719,7 +719,9 @@ function BookingFlowContent() {
                                 )}
                                 {Number(memberShoppingWallet?.pendingEvClubFundINR || 0) > 0 && availableShoppingBalance === 0 && (
                                   <p className="text-[10px] text-amber-300/80 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg">
-                                    Note: Pending EV Club Fund (₹{Number(memberShoppingWallet.pendingEvClubFundINR).toLocaleString('en-IN')}) is awaiting scheduled settlement and cannot be spent until settled into available balance.
+                                    {memberShoppingWallet?.isQualified
+                                      ? `Note: EV Club Fund (₹${Number(memberShoppingWallet.pendingEvClubFundINR).toLocaleString('en-IN')}) — Qualified: Credit Pending.`
+                                      : `Note: Pending EV Club Fund (₹${Number(memberShoppingWallet.pendingEvClubFundINR).toLocaleString('en-IN')}) — Complete 3 active direct referrals to unlock your accumulated income.`}
                                   </p>
                                 )}
                               </>

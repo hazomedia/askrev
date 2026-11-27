@@ -52,6 +52,7 @@ model User {
   passwordHash        String
   fullName            String
   phone               String?
+  profilePhoto        String?
   role                UserRole           @default(FREE_USER)
   currentPackage      MembershipPackage  @default(FREE)
   isFullQualified     Boolean            @default(false)
@@ -1010,6 +1011,51 @@ model AdminSupportSession {
   @@index([isRevoked])
   @@index([expiresAt])
 }
+
+model FinancialSettings {
+  id                               String    @id @default("GLOBAL")
+  version                          Int       @default(1)
+
+  // Independent Feature Toggles
+  crownBonusEnabled                Boolean   @default(true)
+  royalMatchEnabled                Boolean   @default(true)
+  legacyIncomeEnabled              Boolean   @default(false)
+  evClubFundEnabled                Boolean   @default(false)
+  voucherUtilizationEnabled        Boolean   @default(true)
+  shoppingWalletUtilizationEnabled Boolean   @default(false)
+  withdrawalRequestsEnabled        Boolean   @default(false)
+  payoutExecutionEnabled           Boolean   @default(false)
+
+  // Withdrawal Policy Settings
+  minWithdrawalPaise               BigInt    @default(100000) // ₹1,000
+  maxWithdrawalPaise               BigInt?
+  dailyMemberLimitPaise            BigInt?
+  monthlyMemberLimitPaise          BigInt?
+  platformDailyPayoutLimitPaise    BigInt?
+  adminChargePercent               Decimal   @default(10.0) @db.Decimal(5, 2) // 10.00%
+  withdrawalSource                 String    @default("EARNINGS_WALLET_ONLY")
+  payoutMode                       String    @default("MANUAL_BANK_TRANSFER")
+
+  // Tax & Statutory Controls
+  tdsEnabled                       Boolean   @default(false)
+  tdsRatePercent                   Decimal   @default(5.0) @db.Decimal(5, 2) // 5.00%
+  tdsCalculationBasis              String    @default("NET_INCOME")
+  tdsThresholdPaise                BigInt    @default(0)
+  taxPolicyEffectiveDate           DateTime?
+  panVerificationRequired          Boolean   @default(false)
+  bankVerificationRequired         Boolean   @default(true)
+  paymentProcessingWindowHours     Int       @default(48)
+  withdrawalDisabledReason         String?
+
+  // Versioning and Audit Log
+  effectiveDate                    DateTime  @default(now())
+  updatedBy                        String?
+  changeReason                     String?
+  auditHistory                     Json?     @default("[]")
+  createdAt                        DateTime  @default(now())
+  updatedAt                        DateTime  @updatedAt
+}
+
 
 
 

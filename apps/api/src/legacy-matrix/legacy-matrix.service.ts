@@ -238,7 +238,14 @@ export class LegacyMatrixService {
           const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
           const isSettlementLive = isLiveSettlementEnabled && !isSimulationMode;
 
-          if (isAncestorQualified && isSettlementLive) {
+          const finSettings = (tx as any).financialSettings
+            ? await (tx as any).financialSettings.findUnique({ where: { id: 'GLOBAL' } })
+            : null;
+          const isStreamEnabled = rate.destination === 'EARNINGS_WALLET'
+            ? (finSettings ? finSettings.legacyIncomeEnabled : true)
+            : (finSettings ? finSettings.evClubFundEnabled : true);
+
+          if (isAncestorQualified && isSettlementLive && isStreamEnabled) {
             const existingEntry = await tx.journalEntry.findUnique({ where: { referenceId: settlementRef } });
             if (!existingEntry) {
               const journalLines: any[] = [];
@@ -1634,6 +1641,13 @@ export class LegacyMatrixService {
         }
       }
 
+      const finSettings = (tx as any).financialSettings
+        ? await (tx as any).financialSettings.findUnique({ where: { id: 'GLOBAL' } })
+        : null;
+
+      const legacyStreamEnabled = finSettings ? finSettings.legacyIncomeEnabled : true;
+      const clubFundStreamEnabled = finSettings ? finSettings.evClubFundEnabled : true;
+
       const isLiveSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
       const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
 
@@ -1645,6 +1659,8 @@ export class LegacyMatrixService {
           released: false,
           simulationMode: true,
           uncreditedItemsCount: uncreditedItems.length,
+          legacyStreamEnabled,
+          clubFundStreamEnabled,
           proposedEarningsWalletPaise: totalProposedEarningsPaise.toString(),
           proposedEarningsWalletINR: Number(totalProposedEarningsPaise / 100n),
           proposedShoppingWalletPaise: totalProposedShoppingPaise.toString(),
@@ -1660,6 +1676,12 @@ export class LegacyMatrixService {
       let releasedShoppingPaise = 0n;
 
       for (const item of uncreditedItems) {
+        if (item.rate.destination === 'EARNINGS_WALLET' && !legacyStreamEnabled) {
+          continue;
+        }
+        if (item.rate.destination === 'EV_CLUB_WALLET' && !clubFundStreamEnabled) {
+          continue;
+        }
         const journalLines: any[] = [];
         if (item.rate.destination === 'EARNINGS_WALLET') {
           journalLines.push(

@@ -11,6 +11,7 @@ import { TotpService } from './totp.service';
 import { EmailService } from './email.service';
 import { TokenRevocationService } from './token-revocation.service';
 import { BinaryPlacementService } from '../members/binary-placement.service';
+import { StorageService } from '../products/storage.service';
 
 @Injectable()
 export class AuthService {
@@ -37,7 +38,10 @@ export class AuthService {
     private readonly tokenRevocationService?: TokenRevocationService,
     @Inject(forwardRef(() => BinaryPlacementService))
     @Optional()
-    private readonly binaryPlacementService?: BinaryPlacementService
+    private readonly binaryPlacementService?: BinaryPlacementService,
+    @Inject(forwardRef(() => StorageService))
+    @Optional()
+    private readonly storageService?: StorageService
   ) { }
 
   /**
@@ -1344,6 +1348,104 @@ export class AuthService {
     };
   }
 
+  async uploadProfilePhoto(userId: string, file: Express.Multer.File) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, memberId: true, profilePhoto: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!this.storageService) {
+      throw new BadRequestException('Storage service is currently unavailable');
+    }
+
+    const uploadResult = await this.storageService.uploadProfilePhoto(file, user.id);
+
+    if (user.profilePhoto && user.profilePhoto !== uploadResult.url) {
+      try {
+        await this.storageService.safeDeleteImage(user.profilePhoto);
+      } catch (err: any) {
+        this.logger.warn(`Could not delete previous profile photo for ${user.memberId}: ${err.message}`);
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { profilePhoto: uploadResult.url },
+      include: {
+        wallet: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'PROFILE_PHOTO_UPLOADED',
+          entityType: 'User',
+          entityId: userId,
+          actorId: userId,
+          metadata: { profilePhoto: uploadResult.url },
+        },
+      });
+    } catch { }
+
+    return {
+      success: true,
+      profilePhoto: uploadResult.url,
+      user: this.formatUserProfile(updated),
+      message: 'Profile photograph uploaded successfully.',
+    };
+  }
+
+  async removeProfilePhoto(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, memberId: true, profilePhoto: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.profilePhoto && this.storageService) {
+      try {
+        await this.storageService.safeDeleteImage(user.profilePhoto);
+      } catch (err: any) {
+        this.logger.warn(`Could not delete profile photo for ${user.memberId}: ${err.message}`);
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { profilePhoto: null },
+      include: {
+        wallet: true,
+        sponsor: { select: { memberId: true, fullName: true } },
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'PROFILE_PHOTO_REMOVED',
+          entityType: 'User',
+          entityId: userId,
+          actorId: userId,
+          metadata: {},
+        },
+      });
+    } catch { }
+
+    return {
+      success: true,
+      profilePhoto: null,
+      user: this.formatUserProfile(updated),
+      message: 'Profile photograph removed successfully.',
+    };
+  }
+
   /**
    * Dispatches email address verification token to the authenticated member
    */
@@ -1433,6 +1535,7 @@ export class AuthService {
       email: user.email,
       fullName: user.fullName,
       phone: user.phone,
+      profilePhoto: user.profilePhoto ?? null,
       role: user.role,
       currentPackage: user.currentPackage,
       isFullQualified: user.isFullQualified,

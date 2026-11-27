@@ -317,6 +317,68 @@ export class StorageService {
     };
   }
 
+  /**
+   * Upload Member Profile Photograph with magic byte validation and size enforcement.
+   * Format: portrait crop ~4:5 (JPG, JPEG, PNG, WebP)
+   * Size limit: 5MB
+   * Structure: avatars/{userId}-{uuid}.{ext}
+   */
+  async uploadProfilePhoto(
+    file: Express.Multer.File,
+    userId: string
+  ): Promise<UploadResult> {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('No image file payload provided');
+    }
+
+    const maxAvatarSizeBytes = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxAvatarSizeBytes) {
+      throw new BadRequestException(
+        `File size (${(file.size / 1024 / 1024).toFixed(1)} MB) exceeds maximum allowed limit (5 MB).`
+      );
+    }
+
+    const detected = this.detectMagicMime(file.buffer);
+    if (!detected) {
+      throw new BadRequestException(
+        'Invalid image format or corrupted file signature. Only authentic JPEG, PNG, and WebP images are permitted.'
+      );
+    }
+
+    const uuid = crypto.randomUUID().slice(0, 8);
+    const objectKey = `avatars/${userId}-${Date.now()}-${uuid}.${detected.ext}`;
+
+    if (this.isR2Configured && this.s3Client) {
+      return this.uploadToR2(file, objectKey, detected.mime);
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+      throw new BadRequestException(
+        'Persistent cloud storage (Cloudflare R2) is not configured in production. Ephemeral uploads are disabled until R2 credentials are set.'
+      );
+    }
+
+    const avatarDir = path.resolve(process.cwd(), '../web/public/uploads/avatars');
+    if (!fs.existsSync(avatarDir)) {
+      fs.mkdirSync(avatarDir, { recursive: true });
+    }
+    const basename = `${userId}-${Date.now()}-${uuid}.${detected.ext}`;
+    const targetPath = path.join(avatarDir, basename);
+    fs.writeFileSync(targetPath, file.buffer);
+
+    const publicUrl = `/uploads/avatars/${basename}`;
+    this.logger.log(`Saved avatar locally: ${publicUrl} (${(file.size / 1024).toFixed(1)} KB)`);
+
+    return {
+      url: publicUrl,
+      filename: basename,
+      originalName: file.originalname,
+      sizeBytes: file.size,
+      mimeType: detected.mime,
+      storageProvider: 'local',
+    };
+  }
+
   private async uploadToR2(
     file: Express.Multer.File,
     objectKey: string,
@@ -413,10 +475,11 @@ export class StorageService {
       objectKey.startsWith('vehicles/') ||
       objectKey.startsWith('products/') ||
       objectKey.startsWith('banners/') ||
+      objectKey.startsWith('avatars/') ||
       objectKey.startsWith('test-');
 
     if (!isApprovedNamespace) {
-      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, banners, test)');
+      throw new BadRequestException('Deletion permitted only within approved media prefixes (hero, vehicles, products, banners, avatars, test)');
     }
 
     const normalize = (val: any): string => {

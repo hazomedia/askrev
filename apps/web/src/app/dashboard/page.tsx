@@ -52,6 +52,11 @@ import {
   Clock,
   Search,
   ShoppingBag,
+  Camera,
+  Upload,
+  Trash2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -71,13 +76,18 @@ import {
   grantMemberSupportConsentApi,
   fetchActiveMemberSupportConsentApi,
   revokeMemberSupportConsentApi,
+  uploadProfilePhotoApi,
+  removeProfilePhotoApi,
+  fetchWithdrawalEligibilityApi,
+  fetchMyWithdrawalsApi,
+  requestWithdrawalApi,
 } from '../../lib/api';
 import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
 import WelcomePopupModal from '../../components/WelcomePopupModal';
 import AdminSupportModeBanner from '../../components/AdminSupportModeBanner';
 
-type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'shopping_wallet' | 'vouchers' | 'bookings' | 'profile';
+type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'withdraw' | 'shopping_wallet' | 'vouchers' | 'bookings' | 'profile';
 
 function DashboardContent() {
   const router = useRouter();
@@ -225,6 +235,185 @@ function DashboardContent() {
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
+  // Profile Photo Management States
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoActionError, setPhotoActionError] = useState<string | null>(null);
+  const [photoActionSuccess, setPhotoActionSuccess] = useState<string | null>(null);
+  const photoFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Dedicated Withdrawal Tab States
+  const [myWithdrawalsList, setMyWithdrawalsList] = useState<any[]>([]);
+  const [withdrawalEligibility, setWithdrawalEligibility] = useState<any>(null);
+  const [loadingWithdrawals, setLoadingWithdrawals] = useState(false);
+  const [withdrawTabAmount, setWithdrawTabAmount] = useState<number>(1000);
+  const [withdrawTabHolder, setWithdrawTabHolder] = useState('');
+  const [withdrawTabBank, setWithdrawTabBank] = useState('');
+  const [withdrawTabAccNum, setWithdrawTabAccNum] = useState('');
+  const [withdrawTabConfirmAccNum, setWithdrawTabConfirmAccNum] = useState('');
+  const [withdrawTabIfsc, setWithdrawTabIfsc] = useState('');
+  const [withdrawTabSubmitting, setWithdrawTabSubmitting] = useState(false);
+  const [withdrawTabError, setWithdrawTabError] = useState<string | null>(null);
+  const [withdrawTabSuccess, setWithdrawTabSuccess] = useState<string | null>(null);
+
+  const handleSelectPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhotoActionError(null);
+    setPhotoActionSuccess(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setPhotoActionError('Invalid file format. Please select a JPG, PNG, or WebP portrait image.');
+      if (e.target) e.target.value = '';
+      return;
+    }
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setPhotoActionError('File size exceeds 5MB limit. Please choose a smaller photograph.');
+      if (e.target) e.target.value = '';
+      return;
+    }
+
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPhotoPreviewUrl(event.target?.result as string);
+      setIsPhotoModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+    if (e.target) e.target.value = '';
+  };
+
+  const handleUploadPhotoConfirm = async () => {
+    if (!photoFile) return;
+    if (isSupportMode) {
+      setPhotoActionError('Profile photo cannot be modified in Admin View mode.');
+      return;
+    }
+
+    setPhotoUploading(true);
+    setPhotoActionError(null);
+    try {
+      const res = await uploadProfilePhotoApi(photoFile);
+      if (res?.profilePhoto) {
+        setUser((prev: any) => {
+          const updated = { ...prev, profilePhoto: res.profilePhoto };
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('askrev_user', JSON.stringify(updated));
+            } catch { }
+          }
+          return updated;
+        });
+        setPhotoActionSuccess('Profile photo updated successfully!');
+        setIsPhotoModalOpen(false);
+        setPhotoFile(null);
+        setPhotoPreviewUrl(null);
+      }
+    } catch (err: any) {
+      setPhotoActionError(err.message || 'Failed to upload profile photo.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (isSupportMode) {
+      setPhotoActionError('Profile photo cannot be modified in Admin View mode.');
+      return;
+    }
+    if (!confirm('Are you sure you want to remove your profile photograph?')) return;
+
+    setPhotoUploading(true);
+    setPhotoActionError(null);
+    try {
+      await removeProfilePhotoApi();
+      setUser((prev: any) => {
+        const updated = { ...prev, profilePhoto: null };
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('askrev_user', JSON.stringify(updated));
+          } catch { }
+        }
+        return updated;
+      });
+      setPhotoActionSuccess('Profile photo removed successfully.');
+    } catch (err: any) {
+      setPhotoActionError(err.message || 'Failed to remove profile photo.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const loadWithdrawalTabData = async () => {
+    setLoadingWithdrawals(true);
+    setWithdrawTabError(null);
+    try {
+      const [elig, list] = await Promise.allSettled([
+        fetchWithdrawalEligibilityApi(),
+        fetchMyWithdrawalsApi(),
+      ]);
+      if (elig.status === 'fulfilled') setWithdrawalEligibility(elig.value);
+      if (list.status === 'fulfilled') setMyWithdrawalsList(list.value || []);
+      if (user?.fullName && !withdrawTabHolder) {
+        setWithdrawTabHolder(user.fullName);
+      }
+    } catch (err: any) {
+      setWithdrawTabError(err.message || 'Failed to load withdrawal data.');
+    } finally {
+      setLoadingWithdrawals(false);
+    }
+  };
+
+  const handleSubmitWithdrawalForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSupportMode) {
+      setWithdrawTabError('Withdrawals are strictly disabled during Admin View mode.');
+      return;
+    }
+    setWithdrawTabError(null);
+    setWithdrawTabSuccess(null);
+
+    if (withdrawTabConfirmAccNum.trim() !== withdrawTabAccNum.trim()) {
+      setWithdrawTabError('Account Number and Confirmation Account Number do not match.');
+      return;
+    }
+
+    setWithdrawTabSubmitting(true);
+    try {
+      const res = await requestWithdrawalApi({
+        amountINR: Number(withdrawTabAmount),
+        destinationType: 'BANK_ACCOUNT',
+        accountHolderName: withdrawTabHolder.trim(),
+        bankName: withdrawTabBank.trim(),
+        accountNumber: withdrawTabAccNum.trim(),
+        confirmAccountNumber: withdrawTabConfirmAccNum.trim(),
+        ifscCode: withdrawTabIfsc.trim().toUpperCase(),
+      });
+
+      if (res?.success) {
+        setWithdrawTabSuccess(
+          `Withdrawal request of ₹${Number(withdrawTabAmount).toLocaleString('en-IN')} submitted successfully (Reference: ${res.requestId || ''}). Reserved balance will be reviewed for bank transfer.`
+        );
+        await Promise.allSettled([
+          fetchApi<any>('/wallet/overview').then((w) => setWalletOverview(w)).catch(() => null),
+          loadWithdrawalTabData(),
+        ]);
+        setWithdrawTabAccNum('');
+        setWithdrawTabConfirmAccNum('');
+      } else {
+        setWithdrawTabError(res?.message || 'Failed to submit withdrawal request.');
+      }
+    } catch (err: any) {
+      setWithdrawTabError(err.message || 'Withdrawal submission failed.');
+    } finally {
+      setWithdrawTabSubmitting(false);
+    }
+  };
+
   // Member Support Consent States
   const [memberConsentCode, setMemberConsentCode] = useState<string | null>(null);
   const [memberConsentExpires, setMemberConsentExpires] = useState<string | null>(null);
@@ -321,6 +510,7 @@ function DashboardContent() {
         'binary',
         'legacy',
         'wallets',
+        'withdraw',
         'shopping_wallet',
         'vouchers',
         'bookings',
@@ -344,6 +534,12 @@ function DashboardContent() {
       setPaymentModalOpen(true);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (activeTab === 'withdraw') {
+      loadWithdrawalTabData();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -1317,26 +1513,71 @@ function DashboardContent() {
     };
   };
 
+  const getPackageFullBadge = (pkg?: string) => {
+    switch (pkg) {
+      case 'FULL':
+        return {
+          label: 'EV ULTRA — Active',
+          className: 'bg-purple-50 text-purple-700 border-purple-200 font-semibold',
+        };
+      case 'BASIC':
+        return {
+          label: 'EV PRO — Active',
+          className: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold',
+        };
+      case 'FREE':
+      default:
+        return {
+          label: 'EV GO — Free Member',
+          className: 'bg-slate-100 text-slate-700 border-slate-200 font-semibold',
+        };
+    }
+  };
+
+  const getActivationStatusInfo = (usr: any) => {
+    if (!usr) {
+      return {
+        label: 'Inactive',
+        variant: 'inactive',
+      };
+    }
+    const isInactive = Boolean(usr.status === 'SUSPENDED' || usr.status === 'INACTIVE' || usr.isSuspended);
+    if (isInactive) {
+      return {
+        label: 'Inactive',
+        variant: 'inactive',
+      };
+    }
+    if (usr.currentPackage === 'BASIC' || usr.currentPackage === 'FULL') {
+      return {
+        label: 'Active',
+        variant: 'active',
+      };
+    }
+    return {
+      label: 'Pending',
+      variant: 'pending',
+    };
+  };
+
   const navItems: {
-    id: TabType | 'withdraw_action';
+    id: TabType;
     label: string;
     icon: any;
     count?: number;
-    isAction?: boolean;
-    onClick?: () => void;
   }[] = [
-      { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-      { id: 'membership', label: 'EV Booking Tiers', icon: Sparkles },
-      { id: 'withdraw_action', label: 'Withdraw', icon: ArrowDownToLine, isAction: true, onClick: handleInitiateWithdrawal },
-      { id: 'team', label: 'My Direct Team', icon: Users, count: directTeam?.directs?.length },
-      { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
-      { id: 'legacy', label: 'EV Legacy', icon: Layers },
-      { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
-      { id: 'shopping_wallet', label: 'Shopping Wallet', icon: ShoppingBag },
-      { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
-      { id: 'bookings', label: 'My Bookings', icon: Bike, count: membershipRequests.length + userBookings.length },
-      { id: 'profile', label: 'Profile', icon: User },
-    ];
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'membership', label: 'EV Booking Tiers', icon: Sparkles },
+    { id: 'team', label: 'My Direct Team', icon: Users, count: directTeam?.directs?.length },
+    { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
+    { id: 'legacy', label: 'EV Legacy', icon: Layers },
+    { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
+    { id: 'withdraw', label: 'Bank Withdrawal', icon: ArrowDownToLine },
+    { id: 'shopping_wallet', label: 'Shopping Wallet', icon: ShoppingBag },
+    { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
+    { id: 'bookings', label: 'My Bookings', icon: Bike, count: membershipRequests.length + userBookings.length },
+    { id: 'profile', label: 'Profile', icon: User },
+  ];
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#253247]">
@@ -1385,24 +1626,8 @@ function DashboardContent() {
               />
             </div>
 
-            {/* Right: Package & Activation Status Badge + Logout (Hidden in Admin View) */}
+            {/* Right: Clean Header Action / Logout (Hidden in Admin View) */}
             <div className="flex items-center justify-end gap-1.5 shrink-0">
-              <div className="flex flex-col items-end">
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex ${getPackageBadge(
-                    user.currentPackage
-                  )}`}
-                >
-                  {getTierDisplayName(user.currentPackage)}
-                </span>
-                <span
-                  className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 inline-flex ${getActivationStatus(
-                    user
-                  ).className}`}
-                >
-                  {getActivationStatus(user).label}
-                </span>
-              </div>
               {!isSupportMode && (
                 <button
                   onClick={handleLogout}
@@ -1429,7 +1654,7 @@ function DashboardContent() {
               </div>
             </div>
 
-            {/* Right: Status badge & Logout */}
+            {/* Right: Clean Header Controls & Logout */}
             <div className="flex items-center gap-2.5 sm:gap-3">
               {user?.role && ['SUPER_ADMIN', 'ADMIN_OPERATIONS', 'FINANCE_MANAGER'].includes(user.role) && (
                 <a
@@ -1444,30 +1669,6 @@ function DashboardContent() {
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>Admin Console</span>
                 </a>
-              )}
-
-              <div className="flex flex-col items-end gap-0.5">
-                <span
-                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border inline-flex ${getPackageBadge(
-                    user.currentPackage
-                  )}`}
-                >
-                  {getTierDisplayName(user.currentPackage)}
-                </span>
-                <span
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-flex ${getActivationStatus(
-                    user
-                  ).className}`}
-                >
-                  {getActivationStatus(user).label}
-                </span>
-              </div>
-
-              {user.isFullQualified && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#15803D] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Qualified</span>
-                </span>
               )}
 
               {!isSupportMode && (
@@ -1503,11 +1704,7 @@ function DashboardContent() {
                 <button
                   key={item.id}
                   onClick={() => {
-                    if (item.onClick) {
-                      item.onClick();
-                    } else if (item.id !== 'withdraw_action') {
-                      setActiveTab(item.id as TabType);
-                    }
+                    setActiveTab(item.id);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
                     ? 'bg-blue-50 text-[#165DAD] font-semibold'
@@ -1557,9 +1754,15 @@ function DashboardContent() {
               />
               <div className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl p-4 flex flex-col z-10 overflow-y-auto">
                 <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-[#165DAD] flex items-center justify-center text-white font-black text-sm">
-                      A
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-11 rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-slate-100 flex items-center justify-center">
+                      {user.profilePhoto ? (
+                        <img src={user.profilePhoto} alt={user.fullName || 'Member'} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-[#165DAD] flex items-center justify-center text-white font-black text-sm">
+                          {user.fullName ? user.fullName[0].toUpperCase() : 'A'}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div className="font-bold text-sm text-[#253247]">{user.fullName || 'ASKR EV'}</div>
@@ -1603,11 +1806,7 @@ function DashboardContent() {
                         key={item.id}
                         onClick={() => {
                           setMobileMenuOpen(false);
-                          if (item.onClick) {
-                            item.onClick();
-                          } else if (item.id !== 'withdraw_action') {
-                            setActiveTab(item.id as TabType);
-                          }
+                          setActiveTab(item.id);
                         }}
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isActive
                           ? 'bg-blue-50 text-[#165DAD] font-semibold'
@@ -1768,57 +1967,100 @@ function DashboardContent() {
                     SECTION 4 — SALES EXECUTIVE IDENTITY CARD
                     ========================================================================= */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    {/* Sales Executive Identity */}
-                    <div className="space-y-1.5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+                    {/* Left: Sales Executive Details & Badges */}
+                    <div className="space-y-2 flex-1 min-w-0">
                       <div className="text-xs uppercase tracking-wider font-bold text-slate-400">
-                        Sales Executive
+                        SALES EXECUTIVE
                       </div>
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="text-xl sm:text-2xl font-black text-[#0C2348] tracking-tight">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="text-xl sm:text-2xl lg:text-3xl font-black text-[#0C2348] tracking-tight truncate">
                           {user.fullName}
-                        </span>
-                        <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 border border-slate-300">
-                          ID: {user.memberId}
-                        </span>
-                        <div className="inline-flex flex-col items-start gap-1">
-                          <span
-                            className={`text-xs font-semibold px-3 py-1 rounded-full border shadow-2xs ${getPackageBadge(
-                              user.currentPackage
-                            )}`}
-                          >
-                            {getTierDisplayName(user.currentPackage)}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 border border-slate-300">
+                            ID: {user.memberId}
                           </span>
-                          <span
-                            className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${getActivationStatus(
-                              user
-                            ).className}`}
-                          >
-                            {getActivationStatus(user).label}
-                          </span>
+
+                          {/* EV Package Badge */}
+                          {(() => {
+                            const badge = getPackageFullBadge(user.currentPackage);
+                            return (
+                              <span className={`text-xs px-2.5 py-1 rounded-full border ${badge.className}`}>
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
+
+                          {/* Activation Status Badge with pulsing / colored dot */}
+                          {(() => {
+                            const status = getActivationStatusInfo(user);
+                            if (status.variant === 'active') {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                  </span>
+                                  <span>Active</span>
+                                </span>
+                              );
+                            } else if (status.variant === 'pending') {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                  <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+                                  <span>Pending</span>
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                  <span className="h-2 w-2 rounded-full bg-slate-400"></span>
+                                  <span>Inactive</span>
+                                </span>
+                              );
+                            }
+                          })()}
                         </div>
                       </div>
+
+                      {/* Upgrade / Book EV Button for non-FULL members */}
+                      {!user.isFullQualified && user.currentPackage !== 'FULL' && (
+                        <div className="pt-2">
+                          <button
+                            onClick={() => {
+                              setSelectedRequestType(
+                                user.currentPackage === 'BASIC'
+                                  ? 'BASIC_TO_FULL_UPGRADE'
+                                  : 'BASIC_ACTIVATION'
+                              );
+                              setPaymentModalOpen(true);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-sm hover:shadow-md inline-flex items-center gap-2"
+                          >
+                            <Bike className="w-4 h-4" />
+                            <span>{user.currentPackage === 'BASIC' ? 'Upgrade to ULTRA' : 'Book EV'}</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Book EV / Upgrade Button (shown if not full qualified) */}
-                    {!user.isFullQualified && user.currentPackage !== 'FULL' && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => {
-                            setSelectedRequestType(
-                              user.currentPackage === 'BASIC'
-                                ? 'BASIC_TO_FULL_UPGRADE'
-                                : 'BASIC_ACTIVATION'
-                            );
-                            setPaymentModalOpen(true);
-                          }}
-                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#165DAD] to-[#1D4ED8] hover:from-[#12498a] hover:to-[#1742b6] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-                        >
-                          <Bike className="w-4 h-4" />
-                          <span>{user.currentPackage === 'BASIC' ? 'Upgrade to ULTRA' : 'Book EV'}</span>
-                        </button>
+                    {/* Right: Portrait 4:5 Profile Photo */}
+                    <div className="shrink-0 self-start sm:self-center">
+                      <div className="w-20 h-25 sm:w-24 sm:h-30 rounded-xl border border-slate-200 shadow-sm overflow-hidden bg-slate-100 relative flex items-center justify-center">
+                        {user.profilePhoto ? (
+                          <img
+                            src={user.profilePhoto}
+                            alt={user.fullName || 'Sales Executive'}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-b from-slate-100 to-slate-200 flex flex-col items-center justify-center text-slate-400">
+                            <User className="w-10 h-10 sm:w-12 sm:h-12 text-slate-400" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
 
@@ -2080,8 +2322,8 @@ function DashboardContent() {
                               Lifetime Settled
                             </div>
                           </div>
-                          <div className="text-[10px] text-white/60 font-medium">
-                            Reconciled with Ledger
+                          <div className="text-[10px] text-white/70 font-medium">
+                            Withdrawable Balance
                           </div>
                         </div>
 
@@ -2147,7 +2389,11 @@ function DashboardContent() {
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-purple-200/80">{Math.min(activeDirectsCount, 3)}/3 Active Directs</span>
+                            <span className="text-purple-200/90 font-semibold">
+                              {isMatrixQualified
+                                ? '3/3 Active Directs — Qualified'
+                                : `${Math.min(activeDirectsCount, 3)}/3 Active Directs`}
+                            </span>
                             <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
                               isMatrixQualified
                                 ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/30'
@@ -2178,7 +2424,11 @@ function DashboardContent() {
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-teal-200/80">{Math.min(activeDirectsCount, 3)}/3 Active Directs</span>
+                            <span className="text-teal-200/90 font-semibold">
+                              {isMatrixQualified
+                                ? '3/3 Active Directs — Qualified'
+                                : `${Math.min(activeDirectsCount, 3)}/3 Active Directs`}
+                            </span>
                             <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
                               isMatrixQualified
                                 ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/30'
@@ -4050,15 +4300,15 @@ function DashboardContent() {
                         </div>
                       </div>
 
-                      {/* Authoritative Theoretical vs. Credited Distinction Notice */}
-                      <div className="p-4 rounded-xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 flex items-start gap-3">
-                        <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      {/* Matrix Income Qualification Explanation */}
+                      <div className="p-4 rounded-xl bg-blue-50/90 border border-blue-200 text-xs text-blue-900 flex items-start gap-3">
+                        <ShieldAlert className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                         <div className="space-y-1">
-                          <div className="font-bold text-amber-950">
-                            Authoritative Income Distinction: Accumulated Theoretical Income vs. Available Spendable Balance
+                          <div className="font-bold text-blue-950">
+                            Matrix Income Qualification Policy
                           </div>
-                          <p className="text-[11px] text-amber-800 leading-relaxed">
-                            <strong>Accumulated EV Legacy Income</strong> and <strong>Accumulated EV Club Fund</strong> represent theoretical allocations across the deterministic 8-level global matrix. Unqualified allocations remain held until 3 active direct referrals (holding EV PRO or EV ULTRA) are confirmed. Only amounts reflected under <strong>Actually Credited</strong> in your Earnings Wallet or Shopping Wallet are spendable or withdrawable. Under compliance simulation mode, live banking debits remain disabled.
+                          <p className="text-[11px] text-blue-800 leading-relaxed">
+                            Projected Matrix Income is unlocked when you complete 3 active direct referrals (holding EV PRO or EV ULTRA). Upon qualification, even level rewards are credited to your Earnings Wallet and odd level rewards are credited to your Shopping Wallet.
                           </p>
                         </div>
                       </div>
@@ -4692,7 +4942,7 @@ function DashboardContent() {
 
                   <button
                     type="button"
-                    onClick={handleInitiateWithdrawal}
+                    onClick={() => setActiveTab('withdraw')}
                     disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
                     title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
                     className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -4700,6 +4950,344 @@ function DashboardContent() {
                     <ArrowDownToLine className="w-4 h-4" />
                     <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Request Withdrawal'}</span>
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: BANK WITHDRAWAL MANAGEMENT */}
+            {activeTab === 'withdraw' && (
+              <div className="space-y-6">
+                {/* 1. Header & Available Balance Banner */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Bank Transfer Management
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black text-[#0C2348] tracking-tight">
+                      Earnings Wallet Withdrawal
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Request bank settlement from your available earnings balance. Processed via manual bank transfer with supervisory audit.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-[#0C2348] via-[#103062] to-[#1D4ED8] text-white shadow-md shrink-0 md:min-w-[240px]">
+                    <span className="text-[11px] text-blue-200 font-semibold uppercase tracking-wider">
+                      Withdrawable Balance
+                    </span>
+                    <div className="text-2xl sm:text-3xl font-black mt-0.5">
+                      ₹{Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-[10px] text-blue-200/80 font-medium mt-1">
+                      Earnings Wallet Only • Minimum ₹{Number(withdrawalEligibility?.minWithdrawalINR ?? 1000).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Alerts */}
+                {withdrawTabError && (
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{withdrawTabError}</span>
+                  </div>
+                )}
+                {withdrawTabSuccess && (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span>{withdrawTabSuccess}</span>
+                  </div>
+                )}
+
+                {/* Admin Support View Banner */}
+                {isSupportMode && (
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2.5">
+                    <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Withdrawal requests and mutations are strictly disabled during Admin View mode.</span>
+                  </div>
+                )}
+
+                {/* 2. Main Grid: Request Form (Left) & Calculation Breakdown (Right) */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left (2 cols): Withdrawal Form */}
+                  <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-bold text-[#0C2348]">Submit Bank Withdrawal Request</h3>
+                      <p className="text-xs text-slate-500">
+                        Funds will be reserved from your available balance immediately and transferred to your bank account upon review.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleSubmitWithdrawalForm} className="space-y-4">
+                      {/* Amount Input */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Withdrawal Amount (₹) <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-bold">₹</span>
+                          <input
+                            type="number"
+                            required
+                            min={withdrawalEligibility?.minWithdrawalINR ?? 1000}
+                            step="100"
+                            max={Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 100000)}
+                            value={withdrawTabAmount}
+                            onChange={(e) => setWithdrawTabAmount(Math.max(0, Number(e.target.value)))}
+                            disabled={isSupportMode || withdrawTabSubmitting}
+                            className="w-full pl-7 pr-3 py-2 text-sm font-bold border border-slate-200 rounded-lg focus:border-[#165DAD] focus:outline-none text-slate-900"
+                            placeholder="1000"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Min: ₹{Number(withdrawalEligibility?.minWithdrawalINR ?? 1000).toLocaleString('en-IN')}
+                          {withdrawalEligibility?.maxWithdrawalINR ? ` • Max: ₹${Number(withdrawalEligibility.maxWithdrawalINR).toLocaleString('en-IN')}` : ''}
+                        </p>
+                      </div>
+
+                      {/* Bank Details Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Account Holder Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={withdrawTabHolder}
+                            onChange={(e) => setWithdrawTabHolder(e.target.value)}
+                            disabled={isSupportMode || withdrawTabSubmitting}
+                            placeholder="As registered in your bank account"
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:border-[#165DAD] focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Bank Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={withdrawTabBank}
+                            onChange={(e) => setWithdrawTabBank(e.target.value)}
+                            disabled={isSupportMode || withdrawTabSubmitting}
+                            placeholder="e.g. HDFC Bank, SBI, ICICI"
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:border-[#165DAD] focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Bank Account Number <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            value={withdrawTabAccNum}
+                            onChange={(e) => setWithdrawTabAccNum(e.target.value)}
+                            disabled={isSupportMode || withdrawTabSubmitting}
+                            placeholder="9 to 18 numeric digits"
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:border-[#165DAD] focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Confirm Account Number <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={withdrawTabConfirmAccNum}
+                            onChange={(e) => setWithdrawTabConfirmAccNum(e.target.value)}
+                            disabled={isSupportMode || withdrawTabSubmitting}
+                            placeholder="Re-enter bank account number"
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:border-[#165DAD] focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            IFSC Code <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={withdrawTabIfsc}
+                            onChange={(e) => setWithdrawTabIfsc(e.target.value.toUpperCase())}
+                            disabled={isSupportMode || withdrawTabSubmitting}
+                            placeholder="e.g. HDFC0001234"
+                            maxLength={11}
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:border-[#165DAD] focus:outline-none font-mono uppercase font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Submit Button */}
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <div className="text-[11px] text-slate-400">
+                          Encrypted payout credential protection active
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={
+                            isSupportMode ||
+                            withdrawTabSubmitting ||
+                            withdrawTabAmount < (withdrawalEligibility?.minWithdrawalINR ?? 1000) ||
+                            withdrawTabAmount > Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) ||
+                            !user?.isEmailVerified
+                          }
+                          className="px-6 py-2.5 rounded-xl bg-[#15803D] hover:bg-[#126F61] text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <ArrowDownToLine className="w-4 h-4" />
+                          <span>
+                            {withdrawTabSubmitting
+                              ? 'Reserving & Submitting...'
+                              : `Submit Request (₹${Number(withdrawTabAmount).toLocaleString('en-IN')})`}
+                          </span>
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Right (1 col): Calculation Breakdown Card */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4 h-fit">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="text-sm font-bold text-[#0C2348]">Settlement Calculation</h3>
+                      <p className="text-[11px] text-slate-500">Transparent deduction breakdown</p>
+                    </div>
+
+                    {(() => {
+                      const gross = Number(withdrawTabAmount) || 0;
+                      const adminChargePercent = Number(withdrawalEligibility?.withdrawalChargePercent ?? 10);
+                      const adminCharge = Math.round((gross * adminChargePercent) / 100);
+                      const tdsPercent = withdrawalEligibility?.tdsEnabled ? Number(withdrawalEligibility.tdsPercent ?? 0) : 0;
+                      const tds = Math.round((gross * tdsPercent) / 100);
+                      const net = Math.max(0, gross - adminCharge - tds);
+
+                      return (
+                        <div className="space-y-3 text-xs">
+                          <div className="flex justify-between py-1 border-b border-slate-100">
+                            <span className="text-slate-500">Gross Requested:</span>
+                            <span className="font-mono font-bold text-slate-800">₹{gross.toLocaleString('en-IN')}</span>
+                          </div>
+
+                          <div className="flex justify-between py-1 border-b border-slate-100">
+                            <span className="text-slate-500">Admin Charge ({adminChargePercent}%):</span>
+                            <span className="font-mono font-semibold text-amber-600">-₹{adminCharge.toLocaleString('en-IN')}</span>
+                          </div>
+
+                          {tdsPercent > 0 && (
+                            <div className="flex justify-between py-1 border-b border-slate-100">
+                              <span className="text-slate-500">TDS Deduction ({tdsPercent}%):</span>
+                              <span className="font-mono font-semibold text-amber-600">-₹{tds.toLocaleString('en-IN')}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-between py-2 bg-emerald-50 px-3 rounded-xl border border-emerald-200">
+                            <span className="font-bold text-emerald-900">Net Bank Transfer:</span>
+                            <span className="font-mono font-black text-emerald-800 text-base">₹{net.toLocaleString('en-IN')}</span>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-500 space-y-1">
+                            <div className="font-semibold text-slate-700">Withdrawal Policy Notice:</div>
+                            <p>
+                              Withdrawals are deducted from your Earnings Wallet balance upon submission. Transferred to verified beneficiary bank accounts within 24-48 business hours.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* 3. Member Withdrawal History Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#0C2348]">Withdrawal Request History</h3>
+                      <p className="text-xs text-slate-500">Complete record of your past withdrawal submissions and settlement status</p>
+                    </div>
+                    <button
+                      onClick={loadWithdrawalTabData}
+                      disabled={loadingWithdrawals}
+                      className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 flex items-center gap-1"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${loadingWithdrawals ? 'animate-spin' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  {myWithdrawalsList.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      No withdrawal requests submitted yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 uppercase font-semibold text-[10px] border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Date</th>
+                            <th className="py-2.5 px-3">Request ID</th>
+                            <th className="py-2.5 px-3 text-right">Gross (₹)</th>
+                            <th className="py-2.5 px-3 text-right">Charges (₹)</th>
+                            <th className="py-2.5 px-3 text-right">Net Payable (₹)</th>
+                            <th className="py-2.5 px-3">Destination</th>
+                            <th className="py-2.5 px-3">Status</th>
+                            <th className="py-2.5 px-3">UTR Reference</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {myWithdrawalsList.map((w: any) => (
+                            <tr key={w.id} className="hover:bg-slate-50/50">
+                              <td className="py-2.5 px-3 text-slate-600">
+                                {w.createdAt ? new Date(w.createdAt).toLocaleDateString('en-IN') : 'N/A'}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-800 text-[11px] truncate max-w-[120px]" title={w.id}>
+                                {w.id.slice(0, 10)}...
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                                ₹{Number(w.grossAmountINR).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-amber-600">
+                                -₹{Number(w.withdrawalChargeINR).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono font-black text-emerald-700">
+                                ₹{Number(w.netAmountINR).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-700 truncate max-w-[160px]" title={w.destinationMasked}>
+                                {w.destinationMasked}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-block ${
+                                  w.status === 'SETTLED'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : w.status === 'APPROVED'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                    : w.status === 'REJECTED'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {w.status}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {w.utrNumber ? (
+                                  <span className="font-mono text-[11px] font-bold text-emerald-700">{w.utrNumber}</span>
+                                ) : w.rejectionReason ? (
+                                  <span className="text-[10px] text-rose-600 truncate max-w-[140px]" title={w.rejectionReason}>
+                                    {w.rejectionReason}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[10px]">Processing</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -5533,6 +6121,110 @@ function DashboardContent() {
                     <span>{verificationNotice}</span>
                   </div>
                 )}
+
+                {/* Profile Photograph Management Card */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-base font-bold text-[#0C2348]">Profile Photograph</h3>
+                      <p className="text-xs text-slate-500">
+                        Official portrait photo for your Sales Executive profile. Recommended aspect ratio: 4:5 portrait (Max 5MB, JPG/PNG/WebP).
+                      </p>
+                    </div>
+                    {user.profilePhoto && (
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1 self-start sm:self-auto">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Photo Active
+                      </span>
+                    )}
+                  </div>
+
+                  {photoActionError && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{photoActionError}</span>
+                    </div>
+                  )}
+
+                  {photoActionSuccess && (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{photoActionSuccess}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row items-center gap-6 pt-2">
+                    {/* 4:5 Portrait Photo Preview */}
+                    <div className="w-32 h-40 sm:w-36 sm:h-45 rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden bg-slate-100 relative shrink-0 flex items-center justify-center">
+                      {user.profilePhoto ? (
+                        <img
+                          src={user.profilePhoto}
+                          alt={user.fullName || 'Sales Executive'}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-gradient-to-b from-slate-100 to-slate-200">
+                          <User className="w-16 h-16 text-slate-400" />
+                          <span className="text-[10px] font-semibold text-slate-400 mt-1">No Photo Uploaded</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions & Instructions */}
+                    <div className="space-y-3 flex-1 text-center sm:text-left">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">
+                          {user.profilePhoto ? 'Change or Remove Photograph' : 'Upload Your Official Portrait'}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Position your face clearly centered in the portrait frame. This photo appears on your Sales Executive dashboard, identity card, and team profile.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-1">
+                        <input
+                          ref={photoFileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={handleSelectPhotoFile}
+                          disabled={isSupportMode || photoUploading}
+                        />
+
+                        {isSupportMode ? (
+                          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>Profile photo management is disabled during Admin View mode.</span>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => photoFileInputRef.current?.click()}
+                              disabled={photoUploading}
+                              className="px-4 py-2 text-xs font-bold text-white bg-[#165DAD] hover:bg-[#12498a] rounded-xl transition shadow-xs flex items-center gap-2 disabled:opacity-50"
+                            >
+                              <Upload className="w-4 h-4" />
+                              <span>{user.profilePhoto ? 'Change Photo' : 'Upload Photo'}</span>
+                            </button>
+
+                            {user.profilePhoto && (
+                              <button
+                                type="button"
+                                onClick={handleDeletePhoto}
+                                disabled={photoUploading}
+                                className="px-4 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center gap-2 disabled:opacity-50"
+                              >
+                                <Trash2 className="w-4 h-4 text-rose-600" />
+                                <span>Remove Photo</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -6938,6 +7630,95 @@ function DashboardContent() {
             >
               Got it
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 4:5 PORTRAIT CROP & PREVIEW MODAL */}
+      {isPhotoModalOpen && photoPreviewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#0C2348]">Crop & Preview Photograph</h3>
+                <p className="text-xs text-slate-500">4:5 portrait aspect ratio preview</p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsPhotoModalOpen(false);
+                  setPhotoFile(null);
+                  setPhotoPreviewUrl(null);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {photoActionError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                {photoActionError}
+              </div>
+            )}
+
+            {/* 4:5 Aspect Ratio Guide Box */}
+            <div className="flex flex-col items-center justify-center py-2">
+              <div className="relative w-48 h-60 rounded-xl overflow-hidden border-2 border-[#165DAD] shadow-lg bg-slate-900">
+                <img
+                  src={photoPreviewUrl}
+                  alt="Crop Preview"
+                  className="w-full h-full object-cover"
+                />
+                {/* 4:5 Rule of Thirds Guide Lines */}
+                <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 border border-white/20">
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div className="border-r border-b border-white/20" />
+                  <div />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-2 text-center">
+                Photo will be framed in official 4:5 portrait ratio for your Sales Executive ID.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPhotoModalOpen(false);
+                  setPhotoFile(null);
+                  setPhotoPreviewUrl(null);
+                }}
+                disabled={photoUploading}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUploadPhotoConfirm}
+                disabled={photoUploading}
+                className="px-5 py-2 text-xs font-bold text-white bg-[#165DAD] hover:bg-[#12498a] rounded-lg shadow-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                {photoUploading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving Photo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Photo</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
