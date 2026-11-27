@@ -64,20 +64,31 @@ export default function AskrLogo({
     },
   }[size];
 
+  const isDark = theme === 'dark';
+  const logoSrcWebp = isDark
+    ? '/brand/askrev-white-gold-logo.webp'
+    : '/brand/askrev-glossy-eco-logo.webp';
+  const logoSrcPng = isDark
+    ? '/brand/askrev-white-gold-logo.png'
+    : '/brand/askrev-glossy-eco-logo.png';
+  const logoWidth = isDark ? 1636 : 2123;
+  const logoHeight = isDark ? 485 : 673;
+  const logoAspectRatio = isDark ? '1636 / 485' : '2123 / 673';
+
   const fullLogoElement = (
     <picture className="inline-flex items-center shrink-0">
-      <source srcSet="/brand/askrev-glossy-eco-logo.webp" type="image/webp" />
-      <source srcSet="/brand/askrev-glossy-eco-logo.png" type="image/png" />
+      <source srcSet={logoSrcWebp} type="image/webp" />
+      <source srcSet={logoSrcPng} type="image/png" />
       <img
-        src="/brand/askrev-glossy-eco-logo.webp"
+        src={logoSrcWebp}
         alt={alt}
-        width={2123}
-        height={673}
+        width={logoWidth}
+        height={logoHeight}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
         className={`${imgClassName || `${sizeConfig.fullHeightClass} ${sizeConfig.fullWidthClass}`} w-auto object-contain select-none transition-opacity duration-200`}
         style={{
-          aspectRatio: '2123 / 673',
+          aspectRatio: logoAspectRatio,
         }}
       />
     </picture>

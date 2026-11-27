@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Receipt,
   Info,
+  RefreshCw,
 } from 'lucide-react';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
@@ -54,39 +55,66 @@ function BookingFlowContent() {
   // Member Combined Checkout States
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [memberVouchers, setMemberVouchers] = useState<any[]>([]);
+  const [vouchersLoading, setVouchersLoading] = useState<boolean>(false);
+  const [vouchersError, setVouchersError] = useState<string | null>(null);
+
   const [memberShoppingWallet, setMemberShoppingWallet] = useState<any | null>(null);
+  const [shoppingWalletLoading, setShoppingWalletLoading] = useState<boolean>(false);
+  const [shoppingWalletError, setShoppingWalletError] = useState<string | null>(null);
+
   const [selectedVoucherId, setSelectedVoucherId] = useState<string>('');
   const [shoppingWalletAmount, setShoppingWalletAmount] = useState<number>(0);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingResult, setBookingResult] = useState<any | null>(null);
 
-  // Load published catalog & member balances
-  useEffect(() => {
+  // Authoritative Member Balances Loader (Tasks 1 & 2)
+  const loadMemberBalances = async () => {
     const user = getStoredUser();
-    if (user) {
-      setCurrentUser(user);
-      if (user.fullName) setFullName((prev) => prev || user.fullName);
-      if (user.phone) setPhone((prev) => prev || user.phone);
+    if (!user) return;
 
-      // Fetch member's active vouchers
-      fetchApi<any>('/vouchers/my-vouchers')
-        .then((res) => {
-          const list = Array.isArray(res) ? res : res?.vouchers || [];
-          const active = list.filter((v: any) => v.status === 'ACTIVE' && (v.currentBalanceINR || v.balanceINR || 0) > 0);
-          setMemberVouchers(active);
-          if (active.length > 0) {
-            setSelectedVoucherId(active[0].id);
-          }
-        })
-        .catch(() => []);
+    setCurrentUser(user);
+    if (user.fullName) setFullName((prev) => prev || user.fullName);
+    if (user.phone) setPhone((prev) => prev || user.phone);
 
-      // Fetch member's Shopping Wallet balance
-      fetchApi<any>('/wallet/shopping-wallet')
-        .then((sw) => {
-          setMemberShoppingWallet(sw);
-        })
-        .catch(() => null);
+    // Fetch member's active vouchers using authoritative remainingBalanceINR (Task 1)
+    setVouchersLoading(true);
+    setVouchersError(null);
+    try {
+      const res = await fetchApi<any>('/vouchers/my-vouchers');
+      const list = Array.isArray(res) ? res : res?.vouchers || [];
+      const active = list.filter((v: any) => {
+        const remaining = Number(v.remainingBalanceINR ?? v.currentBalanceINR ?? v.balanceINR ?? 0);
+        const isNotExpired = !v.expiresAt || new Date(v.expiresAt) > new Date();
+        const isActiveStatus = v.status === 'ACTIVE' || v.status === 'PARTIALLY_REDEEMED';
+        return isActiveStatus && remaining > 0 && isNotExpired;
+      });
+      setMemberVouchers(active);
+      if (active.length > 0) {
+        setSelectedVoucherId((prev) => (prev && active.some((av: any) => av.id === prev) ? prev : active[0].id));
+      } else {
+        setSelectedVoucherId('');
+      }
+    } catch (err: any) {
+      setVouchersError('Failed to load shopping vouchers.');
+    } finally {
+      setVouchersLoading(false);
     }
+
+    // Fetch member's authoritative Shopping Wallet available balance (Task 2)
+    setShoppingWalletLoading(true);
+    setShoppingWalletError(null);
+    try {
+      const sw = await fetchApi<any>('/wallet/shopping-wallet');
+      setMemberShoppingWallet(sw);
+    } catch (err: any) {
+      setShoppingWalletError('Failed to load Shopping Wallet balance.');
+    } finally {
+      setShoppingWalletLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMemberBalances();
   }, []);
 
   useEffect(() => {
@@ -170,7 +198,9 @@ function BookingFlowContent() {
   const vehiclePriceINR = Number(selectedVehicle?.sellingPriceINR || selectedVehicle?.exShowroomPriceINR || 40000);
 
   const activeVoucher = memberVouchers.find((v: any) => v.id === selectedVoucherId);
-  const voucherBalanceINR = activeVoucher ? Number(activeVoucher.currentBalanceINR || activeVoucher.balanceINR || 0) : 0;
+  const voucherBalanceINR = activeVoucher
+    ? Number(activeVoucher.remainingBalanceINR ?? activeVoucher.currentBalanceINR ?? activeVoucher.balanceINR ?? 0)
+    : 0;
   const appliedVoucherDiscount = selectedVoucherId ? Math.min(voucherBalanceINR, vehiclePriceINR) : 0;
 
   const availableShoppingBalance = Number(memberShoppingWallet?.availableShoppingWalletINR || 0);
@@ -545,22 +575,40 @@ function BookingFlowContent() {
                           {/* Balances Quick Summary */}
                           <div className="grid grid-cols-2 gap-3">
                             <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-0.5">
-                              <span className="text-[10px] text-[#AAB7C8] uppercase font-semibold flex items-center gap-1">
-                                <Ticket className="w-3 h-3 text-emerald-400" />
-                                <span>Shopping Voucher</span>
+                              <span className="text-[10px] text-[#AAB7C8] uppercase font-semibold flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <Ticket className="w-3 h-3 text-emerald-400" />
+                                  <span>Shopping Voucher</span>
+                                </span>
+                                {vouchersLoading && <RefreshCw className="w-2.5 h-2.5 text-slate-400 animate-spin" />}
                               </span>
                               <div className="text-base font-black text-emerald-400">
-                                ₹{voucherBalanceINR.toLocaleString('en-IN')}
+                                {vouchersLoading ? (
+                                  <span className="text-xs text-slate-400">Loading...</span>
+                                ) : vouchersError ? (
+                                  <span className="text-xs text-red-400">Unavailable</span>
+                                ) : (
+                                  `₹${voucherBalanceINR.toLocaleString('en-IN')}`
+                                )}
                               </div>
                             </div>
 
                             <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-0.5">
-                              <span className="text-[10px] text-[#AAB7C8] uppercase font-semibold flex items-center gap-1">
-                                <Wallet className="w-3 h-3 text-[#50D9FF]" />
-                                <span>Shopping Wallet</span>
+                              <span className="text-[10px] text-[#AAB7C8] uppercase font-semibold flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <Wallet className="w-3 h-3 text-[#50D9FF]" />
+                                  <span>Shopping Wallet</span>
+                                </span>
+                                {shoppingWalletLoading && <RefreshCw className="w-2.5 h-2.5 text-slate-400 animate-spin" />}
                               </span>
                               <div className="text-base font-black text-[#50D9FF]">
-                                ₹{availableShoppingBalance.toLocaleString('en-IN')}
+                                {shoppingWalletLoading ? (
+                                  <span className="text-xs text-slate-400">Loading...</span>
+                                ) : shoppingWalletError ? (
+                                  <span className="text-xs text-red-400">Unavailable</span>
+                                ) : (
+                                  `₹${availableShoppingBalance.toLocaleString('en-IN')}`
+                                )}
                               </div>
                             </div>
                           </div>
@@ -573,7 +621,23 @@ function BookingFlowContent() {
                                 <span className="text-emerald-400 font-bold">-₹{appliedVoucherDiscount.toLocaleString('en-IN')} applied</span>
                               )}
                             </label>
-                            {memberVouchers.length > 0 ? (
+                            {vouchersLoading ? (
+                              <div className="text-xs text-slate-400 py-2 flex items-center gap-1.5">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>Loading available vouchers...</span>
+                              </div>
+                            ) : vouchersError ? (
+                              <div className="flex items-center justify-between text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl">
+                                <span>{vouchersError}</span>
+                                <button
+                                  type="button"
+                                  onClick={loadMemberBalances}
+                                  className="text-[10px] text-white bg-red-600/60 px-2 py-0.5 rounded font-bold hover:bg-red-600"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            ) : memberVouchers.length > 0 ? (
                               <div className="space-y-2">
                                 <select
                                   value={selectedVoucherId}
@@ -581,11 +645,14 @@ function BookingFlowContent() {
                                   className="w-full px-3 py-2 rounded-xl bg-[#101827] border border-white/15 text-xs text-white outline-none focus:border-[#267DFF]"
                                 >
                                   <option value="">Do not apply Shopping Voucher</option>
-                                  {memberVouchers.map((v: any) => (
-                                    <option key={v.id} value={v.id}>
-                                      {v.code} — Balance: ₹{(v.currentBalanceINR || v.balanceINR || 0).toLocaleString('en-IN')} ({v.voucherType || 'SHOPPING_VOUCHER'})
-                                    </option>
-                                  ))}
+                                  {memberVouchers.map((v: any) => {
+                                    const bal = Number(v.remainingBalanceINR ?? v.currentBalanceINR ?? v.balanceINR ?? 0);
+                                    return (
+                                      <option key={v.id} value={v.id}>
+                                        {v.voucherCode || v.code} — Balance: ₹{bal.toLocaleString('en-IN')} ({v.categoryLabel || v.category || v.voucherType || 'Shopping Voucher'})
+                                      </option>
+                                    );
+                                  })}
                                 </select>
                               </div>
                             ) : (
@@ -612,25 +679,50 @@ function BookingFlowContent() {
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-400 px-3 py-2 bg-white/5 rounded-xl border border-white/10">₹</span>
-                              <input
-                                type="number"
-                                min="0"
-                                max={maxShoppingAllowed}
-                                value={shoppingWalletAmount || ''}
-                                onChange={(e) => {
-                                  const val = Number(e.target.value);
-                                  setShoppingWalletAmount(val < 0 ? 0 : val);
-                                }}
-                                placeholder="0"
-                                className="flex-1 px-3 py-2 rounded-xl bg-[#101827] border border-white/15 text-xs text-white outline-none focus:border-[#267DFF]"
-                              />
-                            </div>
-                            {shoppingWalletAmount > availableShoppingBalance && (
-                              <p className="text-[11px] text-red-400 font-medium">
-                                Amount exceeds your available Shopping Wallet balance of ₹{availableShoppingBalance.toLocaleString('en-IN')}.
-                              </p>
+                            {shoppingWalletLoading ? (
+                              <div className="text-xs text-slate-400 py-2 flex items-center gap-1.5">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>Loading Shopping Wallet balance...</span>
+                              </div>
+                            ) : shoppingWalletError ? (
+                              <div className="flex items-center justify-between text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl">
+                                <span>{shoppingWalletError}</span>
+                                <button
+                                  type="button"
+                                  onClick={loadMemberBalances}
+                                  className="text-[10px] text-white bg-red-600/60 px-2 py-0.5 rounded font-bold hover:bg-red-600"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-400 px-3 py-2 bg-white/5 rounded-xl border border-white/10">₹</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={maxShoppingAllowed}
+                                    value={shoppingWalletAmount || ''}
+                                    onChange={(e) => {
+                                      const val = Number(e.target.value);
+                                      setShoppingWalletAmount(val < 0 ? 0 : val);
+                                    }}
+                                    placeholder="0"
+                                    className="flex-1 px-3 py-2 rounded-xl bg-[#101827] border border-white/15 text-xs text-white outline-none focus:border-[#267DFF]"
+                                  />
+                                </div>
+                                {shoppingWalletAmount > availableShoppingBalance && (
+                                  <p className="text-[11px] text-red-400 font-medium">
+                                    Amount exceeds your available Shopping Wallet balance of ₹{availableShoppingBalance.toLocaleString('en-IN')}.
+                                  </p>
+                                )}
+                                {Number(memberShoppingWallet?.pendingEvClubFundINR || 0) > 0 && availableShoppingBalance === 0 && (
+                                  <p className="text-[10px] text-amber-300/80 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg">
+                                    Note: Pending EV Club Fund (₹{Number(memberShoppingWallet.pendingEvClubFundINR).toLocaleString('en-IN')}) is awaiting scheduled settlement and cannot be spent until settled into available balance.
+                                  </p>
+                                )}
+                              </>
                             )}
                           </div>
 

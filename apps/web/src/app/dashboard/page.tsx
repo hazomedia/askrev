@@ -1287,6 +1287,36 @@ function DashboardContent() {
     }
   };
 
+  const getActivationStatus = (usr: any) => {
+    if (!usr) {
+      return {
+        label: 'Free Member',
+        isActive: false,
+        className: 'text-slate-600 bg-slate-100 border-slate-200 font-medium',
+      };
+    }
+    const isInactive = Boolean(usr.status === 'SUSPENDED' || usr.status === 'INACTIVE' || usr.isSuspended);
+    if (isInactive) {
+      return {
+        label: 'Inactive',
+        isActive: false,
+        className: 'text-red-700 bg-red-50 border-red-200 font-semibold',
+      };
+    }
+    if (usr.currentPackage === 'BASIC' || usr.currentPackage === 'FULL') {
+      return {
+        label: 'Active',
+        isActive: true,
+        className: 'text-emerald-700 bg-emerald-50 border-emerald-200 font-semibold',
+      };
+    }
+    return {
+      label: 'Free Member',
+      isActive: false,
+      className: 'text-slate-600 bg-slate-100 border-slate-200 font-medium',
+    };
+  };
+
   const navItems: {
     id: TabType | 'withdraw_action';
     label: string;
@@ -1355,12 +1385,28 @@ function DashboardContent() {
               />
             </div>
 
-            {/* Right: Logout button (Hidden in Admin View) */}
-            <div className="w-11 flex items-center justify-end shrink-0">
+            {/* Right: Package & Activation Status Badge + Logout (Hidden in Admin View) */}
+            <div className="flex items-center justify-end gap-1.5 shrink-0">
+              <div className="flex flex-col items-end">
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex ${getPackageBadge(
+                    user.currentPackage
+                  )}`}
+                >
+                  {getTierDisplayName(user.currentPackage)}
+                </span>
+                <span
+                  className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 inline-flex ${getActivationStatus(
+                    user
+                  ).className}`}
+                >
+                  {getActivationStatus(user).label}
+                </span>
+              </div>
               {!isSupportMode && (
                 <button
                   onClick={handleLogout}
-                  className="p-2 rounded-lg text-slate-500 hover:text-[#DC2626] hover:bg-slate-100 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-[#DC2626] hover:bg-slate-100 min-h-[36px] min-w-[36px] flex items-center justify-center transition-colors"
                   title="Sign out of portal"
                   aria-label="Logout"
                 >
@@ -1400,13 +1446,22 @@ function DashboardContent() {
                 </a>
               )}
 
-              <span
-                className={`text-xs font-semibold px-2.5 py-1 rounded-full border inline-flex ${getPackageBadge(
-                  user.currentPackage
-                )}`}
-              >
-                {getTierDisplayName(user.currentPackage)}
-              </span>
+              <div className="flex flex-col items-end gap-0.5">
+                <span
+                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border inline-flex ${getPackageBadge(
+                    user.currentPackage
+                  )}`}
+                >
+                  {getTierDisplayName(user.currentPackage)}
+                </span>
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-flex ${getActivationStatus(
+                    user
+                  ).className}`}
+                >
+                  {getActivationStatus(user).label}
+                </span>
+              </div>
 
               {user.isFullQualified && (
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-[#15803D] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
@@ -1507,8 +1562,24 @@ function DashboardContent() {
                       A
                     </div>
                     <div>
-                      <div className="font-bold text-sm text-[#253247]">ASKR EV</div>
+                      <div className="font-bold text-sm text-[#253247]">{user.fullName || 'ASKR EV'}</div>
                       <div className="font-mono text-[10px] text-slate-500">{user.memberId}</div>
+                      <div className="flex flex-col items-start gap-0.5 mt-1">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex ${getPackageBadge(
+                            user.currentPackage
+                          )}`}
+                        >
+                          {getTierDisplayName(user.currentPackage)}
+                        </span>
+                        <span
+                          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border inline-flex ${getActivationStatus(
+                            user
+                          ).className}`}
+                        >
+                          {getActivationStatus(user).label}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <button
@@ -1710,13 +1781,22 @@ function DashboardContent() {
                         <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 border border-slate-300">
                           ID: {user.memberId}
                         </span>
-                        <span
-                          className={`text-xs font-semibold px-3 py-1 rounded-full border shadow-2xs ${getPackageBadge(
-                            user.currentPackage
-                          )}`}
-                        >
-                          {getTierDisplayName(user.currentPackage)}
-                        </span>
+                        <div className="inline-flex flex-col items-start gap-1">
+                          <span
+                            className={`text-xs font-semibold px-3 py-1 rounded-full border shadow-2xs ${getPackageBadge(
+                              user.currentPackage
+                            )}`}
+                          >
+                            {getTierDisplayName(user.currentPackage)}
+                          </span>
+                          <span
+                            className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${getActivationStatus(
+                              user
+                            ).className}`}
+                          >
+                            {getActivationStatus(user).label}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
