@@ -451,7 +451,15 @@ export class LegacyMatrixService {
       if (currentLayerIds.length === 0) break;
 
       const children = await this.prisma.legacyMatrixPlacement.findMany({
-        where: { parentId: { in: currentLayerIds } },
+        where: {
+          parentId: { in: currentLayerIds },
+          user: {
+            OR: [
+              { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+              { role: 'SUPER_ADMIN' },
+            ],
+          },
+        },
         select: { id: true },
       });
 
@@ -1020,6 +1028,14 @@ export class LegacyMatrixService {
    */
   async getAdminSettlementPreview() {
     const placements = await this.prisma.legacyMatrixPlacement.findMany({
+      where: {
+        user: {
+          OR: [
+            { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+            { role: 'SUPER_ADMIN' },
+          ],
+        },
+      },
       orderBy: { matrixSequence: 'asc' },
       include: {
         user: {
@@ -1084,7 +1100,15 @@ export class LegacyMatrixService {
         }
 
         const children = await this.prisma.legacyMatrixPlacement.findMany({
-          where: { parentId: { in: currentLayerIds } },
+          where: {
+            parentId: { in: currentLayerIds },
+            user: {
+              OR: [
+                { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+                { role: 'SUPER_ADMIN' },
+              ],
+            },
+          },
           select: { id: true, userId: true },
         });
 
