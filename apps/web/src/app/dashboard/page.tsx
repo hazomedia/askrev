@@ -77,7 +77,7 @@ import DashboardTopBanner from '../../components/DashboardTopBanner';
 import WelcomePopupModal from '../../components/WelcomePopupModal';
 import AdminSupportModeBanner from '../../components/AdminSupportModeBanner';
 
-type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'vouchers' | 'bookings' | 'profile';
+type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'shopping_wallet' | 'vouchers' | 'bookings' | 'profile';
 
 function DashboardContent() {
   const router = useRouter();
@@ -321,6 +321,7 @@ function DashboardContent() {
         'binary',
         'legacy',
         'wallets',
+        'shopping_wallet',
         'vouchers',
         'bookings',
         'profile',
@@ -1301,6 +1302,7 @@ function DashboardContent() {
       { id: 'binary', label: 'My Binary Tree', icon: GitBranch },
       { id: 'legacy', label: 'EV Legacy', icon: Layers },
       { id: 'wallets', label: 'Earnings Wallet', icon: Wallet },
+      { id: 'shopping_wallet', label: 'Shopping Wallet', icon: ShoppingBag },
       { id: 'vouchers', label: 'Shopping Vouchers', icon: Ticket, count: userVouchers.length },
       { id: 'bookings', label: 'My Bookings', icon: Bike, count: membershipRequests.length + userBookings.length },
       { id: 'profile', label: 'Profile', icon: User },
@@ -2061,7 +2063,7 @@ function DashboardContent() {
 
                         {/* 5. EV Club Fund: Emerald Green -> Deep Teal */}
                         <div
-                          onClick={() => setActiveTab('legacy')}
+                          onClick={() => setActiveTab('shopping_wallet')}
                           className="rounded-2xl p-5 bg-gradient-to-br from-[#126F61] via-[#0E5E4D] to-[#064E3B] text-white shadow-md shadow-emerald-900/10 border border-white/10 flex flex-col justify-between min-h-[148px] transition-transform duration-200 hover:-translate-y-0.5 cursor-pointer"
                         >
                           <div className="flex items-center justify-between text-white/80">
@@ -4157,202 +4159,109 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* TAB 4: WALLETS (EARNINGS WALLET & SHOPPING WALLET) */}
+            {/* TAB 4: EARNINGS WALLET */}
             {activeTab === 'wallets' && (
               <div className="space-y-6">
-                {/* TASK 1: TWO SEPARATE WALLET CARDS */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* CARD 1: EARNINGS WALLET */}
-                  <div className="bg-white rounded-2xl border border-emerald-200 shadow-sm p-6 flex flex-col justify-between space-y-6 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-bl-full -z-0 pointer-events-none" />
-                    <div className="relative z-10 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                            <Wallet className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-base font-black text-[#0C2348]">Earnings Wallet</h3>
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                              Commission & Payout Ledger
-                            </span>
-                          </div>
+                {/* CARD 1: EARNINGS WALLET */}
+                <div className="bg-white rounded-2xl border border-emerald-200 shadow-sm p-6 flex flex-col justify-between space-y-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-bl-full -z-0 pointer-events-none" />
+                  <div className="relative z-10 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                          <Wallet className="w-5 h-5" />
                         </div>
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
-                          GL 2000
-                        </span>
-                      </div>
-
-                      {/* Main Balances */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                        <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
-                          <span className="text-[11px] font-bold uppercase text-emerald-800">
-                            Available Balance
+                        <div>
+                          <h3 className="text-base font-black text-[#0C2348]">Earnings Wallet</h3>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            Commission & Payout Ledger
                           </span>
-                          <div className="text-2xl sm:text-3xl font-black text-[#15803D] mt-1">
-                            ₹{(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
-                          </div>
-                          <p className="text-[10px] text-emerald-700 mt-1">
-                            Withdrawable upon authorization
-                          </p>
-                        </div>
-
-                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                          <span className="text-[11px] font-bold uppercase text-slate-500">
-                            Total Earnings
-                          </span>
-                          <div className="text-2xl sm:text-3xl font-black text-[#165DAD] mt-1">
-                            ₹{(walletOverview?.totalEarnedINR ?? user?.wallet?.totalEarnedINR ?? 0).toLocaleString('en-IN')}
-                          </div>
-                          <p className="text-[10px] text-slate-500 mt-1">
-                            Cumulative lifetime commissions
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Income Components Breakdown */}
-                      <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2">
-                        <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                          Earnings Breakdown
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div className="bg-white p-2 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-slate-400 block font-medium">EV Crown Bonus</span>
-                            <span className="font-bold text-slate-800">₹{(walletOverview?.breakdown?.crownBonusINR ?? 0).toLocaleString('en-IN')}</span>
-                          </div>
-                          <div className="bg-white p-2 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-slate-400 block font-medium">EV Royal Match</span>
-                            <span className="font-bold text-slate-800">₹{(walletOverview?.breakdown?.royalMatchINR ?? 0).toLocaleString('en-IN')}</span>
-                          </div>
-                          <div className="bg-white p-2 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-slate-400 block font-medium">EV Legacy Income</span>
-                            <span className="font-bold text-purple-700">₹{(walletOverview?.breakdown?.legacyIncomeINR ?? 0).toLocaleString('en-IN')}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Secondary Balances: Held & Recovery */}
-                      <div className="flex items-center justify-between text-xs text-slate-600 px-1 pt-1 border-t border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-amber-600" />
-                          <span>Pending / On Hold:</span>
-                          <strong className="text-amber-700">₹{(walletOverview?.heldCommissionsINR ?? user?.wallet?.heldCommissionsINR ?? 0).toLocaleString('en-IN')}</strong>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <AlertCircle className="w-3.5 h-3.5 text-red-600" />
-                          <span>Recovery:</span>
-                          <strong className="text-red-700">₹{(walletOverview?.pendingRecoveryINR ?? user?.wallet?.pendingRecoveryINR ?? 0).toLocaleString('en-IN')}</strong>
                         </div>
                       </div>
                     </div>
 
-                    {/* Withdraw Action Button */}
-                    <div className="relative z-10 pt-2 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={handleInitiateWithdrawal}
-                        disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user?.isEmailVerified)}
-                        title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
-                        className="w-full py-3 px-4 bg-[#15803D] hover:bg-[#126F61] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <ArrowDownToLine className="w-4 h-4" />
-                        <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Withdraw Earnings'}</span>
-                      </button>
-                      {isSupportMode ? (
-                        <p className="text-[10px] text-amber-600 font-semibold mt-1.5 text-center">Admin View Mode: Withdrawal submission is disabled</p>
-                      ) : Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) < 1000 ? (
-                        <p className="text-[10px] text-slate-400 mt-1.5 text-center">Min. threshold: ₹1,000 • Processing in 24-48 business hours</p>
-                      ) : !Boolean(walletOverview?.isEmailVerified ?? user?.isEmailVerified) ? (
-                        <p className="text-[10px] text-amber-600 mt-1.5 text-center font-medium">Email verification required before withdrawal clearance</p>
-                      ) : null}
+                    {/* Main Balances */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+                        <span className="text-[11px] font-bold uppercase text-emerald-800">
+                          Available Balance
+                        </span>
+                        <div className="text-2xl sm:text-3xl font-black text-[#15803D] mt-1">
+                          ₹{(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0).toLocaleString('en-IN')}
+                        </div>
+                        <p className="text-[10px] text-emerald-700 mt-1">
+                          Withdrawable upon authorization
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                        <span className="text-[11px] font-bold uppercase text-slate-500">
+                          Total Earnings
+                        </span>
+                        <div className="text-2xl sm:text-3xl font-black text-[#165DAD] mt-1">
+                          ₹{(walletOverview?.totalEarnedINR ?? user?.wallet?.totalEarnedINR ?? 0).toLocaleString('en-IN')}
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Cumulative lifetime commissions
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Income Components Breakdown */}
+                    <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2">
+                      <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        Earnings Breakdown
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-lg border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block font-medium">EV Crown Bonus</span>
+                          <span className="font-bold text-slate-800">₹{(walletOverview?.breakdown?.crownBonusINR ?? 0).toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block font-medium">EV Royal Match</span>
+                          <span className="font-bold text-slate-800">₹{(walletOverview?.breakdown?.royalMatchINR ?? 0).toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block font-medium">EV Legacy Income</span>
+                          <span className="font-bold text-purple-700">₹{(walletOverview?.breakdown?.legacyIncomeINR ?? 0).toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Secondary Balances: Held & Recovery */}
+                    <div className="flex items-center justify-between text-xs text-slate-600 px-1 pt-1 border-t border-slate-100">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Pending / On Hold:</span>
+                        <strong className="text-amber-700">₹{(walletOverview?.heldCommissionsINR ?? user?.wallet?.heldCommissionsINR ?? 0).toLocaleString('en-IN')}</strong>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                        <span>Recovery:</span>
+                        <strong className="text-red-700">₹{(walletOverview?.pendingRecoveryINR ?? user?.wallet?.pendingRecoveryINR ?? 0).toLocaleString('en-IN')}</strong>
+                      </div>
                     </div>
                   </div>
 
-                  {/* CARD 2: SHOPPING WALLET (EV CLUB FUND) */}
-                  <div className="bg-white rounded-2xl border border-blue-200 shadow-sm p-6 flex flex-col justify-between space-y-6 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -z-0 pointer-events-none" />
-                    <div className="relative z-10 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center">
-                            <ShoppingBag className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-base font-black text-[#0C2348]">Shopping Wallet</h3>
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                              EV Club Fund Ledger
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
-                          GL 2150
-                        </span>
-                      </div>
-
-                      {/* Main Balances */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                        <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80">
-                          <span className="text-[11px] font-bold uppercase text-blue-800">
-                            Available Shopping Balance
-                          </span>
-                          <div className="text-2xl sm:text-3xl font-black text-[#165DAD] mt-1">
-                            ₹{(shoppingWalletData?.availableShoppingWalletINR ?? walletOverview?.shoppingWalletINR ?? 0).toLocaleString('en-IN')}
-                          </div>
-                          <p className="text-[10px] text-blue-700 mt-1">
-                            Applicable for vehicle bookings & merchandise
-                          </p>
-                        </div>
-
-                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                          <span className="text-[11px] font-bold uppercase text-slate-500">
-                            Total EV Club Credits
-                          </span>
-                          <div className="text-2xl sm:text-3xl font-black text-teal-700 mt-1">
-                            ₹{(shoppingWalletData?.totalCreditedINR ?? 0).toLocaleString('en-IN')}
-                          </div>
-                          <p className="text-[10px] text-slate-500 mt-1">
-                            Odd matrix levels (1, 3, 5, 7)
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Shopping Utilization & Eligibility Details */}
-                      <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2">
-                        <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                          Fund Utilization Summary
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="bg-white p-2 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-slate-400 block font-medium">Total Shopping Utilization</span>
-                            <span className="font-bold text-slate-800">₹{(shoppingWalletData?.totalDebitedINR ?? 0).toLocaleString('en-IN')}</span>
-                          </div>
-                          <div className="bg-white p-2 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-slate-400 block font-medium">Combined Checkout Eligibility</span>
-                            <span className="font-bold text-emerald-700">100% Eligible</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Concise Mandatory Policy Note */}
-                      <div className="p-3 rounded-xl bg-slate-100 text-slate-700 text-center border border-slate-200/60 font-semibold text-xs tracking-wide">
-                        For Shopping Only • Non-Withdrawable • Non-Transferable
-                      </div>
-                    </div>
-
-                    {/* Shop Now Action Button */}
-                    <div className="relative z-10 pt-2 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => router.push('/vehicles')}
-                        className="w-full py-3 px-4 bg-[#165DAD] hover:bg-[#12498a] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px]"
-                      >
-                        <ShoppingBag className="w-4 h-4" />
-                        <span>Shop Now • Browse Electric Vehicles</span>
-                      </button>
-                      <p className="text-[10px] text-slate-400 mt-1.5 text-center">
-                        Combine with Shopping Vouchers for maximum vehicle booking savings
-                      </p>
-                    </div>
+                  {/* Withdraw Action Button */}
+                  <div className="relative z-10 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={handleInitiateWithdrawal}
+                      disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user?.isEmailVerified)}
+                      title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
+                      className="w-full sm:w-auto py-3 px-6 bg-[#15803D] hover:bg-[#126F61] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ArrowDownToLine className="w-4 h-4" />
+                      <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Withdraw Earnings'}</span>
+                    </button>
+                    {isSupportMode ? (
+                      <p className="text-[10px] text-amber-600 font-semibold mt-1.5">Admin View Mode: Withdrawal submission is disabled</p>
+                    ) : Number(walletOverview?.availableEarningsINR ?? user?.wallet?.availableEarningsINR ?? 0) < 1000 ? (
+                      <p className="text-[10px] text-slate-400 mt-1.5">Min. threshold: ₹1,000 • Processing in 24-48 business hours</p>
+                    ) : !Boolean(walletOverview?.isEmailVerified ?? user?.isEmailVerified) ? (
+                      <p className="text-[10px] text-amber-600 mt-1.5 font-medium">Email verification required before withdrawal clearance</p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -4417,160 +4326,253 @@ function DashboardContent() {
                   )}
                 </div>
 
-                {/* LEDGER SUB-TAB SWITCHER (TASK 3) */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setWalletSubTab('earnings')}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                        walletSubTab === 'earnings'
-                          ? 'bg-[#165DAD] text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                      }`}
-                    >
-                      Earnings Wallet Ledger ({walletTransactions.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWalletSubTab('shopping')}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        walletSubTab === 'shopping'
-                          ? 'bg-[#165DAD] text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                      }`}
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>Shopping Wallet Ledger ({shoppingWalletData?.transactions?.length || 0})</span>
-                    </button>
-                  </div>
-                  <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
-                    {walletSubTab === 'earnings' ? 'GL 2000 Member Earnings Payable' : 'GL 2150 EV Club Fund Liability'}
-                  </span>
-                </div>
-
                 {/* EARNINGS WALLET TRANSACTIONS TABLE */}
-                {walletSubTab === 'earnings' && (
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold text-[#253247]">Authoritative Earnings Wallet Transactions</h3>
-                        <p className="text-xs text-slate-500">Double-entry accounting journal entries associated with your Earnings Wallet (GL 2000)</p>
-                      </div>
-                      <span className="text-xs text-slate-500 font-mono">{walletTransactions.length} Total</span>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#253247]">Authoritative Earnings Wallet Transactions</h3>
+                      <p className="text-xs text-slate-500">Double-entry accounting journal entries associated with your Earnings Wallet</p>
                     </div>
+                    <span className="text-xs text-slate-500 font-mono">{walletTransactions.length} Total</span>
+                  </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs whitespace-nowrap">
-                        <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
-                          <tr>
-                            <th className="py-3 px-4">Date</th>
-                            <th className="py-3 px-4">Income Type</th>
-                            <th className="py-3 px-4">Amount</th>
-                            <th className="py-3 px-4">Source Member ID</th>
-                            <th className="py-3 px-4">Short Description</th>
-                            <th className="py-3 px-4">Status</th>
-                            <th className="py-3 px-4 text-center">Technical Details</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-[#253247]">
-                          {walletTransactions.length > 0 ? (
-                            walletTransactions.map((tx: any) => {
-                              const isExpanded = Boolean(expandedTxIds[tx.id || tx.referenceId]);
-                              const incomeTypeDisplay =
-                                tx.transactionType === 'BINARY_MATCH'
-                                  ? 'EV Royal Match'
-                                  : tx.transactionType === 'DIRECT_SPONSOR'
-                                    ? 'EV Crown Bonus'
-                                    : tx.transactionType === 'VOUCHER_ALLOCATION'
-                                      ? 'Shopping Voucher'
-                                      : tx.transactionType;
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
+                        <tr>
+                          <th className="py-3 px-4">Date</th>
+                          <th className="py-3 px-4">Income Type</th>
+                          <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Source Member ID</th>
+                          <th className="py-3 px-4">Short Description</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 text-center">Technical Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-[#253247]">
+                        {walletTransactions.length > 0 ? (
+                          walletTransactions.map((tx: any) => {
+                            const isExpanded = Boolean(expandedTxIds[tx.id || tx.referenceId]);
+                            const incomeTypeDisplay =
+                              tx.transactionType === 'BINARY_MATCH'
+                                ? 'EV Royal Match'
+                                : tx.transactionType === 'DIRECT_SPONSOR'
+                                  ? 'EV Crown Bonus'
+                                  : tx.transactionType === 'VOUCHER_ALLOCATION'
+                                    ? 'Shopping Voucher'
+                                    : tx.transactionType;
 
-                              return (
-                                <React.Fragment key={tx.id || tx.referenceId}>
-                                  <tr className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="py-3 px-4 text-slate-600 font-medium">
-                                      {new Date(tx.date).toLocaleDateString('en-IN')}
-                                    </td>
-                                    <td className="py-3 px-4 font-semibold text-slate-900">
-                                      {incomeTypeDisplay}
-                                    </td>
-                                    <td className="py-3 px-4 font-bold">
-                                      {tx.isCredit ? (
-                                        <span className="text-[#15803D]">
-                                          +₹{tx.amountINR.toLocaleString('en-IN')}
-                                        </span>
-                                      ) : (
-                                        <span className="text-[#DC2626]">
-                                          -₹{tx.amountINR.toLocaleString('en-IN')}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="py-3 px-4 font-mono text-slate-600">
-                                      {tx.sourceMemberId || tx.referenceUserMemberId || '—'}
-                                    </td>
-                                    <td className="py-3 px-4 text-slate-700 max-w-xs truncate">
-                                      {tx.description}
-                                    </td>
-                                    <td className="py-3 px-4">
-                                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
-                                        Completed (Simulation)
+                            return (
+                              <React.Fragment key={tx.id || tx.referenceId}>
+                                <tr className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-4 text-slate-600 font-medium">
+                                    {new Date(tx.date).toLocaleDateString('en-IN')}
+                                  </td>
+                                  <td className="py-3 px-4 font-semibold text-slate-900">
+                                    {incomeTypeDisplay}
+                                  </td>
+                                  <td className="py-3 px-4 font-bold">
+                                    {tx.isCredit ? (
+                                      <span className="text-[#15803D]">
+                                        +₹{tx.amountINR.toLocaleString('en-IN')}
                                       </span>
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleTxExpanded(tx.id || tx.referenceId)}
-                                        className="px-2.5 py-1 text-[11px] font-medium text-[#165DAD] hover:bg-blue-50 rounded border border-blue-200 transition-colors"
-                                      >
-                                        {isExpanded ? 'Hide Details' : 'View Details'}
-                                      </button>
+                                    ) : (
+                                      <span className="text-[#DC2626]">
+                                        -₹{tx.amountINR.toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono text-slate-600">
+                                    {tx.sourceMemberId || tx.referenceUserMemberId || '—'}
+                                  </td>
+                                  <td className="py-3 px-4 text-slate-700 max-w-xs truncate">
+                                    {tx.description}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#15803D] border border-emerald-200">
+                                      Completed (Simulation)
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTxExpanded(tx.id || tx.referenceId)}
+                                      className="px-2.5 py-1 text-[11px] font-medium text-[#165DAD] hover:bg-blue-50 rounded border border-blue-200 transition-colors"
+                                    >
+                                      {isExpanded ? 'Hide Details' : 'View Details'}
+                                    </button>
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-slate-50/90 text-slate-600 border-b border-slate-200">
+                                    <td colSpan={7} className="px-4 py-3">
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Reference ID</span>
+                                          <span className="font-mono text-slate-800 break-all">{tx.referenceId}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Journal ID</span>
+                                          <span className="font-mono text-slate-800 break-all">{tx.journalId || 'N/A'}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Ledger Account</span>
+                                          <span className="font-mono text-slate-800">{tx.ledgerAccount || 'EARNINGS_WALLET'}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 uppercase text-[9px] font-bold block">Accounting Type</span>
+                                          <span className="font-semibold text-slate-800">{tx.isCredit ? 'CREDIT' : 'DEBIT'}</span>
+                                        </div>
+                                      </div>
                                     </td>
                                   </tr>
-                                  {isExpanded && (
-                                    <tr className="bg-slate-50/90 text-slate-600 border-b border-slate-200">
-                                      <td colSpan={7} className="px-4 py-3">
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-                                          <div>
-                                            <span className="text-slate-400 uppercase text-[9px] font-bold block">Reference ID</span>
-                                            <span className="font-mono text-slate-800 break-all">{tx.referenceId}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-slate-400 uppercase text-[9px] font-bold block">Journal ID</span>
-                                            <span className="font-mono text-slate-800 break-all">{tx.journalId || 'N/A'}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-slate-400 uppercase text-[9px] font-bold block">Ledger Account</span>
-                                            <span className="font-mono text-slate-800">{tx.ledgerAccount || 'EARNINGS_WALLET'}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-slate-400 uppercase text-[9px] font-bold block">Accounting Type</span>
-                                            <span className="font-semibold text-slate-800">{tx.isCredit ? 'CREDIT' : 'DEBIT'}</span>
-                                          </div>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={7} className="py-8 text-center text-slate-400">
-                                No wallet transactions found. Refer members or complete binary matches to earn commissions.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="py-8 text-center text-slate-400">
+                              No wallet transactions found. Refer members or complete binary matches to earn commissions.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Withdrawal Request & Compliance Safeguard Card */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#253247]">Withdrawal Request & Clearance</h3>
+                      <p className="text-xs text-slate-500">Payout processing status and compliance threshold verification</p>
+                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-semibold self-start">
+                      Compliance Simulation Mode
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 text-xs text-slate-600 space-y-2">
+                    <div>
+                      <strong>Email Verification Requirement:</strong>{' '}
+                      {Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified) ? (
+                        <span className="text-emerald-700 font-semibold">Verified</span>
+                      ) : (
+                        <span className="text-amber-700 font-semibold">Verification Required Before Payout</span>
+                      )}
+                    </div>
+                    <div>
+                      <strong>Compliance Notice:</strong> In compliance simulation mode, payouts are simulated and live bank debits or wire transfers are strictly disabled until supervisory admin clearance.
+                    </div>
+                    <div>Minimum withdrawal threshold: ₹1,000. Maximum processing window: 24-48 business hours.</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleInitiateWithdrawal}
+                    disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
+                    title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
+                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ArrowDownToLine className="w-4 h-4" />
+                    <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Request Withdrawal'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: SHOPPING WALLET */}
+            {activeTab === 'shopping_wallet' && (
+              <div className="space-y-6">
+                {/* DEDICATED SHOPPING WALLET CARD */}
+                <div className="bg-white rounded-2xl border border-blue-200 shadow-sm p-6 flex flex-col justify-between space-y-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -z-0 pointer-events-none" />
+                  <div className="relative z-10 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center">
+                          <ShoppingBag className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-[#0C2348]">Shopping Wallet</h3>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                            EV Club Fund Ledger
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Main Balances */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80">
+                        <span className="text-[11px] font-bold uppercase text-blue-800">
+                          Available Shopping Balance
+                        </span>
+                        <div className="text-2xl sm:text-3xl font-black text-[#165DAD] mt-1">
+                          ₹{(shoppingWalletData?.availableShoppingWalletINR ?? walletOverview?.shoppingWalletINR ?? 0).toLocaleString('en-IN')}
+                        </div>
+                        <p className="text-[10px] text-blue-700 mt-1">
+                          Applicable for vehicle bookings & merchandise
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                        <span className="text-[11px] font-bold uppercase text-slate-500">
+                          Total EV Club Fund Credits
+                        </span>
+                        <div className="text-2xl sm:text-3xl font-black text-teal-700 mt-1">
+                          ₹{(shoppingWalletData?.totalCreditedINR ?? 0).toLocaleString('en-IN')}
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Odd matrix levels (1, 3, 5, 7)
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Shopping Utilization & Eligibility Details */}
+                    <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2">
+                      <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        Fund Utilization Summary
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-lg border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block font-medium">Total Shopping Utilization</span>
+                          <span className="font-bold text-slate-800">₹{(shoppingWalletData?.totalDebitedINR ?? 0).toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-100">
+                          <span className="text-[10px] text-slate-400 block font-medium">Combined Checkout Eligibility</span>
+                          <span className="font-bold text-emerald-700">100% Eligible</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Concise Mandatory Policy Note */}
+                    <div className="p-3 rounded-xl bg-slate-100 text-slate-700 text-center border border-slate-200/60 font-semibold text-xs tracking-wide">
+                      For Shopping Only • Non-Withdrawable • Non-Transferable
                     </div>
                   </div>
-                )}
 
-                {/* TASK 3: DEDICATED SHOPPING WALLET TRANSACTION HISTORY */}
-                {walletSubTab === 'shopping' && (() => {
+                  {/* Shop Now Action Button */}
+                  <div className="relative z-10 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/vehicles')}
+                      className="w-full sm:w-auto py-3 px-6 bg-[#165DAD] hover:bg-[#12498a] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px]"
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      <span>Shop Now • Browse Electric Vehicles</span>
+                    </button>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      Combine with Shopping Vouchers for maximum vehicle booking savings
+                    </p>
+                  </div>
+                </div>
+
+                {/* DEDICATED SHOPPING WALLET TRANSACTION HISTORY */}
+                {(() => {
                   const rawTxs = shoppingWalletData?.transactions || [];
-                  // Compute chronological running balance from oldest to newest
                   const reversed = [...rawTxs].reverse();
                   let running = 0;
                   const withBalanceMap = new Map();
@@ -4603,7 +4605,7 @@ function DashboardContent() {
                             <h3 className="text-sm font-bold text-[#253247]">Shopping Wallet Transaction History</h3>
                           </div>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            Authoritative double-entry ledger for EV Club Fund credits, vehicle booking redemptions & purchase reversals (GL 2150)
+                            Authoritative double-entry ledger for EV Club Fund credits, vehicle booking redemptions & purchase reversals
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -4767,47 +4769,9 @@ function DashboardContent() {
                     </div>
                   );
                 })()}
-
-                {/* Withdrawal Request & Compliance Safeguard Card */}
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-bold text-[#253247]">Withdrawal Request & Clearance</h3>
-                      <p className="text-xs text-slate-500">Payout processing status and compliance threshold verification</p>
-                    </div>
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-semibold self-start">
-                      Compliance Simulation Mode
-                    </span>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-[#F7F9FC] border border-slate-200 text-xs text-slate-600 space-y-2">
-                    <div>
-                      <strong>Email Verification Requirement:</strong>{' '}
-                      {Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified) ? (
-                        <span className="text-emerald-700 font-semibold">Verified</span>
-                      ) : (
-                        <span className="text-amber-700 font-semibold">Verification Required Before Payout</span>
-                      )}
-                    </div>
-                    <div>
-                      <strong>Compliance Notice:</strong> In compliance simulation mode, payouts are simulated and live bank debits or wire transfers are strictly disabled until supervisory admin clearance.
-                    </div>
-                    <div>Minimum withdrawal threshold: ₹1,000. Maximum processing window: 24-48 business hours.</div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleInitiateWithdrawal}
-                    disabled={isSupportMode || Number(walletOverview?.availableEarningsINR ?? user.wallet?.availableEarningsINR ?? 0) < 1000 || !Boolean(walletOverview?.isEmailVerified ?? user.isEmailVerified)}
-                    title={isSupportMode ? 'Withdrawals are strictly disabled during Admin View Mode' : undefined}
-                    className="px-5 py-2.5 rounded-lg bg-[#165DAD] hover:bg-[#12498a] text-white font-medium text-xs flex items-center gap-2 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ArrowDownToLine className="w-4 h-4" />
-                    <span>{isSupportMode ? 'Withdrawal Disabled (Admin View)' : 'Request Withdrawal'}</span>
-                  </button>
-                </div>
               </div>
             )}
+
 
             {/* TAB 5: SHOPPING VOUCHERS */}
             {activeTab === 'vouchers' && (
