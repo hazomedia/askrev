@@ -3,10 +3,11 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, MembershipPackage } from '@prisma/client';
-import { JournalAccount } from '@askrev/shared';
+import { JournalAccount, UserRole } from '@askrev/shared';
 import {
   LEGACY_MATRIX_RATES,
   LEGACY_MATRIX_CONFIG,
@@ -960,7 +961,9 @@ export class LegacyMatrixService {
    */
   async executeProspectiveSettlement(adminUserId: string, effectiveDateStr?: string) {
     const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+    const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
 
+    // Gate 1: Environment Activation Flag Gate
     if (!isSettlementEnabled) {
       this.logger.warn(`Settlement requested by admin ${adminUserId} but ENABLE_LEGACY_SETTLEMENT is false.`);
 
@@ -982,6 +985,86 @@ export class LegacyMatrixService {
         settlementExecuted: false,
         reason: 'ENABLE_LEGACY_SETTLEMENT environment variable is false. Live crediting is strictly disabled in Production.',
         mode: 'STRICT_SIMULATION_PROTECTION',
+        message: 'No wallet balances or financial ledger entries were modified.',
+      };
+    }
+
+    // Gate 2: Compliance Authorization Gate (Strict Simulation Protection)
+    if (isSimulationMode) {
+      this.logger.warn(`Settlement requested by admin ${adminUserId} but COMPLIANCE_MODE is SIMULATION_ONLY.`);
+
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: adminUserId,
+          action: 'SETTLEMENT_COMPLIANCE_GATE_BLOCKED',
+          entityType: 'LegacyMatrix',
+          entityId: 'SYSTEM',
+          metadata: {
+            complianceMode: 'SIMULATION_ONLY',
+          },
+        },
+      });
+
+      return {
+        success: false,
+        settlementExecuted: false,
+        reason: 'COMPLIANCE AUTHORIZATION GATE BLOCKED: Platform is operating under SIMULATION_ONLY compliance mode. Live settlement mutation prohibited.',
+        mode: 'COMPLIANCE_GATE_PROTECTION',
+        message: 'No wallet balances or financial ledger entries were modified.',
+      };
+    }
+
+    // Gate 3: Caller Authentication & Super Administrator Authorization Gate
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+      select: { id: true, role: true },
+    });
+    if (!admin || admin.role !== UserRole.SUPER_ADMIN) {
+      throw new ForbiddenException('Settlement execution requires authorized active Super Administrator credentials.');
+    }
+
+    // Gate 4: Financial Solvency & Liquidity Verification Gate
+    const [cashAgg, earningsAgg, holdAgg] = await Promise.all([
+      this.prisma.journalLine.aggregate({
+        where: { account: { in: [JournalAccount.CASH_AND_BANK, '1000_CASH_AND_BANK'] } },
+        _sum: { debitPaise: true, creditPaise: true },
+      }),
+      this.prisma.journalLine.aggregate({
+        where: { account: { in: [JournalAccount.MEMBER_EARNINGS_PAYABLE, '2000_MEMBER_EARNINGS_PAYABLE'] } },
+        _sum: { debitPaise: true, creditPaise: true },
+      }),
+      this.prisma.journalLine.aggregate({
+        where: { account: { in: [JournalAccount.COMMISSION_HOLD_RESERVE, '2200_COMMISSION_HOLD_RESERVE'] } },
+        _sum: { debitPaise: true, creditPaise: true },
+      }),
+    ]);
+
+    const grossCashPaise = (cashAgg._sum.debitPaise || 0n) - (cashAgg._sum.creditPaise || 0n);
+    const committedEarningsPaise = (earningsAgg._sum.creditPaise || 0n) - (earningsAgg._sum.debitPaise || 0n);
+    const committedHoldsPaise = (holdAgg._sum.creditPaise || 0n) - (holdAgg._sum.debitPaise || 0n);
+    const netAvailableLiquidityPaise = grossCashPaise - committedEarningsPaise - committedHoldsPaise;
+
+    if (netAvailableLiquidityPaise <= 0n) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: adminUserId,
+          action: 'SETTLEMENT_SOLVENCY_GATE_FAILED',
+          entityType: 'LegacyMatrix',
+          entityId: 'SYSTEM',
+          metadata: {
+            grossCashPaise: grossCashPaise.toString(),
+            committedEarningsPaise: committedEarningsPaise.toString(),
+            committedHoldsPaise: committedHoldsPaise.toString(),
+            netAvailableLiquidityPaise: netAvailableLiquidityPaise.toString(),
+          },
+        },
+      });
+
+      return {
+        success: false,
+        settlementExecuted: false,
+        reason: `FINANCIAL SOLVENCY GATE FAILED: Net liquid operating reserves (₹${Number(netAvailableLiquidityPaise / 100n)}) are depleted or insufficient.`,
+        mode: 'SOLVENCY_PROTECTION_BLOCKED',
         message: 'No wallet balances or financial ledger entries were modified.',
       };
     }
@@ -1338,14 +1421,29 @@ export class LegacyMatrixService {
       });
     }
 
-    // Funding Analysis from authoritative double-entry journal ledger
+    // Authoritative General Ledger Balance Sheet Reconciliation
     let totalCashBankPaise = 0n;
+    let totalEarningsPayablePaise = 0n;
+    let totalHoldReservePaise = 0n;
+    let totalVoucherLiabilityPaise = 0n;
     let totalPlatformRevenuePaise = 0n;
 
     if (this.prisma.journalLine) {
-      const [cashLines, revenueLines] = await Promise.all([
+      const [cashLines, earningsLines, holdLines, voucherLines, revenueLines] = await Promise.all([
         this.prisma.journalLine.findMany({
           where: { account: { in: [JournalAccount.CASH_AND_BANK, '1000_CASH_AND_BANK'] } },
+          select: { debitPaise: true, creditPaise: true },
+        }),
+        this.prisma.journalLine.findMany({
+          where: { account: { in: [JournalAccount.MEMBER_EARNINGS_PAYABLE, '2000_MEMBER_EARNINGS_PAYABLE'] } },
+          select: { debitPaise: true, creditPaise: true },
+        }),
+        this.prisma.journalLine.findMany({
+          where: { account: { in: [JournalAccount.COMMISSION_HOLD_RESERVE, '2200_COMMISSION_HOLD_RESERVE'] } },
+          select: { debitPaise: true, creditPaise: true },
+        }),
+        this.prisma.journalLine.findMany({
+          where: { account: { in: [JournalAccount.SHOPPING_VOUCHER_LIABILITY, '2100_SHOPPING_VOUCHER_LIABILITY'] } },
           select: { debitPaise: true, creditPaise: true },
         }),
         this.prisma.journalLine.findMany({
@@ -1354,20 +1452,23 @@ export class LegacyMatrixService {
         }),
       ]);
 
-      for (const l of cashLines) {
-        totalCashBankPaise += (l.debitPaise - l.creditPaise);
-      }
-      for (const l of revenueLines) {
-        totalPlatformRevenuePaise += (l.creditPaise - l.debitPaise);
-      }
+      for (const l of cashLines) totalCashBankPaise += (l.debitPaise - l.creditPaise);
+      for (const l of earningsLines) totalEarningsPayablePaise += (l.creditPaise - l.debitPaise);
+      for (const l of holdLines) totalHoldReservePaise += (l.creditPaise - l.debitPaise);
+      for (const l of voucherLines) totalVoucherLiabilityPaise += (l.creditPaise - l.debitPaise);
+      for (const l of revenueLines) totalPlatformRevenuePaise += (l.creditPaise - l.debitPaise);
     }
 
-    const totalProposedLiabilityPaise =
-      systemProposedQualifiedEarningsPaise + systemProposedQualifiedShoppingPaise;
-    const totalCashBankINR = Number(totalCashBankPaise / 100n);
-    const totalProposedLiabilityINR = Number(totalProposedLiabilityPaise / 100n);
-    const shortfallINR =
-      totalProposedLiabilityINR > totalCashBankINR ? totalProposedLiabilityINR - totalCashBankINR : 0;
+    const grossCashBankINR = Number(totalCashBankPaise / 100n);
+    const committedMemberEarningsINR = Number(totalEarningsPayablePaise / 100n);
+    const committedHoldReserveINR = Number(totalHoldReservePaise / 100n);
+    const outstandingVoucherLiabilityINR = Number(totalVoucherLiabilityPaise / 100n);
+    const netOperatingLiquidReservesINR = grossCashBankINR - committedMemberEarningsINR - committedHoldReserveINR;
+    const proposedImmediateEarningsINR = Number(systemProposedQualifiedEarningsPaise / 100n);
+    const proposedShoppingWalletCreditINR = Number(systemProposedQualifiedShoppingPaise / 100n);
+    const totalProposedLiabilityINR = Number((systemProposedQualifiedEarningsPaise + systemProposedQualifiedShoppingPaise) / 100n);
+    const netBufferAfterSettlementINR = netOperatingLiquidReservesINR - proposedImmediateEarningsINR;
+    const shortfallINR = proposedImmediateEarningsINR > netOperatingLiquidReservesINR ? proposedImmediateEarningsINR - netOperatingLiquidReservesINR : 0;
 
     return {
       previewNotice: 'READ-ONLY SETTLEMENT PREVIEW. NO TRANSACTIONS OR WALLETS MODIFIED.',
@@ -1395,9 +1496,16 @@ export class LegacyMatrixService {
           totalProposedReleaseINR: totalProposedLiabilityINR,
         },
         fundingAnalysis: {
-          platformCashAndBankINR: totalCashBankINR,
+          grossCashAndBankINR: grossCashBankINR,
+          committedMemberEarningsINR,
+          committedHoldReserveINR,
+          outstandingVoucherLiabilityINR,
+          netOperatingLiquidReservesINR,
           platformRevenueINR: Number(totalPlatformRevenuePaise / 100n),
-          proposedImmediateLiabilityINR: totalProposedLiabilityINR,
+          proposedImmediateEarningsLiabilityINR: proposedImmediateEarningsINR,
+          proposedShoppingWalletCreditINR,
+          totalProposedReleaseINR: totalProposedLiabilityINR,
+          netLiquidBufferAfterSettlementINR: netBufferAfterSettlementINR,
           fundingStatus: shortfallINR === 0 ? 'ADEQUATE_FUNDING' : 'LIQUIDITY_SHORTFALL',
           shortfallINR,
         },
@@ -1515,8 +1623,9 @@ export class LegacyMatrixService {
       }
 
       const isLiveSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
+      const isSimulationMode = process.env.COMPLIANCE_MODE === 'SIMULATION_ONLY';
 
-      if (!isLiveSettlementEnabled) {
+      if (!isLiveSettlementEnabled || isSimulationMode) {
         return {
           memberId: user.memberId,
           isQualified: true,
@@ -1528,7 +1637,9 @@ export class LegacyMatrixService {
           proposedEarningsWalletINR: Number(totalProposedEarningsPaise / 100n),
           proposedShoppingWalletPaise: totalProposedShoppingPaise.toString(),
           proposedShoppingWalletINR: Number(totalProposedShoppingPaise / 100n),
-          message: 'SIMULATION ONLY: ENABLE_LEGACY_SETTLEMENT is false. Balances protected.',
+          message: isSimulationMode
+            ? 'COMPLIANCE AUTHORIZATION GATE: Platform is operating under SIMULATION_ONLY compliance mode. Live settlement crediting prohibited.'
+            : 'SIMULATION ONLY: ENABLE_LEGACY_SETTLEMENT is false. Balances protected.',
         };
       }
 

@@ -56,6 +56,7 @@ describe('EV Legacy Income & EV Club Fund Settlement Suite', () => {
       },
       journalLine: {
         findMany: vi.fn().mockResolvedValue([]),
+        aggregate: vi.fn().mockResolvedValue({ _sum: { debitPaise: 50000000n, creditPaise: 0n } }),
       },
       shoppingVoucher: {
         findFirst: vi.fn(),
@@ -80,6 +81,9 @@ describe('EV Legacy Income & EV Club Fund Settlement Suite', () => {
         })),
       },
     };
+
+    delete process.env.ENABLE_LEGACY_SETTLEMENT;
+    delete process.env.COMPLIANCE_MODE;
 
     matrixService = new LegacyMatrixService(mockPrisma);
     bikesService = new EvBikesService(mockPrisma);
@@ -488,9 +492,40 @@ describe('EV Legacy Income & EV Club Fund Settlement Suite', () => {
     );
   });
 
+  // Task 1: executeProspectiveSettlement simulation blocked when COMPLIANCE_MODE is SIMULATION_ONLY
+  it('Task 1: executeProspectiveSettlement blocks live crediting when COMPLIANCE_MODE is SIMULATION_ONLY', async () => {
+    process.env.ENABLE_LEGACY_SETTLEMENT = 'true';
+    process.env.COMPLIANCE_MODE = 'SIMULATION_ONLY';
+
+    const result = await matrixService.executeProspectiveSettlement('admin-1');
+
+    expect(result.success).toBe(false);
+    expect(result.settlementExecuted).toBe(false);
+    expect(result.mode).toBe('COMPLIANCE_GATE_PROTECTION');
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'SETTLEMENT_COMPLIANCE_GATE_BLOCKED',
+        }),
+      })
+    );
+  });
+
   // Task 1: executeProspectiveSettlement executes settlement for qualified members and holds pending for unqualified
   it('Task 1: executeProspectiveSettlement executes live settlement for qualified and holds pending for unqualified', async () => {
+    delete process.env.COMPLIANCE_MODE;
     process.env.ENABLE_LEGACY_SETTLEMENT = 'true';
+
+    mockPrisma.user.findUnique.mockImplementation(async (params) => {
+      if (params?.where?.id === 'admin-1') {
+        return {
+          id: 'admin-1',
+          memberId: 'ADM001',
+          role: 'SUPER_ADMIN',
+        };
+      }
+      return null;
+    });
 
     mockPrisma.legacyMatrixPlacement.findMany.mockImplementation(async (params) => {
       if (params?.orderBy?.matrixSequence) {
