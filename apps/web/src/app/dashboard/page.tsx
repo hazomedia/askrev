@@ -57,6 +57,7 @@ import {
   Trash2,
   AlertTriangle,
   RefreshCw,
+  Sliders,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import {
@@ -86,6 +87,7 @@ import AskrLogo from '../../components/AskrLogo';
 import DashboardTopBanner from '../../components/DashboardTopBanner';
 import WelcomePopupModal from '../../components/WelcomePopupModal';
 import AdminSupportModeBanner from '../../components/AdminSupportModeBanner';
+import { PhotoCropModal } from '../../components/PhotoCropModal';
 
 type TabType = 'overview' | 'membership' | 'team' | 'binary' | 'legacy' | 'wallets' | 'withdraw' | 'shopping_wallet' | 'vouchers' | 'bookings' | 'profile';
 
@@ -287,8 +289,21 @@ function DashboardContent() {
     if (e.target) e.target.value = '';
   };
 
-  const handleUploadPhotoConfirm = async () => {
-    if (!photoFile) return;
+  const handleAdjustExistingPhoto = () => {
+    if (isSupportMode) {
+      setPhotoActionError('Profile photo cannot be modified in Admin View mode.');
+      return;
+    }
+    if (!user?.profilePhoto) return;
+    setPhotoActionError(null);
+    setPhotoActionSuccess(null);
+    setPhotoFile(null);
+    setPhotoPreviewUrl(user.profilePhoto);
+    setIsPhotoModalOpen(true);
+  };
+
+  const handleUploadPhotoConfirm = async (processedFile: File) => {
+    if (!processedFile) return;
     if (isSupportMode) {
       setPhotoActionError('Profile photo cannot be modified in Admin View mode.');
       return;
@@ -297,7 +312,7 @@ function DashboardContent() {
     setPhotoUploading(true);
     setPhotoActionError(null);
     try {
-      const res = await uploadProfilePhotoApi(photoFile);
+      const res = await uploadProfilePhotoApi(processedFile);
       const photoUrl = res?.profilePhoto || res?.user?.profilePhoto || res?.photoUrl;
       if (photoUrl) {
         setUser((prev: any) => {
@@ -1758,7 +1773,7 @@ function DashboardContent() {
               <div className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl p-4 flex flex-col z-10 overflow-y-auto">
                 <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-11 rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-slate-100 flex items-center justify-center">
+                    <div className="w-9 aspect-[4/5] rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-slate-100 flex items-center justify-center">
                       {user.profilePhoto ? (
                         <img src={user.profilePhoto} alt={user.fullName || 'Member'} className="w-full h-full object-cover" />
                       ) : (
@@ -2049,17 +2064,53 @@ function DashboardContent() {
 
                     {/* Right: Portrait 4:5 Profile Photo, Vertically Centered */}
                     <div className="shrink-0 self-center">
-                      <div className="w-[72px] h-[90px] xs:w-20 xs:h-25 sm:w-24 sm:h-30 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs overflow-hidden bg-slate-100 relative flex items-center justify-center">
+                      <div
+                        onClick={() => {
+                          if (!isSupportMode) {
+                            if (user.profilePhoto) {
+                              handleAdjustExistingPhoto();
+                            } else {
+                              photoFileInputRef.current?.click();
+                            }
+                          }
+                        }}
+                        className={`w-[72px] xs:w-20 sm:w-24 md:w-[112px] aspect-[4/5] rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs overflow-hidden bg-slate-100 relative flex items-center justify-center ${
+                          !isSupportMode ? 'cursor-pointer group' : ''
+                        }`}
+                        title={
+                          !isSupportMode
+                            ? user.profilePhoto
+                              ? 'Click to adjust photograph'
+                              : 'Click to upload photograph'
+                            : undefined
+                        }
+                      >
                         {user.profilePhoto ? (
-                          <img
-                            src={user.profilePhoto}
-                            alt={user.fullName || 'Sales Executive'}
-                            className="w-full h-full object-cover"
-                          />
+                          <>
+                            <img
+                              src={user.profilePhoto}
+                              alt={user.fullName || 'Sales Executive'}
+                              className="w-full h-full object-cover"
+                            />
+                            {!isSupportMode && (
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-1 text-center">
+                                <Sliders className="w-4 h-4 mb-0.5" />
+                                <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Adjust</span>
+                              </div>
+                            )}
+                          </>
                         ) : (
-                          <div className="w-full h-full bg-gradient-to-b from-slate-100 to-slate-200 flex flex-col items-center justify-center text-slate-400">
-                            <User className="w-8 h-8 sm:w-12 sm:h-12 text-slate-400" />
-                          </div>
+                          <>
+                            <div className="w-full h-full bg-gradient-to-b from-slate-100 to-slate-200 flex flex-col items-center justify-center text-slate-400">
+                              <User className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-slate-400" />
+                            </div>
+                            {!isSupportMode && (
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-1 text-center">
+                                <Camera className="w-4 h-4 mb-0.5" />
+                                <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Upload</span>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -6157,16 +6208,34 @@ function DashboardContent() {
 
                   <div className="flex flex-col sm:flex-row items-center gap-6 pt-2">
                     {/* 4:5 Portrait Photo Preview */}
-                    <div className="w-32 h-40 sm:w-36 sm:h-45 rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden bg-slate-100 relative shrink-0 flex items-center justify-center">
+                    <div
+                      onClick={() => {
+                        if (!isSupportMode && user.profilePhoto) {
+                          handleAdjustExistingPhoto();
+                        }
+                      }}
+                      className={`w-28 sm:w-[112px] aspect-[4/5] rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden bg-slate-100 relative shrink-0 flex items-center justify-center ${
+                        !isSupportMode && user.profilePhoto ? 'cursor-pointer group' : ''
+                      }`}
+                      title={!isSupportMode && user.profilePhoto ? 'Click to adjust photograph' : undefined}
+                    >
                       {user.profilePhoto ? (
-                        <img
-                          src={user.profilePhoto}
-                          alt={user.fullName || 'Sales Executive'}
-                          className="w-full h-full object-cover"
-                        />
+                        <>
+                          <img
+                            src={user.profilePhoto}
+                            alt={user.fullName || 'Sales Executive'}
+                            className="w-full h-full object-cover"
+                          />
+                          {!isSupportMode && (
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-1 text-center">
+                              <Sliders className="w-5 h-5 mb-1" />
+                              <span className="text-[10px] font-bold uppercase tracking-wider">Adjust Photo</span>
+                            </div>
+                          )}
+                        </>
                       ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-gradient-to-b from-slate-100 to-slate-200">
-                          <User className="w-16 h-16 text-slate-400" />
+                          <User className="w-12 h-12 text-slate-400" />
                           <span className="text-[10px] font-semibold text-slate-400 mt-1">No Photo Uploaded</span>
                         </div>
                       )}
@@ -6176,7 +6245,7 @@ function DashboardContent() {
                     <div className="space-y-3 flex-1 text-center sm:text-left">
                       <div>
                         <h4 className="text-sm font-bold text-slate-800">
-                          {user.profilePhoto ? 'Change or Remove Photograph' : 'Upload Your Official Portrait'}
+                          {user.profilePhoto ? 'Adjust, Change or Remove Photograph' : 'Upload Your Official Portrait'}
                         </h4>
                         <p className="text-xs text-slate-500 mt-0.5">
                           Position your face clearly centered in the portrait frame. This photo appears on your Sales Executive dashboard, identity card, and team profile.
@@ -6200,11 +6269,27 @@ function DashboardContent() {
                           </div>
                         ) : (
                           <>
+                            {user.profilePhoto && (
+                              <button
+                                type="button"
+                                onClick={handleAdjustExistingPhoto}
+                                disabled={photoUploading}
+                                className="px-4 py-2 text-xs font-bold text-white bg-[#165DAD] hover:bg-[#12498a] rounded-xl transition shadow-xs flex items-center gap-2 disabled:opacity-50"
+                              >
+                                <Sliders className="w-4 h-4" />
+                                <span>Adjust Photo</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => photoFileInputRef.current?.click()}
                               disabled={photoUploading}
-                              className="px-4 py-2 text-xs font-bold text-white bg-[#165DAD] hover:bg-[#12498a] rounded-xl transition shadow-xs flex items-center gap-2 disabled:opacity-50"
+                              className={`px-4 py-2 text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-2 disabled:opacity-50 ${
+                                user.profilePhoto
+                                  ? 'text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300'
+                                  : 'text-white bg-[#165DAD] hover:bg-[#12498a]'
+                              }`}
                             >
                               <Upload className="w-4 h-4" />
                               <span>{user.profilePhoto ? 'Change Photo' : 'Upload Photo'}</span>
@@ -7636,94 +7721,23 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* 4:5 PORTRAIT CROP & PREVIEW MODAL */}
-      {isPhotoModalOpen && photoPreviewUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-[#0C2348]">Crop & Preview Photograph</h3>
-                <p className="text-xs text-slate-500">4:5 portrait aspect ratio preview</p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsPhotoModalOpen(false);
-                  setPhotoFile(null);
-                  setPhotoPreviewUrl(null);
-                }}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {photoActionError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-                {photoActionError}
-              </div>
-            )}
-
-            {/* 4:5 Aspect Ratio Guide Box */}
-            <div className="flex flex-col items-center justify-center py-2">
-              <div className="relative w-48 h-60 rounded-xl overflow-hidden border-2 border-[#165DAD] shadow-lg bg-slate-900">
-                <img
-                  src={photoPreviewUrl}
-                  alt="Crop Preview"
-                  className="w-full h-full object-cover"
-                />
-                {/* 4:5 Rule of Thirds Guide Lines */}
-                <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 border border-white/20">
-                  <div className="border-r border-b border-white/20" />
-                  <div className="border-r border-b border-white/20" />
-                  <div className="border-b border-white/20" />
-                  <div className="border-r border-b border-white/20" />
-                  <div className="border-r border-b border-white/20" />
-                  <div className="border-b border-white/20" />
-                  <div className="border-r border-b border-white/20" />
-                  <div className="border-r border-b border-white/20" />
-                  <div />
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-2 text-center">
-                Photo will be framed in official 4:5 portrait ratio for your Sales Executive ID.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPhotoModalOpen(false);
-                  setPhotoFile(null);
-                  setPhotoPreviewUrl(null);
-                }}
-                disabled={photoUploading}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleUploadPhotoConfirm}
-                disabled={photoUploading}
-                className="px-5 py-2 text-xs font-bold text-white bg-[#165DAD] hover:bg-[#12498a] rounded-lg shadow-sm flex items-center gap-2 disabled:opacity-50"
-              >
-                {photoUploading ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving Photo...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Save Photo</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 4:5 PORTRAIT CROP & ADJUST EDITOR MODAL */}
+      <PhotoCropModal
+        isOpen={isPhotoModalOpen}
+        imageUrl={photoPreviewUrl}
+        onClose={() => {
+          setIsPhotoModalOpen(false);
+          setPhotoFile(null);
+          setPhotoPreviewUrl(null);
+          setPhotoActionError(null);
+        }}
+        onConfirm={handleUploadPhotoConfirm}
+        isUploading={photoUploading}
+        errorMessage={photoActionError}
+        onSelectNewFile={() => {
+          photoFileInputRef.current?.click();
+        }}
+      />
 
       {/* ADMIN-CONTROLLED WELCOME POPUP MODAL */}
       <WelcomePopupModal
