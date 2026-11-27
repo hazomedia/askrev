@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AdminService } from './admin.service';
-import { FinancialSettingsService, UpdateFinancialSettingsDto } from './financial-settings.service';
+import { FinancialSettingsService } from './financial-settings.service';
+import { UpdateFinancialSettingsDto } from './dto/financial-settings.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';

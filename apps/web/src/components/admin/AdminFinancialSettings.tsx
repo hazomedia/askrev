@@ -25,14 +25,17 @@ import {
 import {
   fetchAdminFinancialSettingsApi,
   updateAdminFinancialSettingsApi,
+  getStoredUser,
 } from '../../lib/api';
 
 interface AdminFinancialSettingsProps {
-  currentUser: any;
+  currentUser?: any;
 }
 
 export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsProps) {
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const storedUser = typeof window !== 'undefined' ? getStoredUser() : null;
+  const effectiveUser = currentUser || storedUser;
+  const isSuperAdmin = effectiveUser?.role === 'SUPER_ADMIN';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,25 +61,36 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
   const [withdrawalDisabledReason, setWithdrawalDisabledReason] = useState<string>('');
   const [changeReason, setChangeReason] = useState<string>('');
 
-  const applySettingsToForm = (res: any) => {
-    const s = res?.persistedSettings || res?.settings;
-    if (s) {
-      setData(res);
-      setCrownBonusEnabled(s.crownBonusEnabled ?? true);
-      setRoyalMatchEnabled(s.royalMatchEnabled ?? true);
-      setLegacyIncomeEnabled(s.legacyIncomeEnabled ?? false);
-      setEvClubFundEnabled(s.evClubFundEnabled ?? false);
-      setVoucherUtilizationEnabled(s.voucherUtilizationEnabled ?? true);
-      setShoppingWalletUtilizationEnabled(s.shoppingWalletUtilizationEnabled ?? false);
-      setWithdrawalRequestsEnabled(s.withdrawalRequestsEnabled ?? false);
-      setPayoutExecutionEnabled(s.payoutExecutionEnabled ?? false);
+  const s = data?.persistedSettings || data?.settings || {};
+  const op = data?.effectiveOperational || {};
+  const overrides = data?.emergencyOverrides || {};
+  const env = data?.effectiveEnvironment || {
+    COMPLIANCE_MODE: overrides.complianceMode || 'SIMULATION_ONLY',
+    ENABLE_LEGACY_SETTLEMENT: overrides.isLegacySettlementEnvEnabled,
+    ENABLE_LIVE_PAYOUTS: overrides.isLivePayoutsEnvEnabled,
+    ENABLE_MANUAL_WITHDRAWALS: overrides.isManualWithdrawalsEnvEnabled,
+  };
+  const auditHistory = Array.isArray(s.auditHistory) ? s.auditHistory : [];
 
-      setMinWithdrawalINR(s.minWithdrawalINR ?? 1000);
-      setMaxWithdrawalINR(s.maxWithdrawalINR ? String(s.maxWithdrawalINR) : '');
-      setAdminChargePercent(s.adminChargePercent ?? 10);
-      setTdsEnabled(s.tdsEnabled ?? false);
-      setTdsPercent(s.tdsRatePercent ?? s.tdsPercent ?? 5);
-      setWithdrawalDisabledReason(s.withdrawalDisabledReason || '');
+  const applySettingsToForm = (res: any) => {
+    const freshSettings = res?.persistedSettings || res?.settings;
+    if (freshSettings) {
+      setData(res);
+      setCrownBonusEnabled(freshSettings.crownBonusEnabled ?? true);
+      setRoyalMatchEnabled(freshSettings.royalMatchEnabled ?? true);
+      setLegacyIncomeEnabled(freshSettings.legacyIncomeEnabled ?? false);
+      setEvClubFundEnabled(freshSettings.evClubFundEnabled ?? false);
+      setVoucherUtilizationEnabled(freshSettings.voucherUtilizationEnabled ?? true);
+      setShoppingWalletUtilizationEnabled(freshSettings.shoppingWalletUtilizationEnabled ?? false);
+      setWithdrawalRequestsEnabled(freshSettings.withdrawalRequestsEnabled ?? false);
+      setPayoutExecutionEnabled(freshSettings.payoutExecutionEnabled ?? false);
+
+      setMinWithdrawalINR(freshSettings.minWithdrawalINR ?? 1000);
+      setMaxWithdrawalINR(freshSettings.maxWithdrawalINR ? String(freshSettings.maxWithdrawalINR) : '');
+      setAdminChargePercent(freshSettings.adminChargePercent ?? 10);
+      setTdsEnabled(freshSettings.tdsEnabled ?? false);
+      setTdsPercent(freshSettings.tdsRatePercent ?? freshSettings.tdsPercent ?? 5);
+      setWithdrawalDisabledReason(freshSettings.withdrawalDisabledReason || '');
     }
   };
 
@@ -114,19 +128,19 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
     setSuccess(null);
 
     try {
-      const payload = {
-        crownBonusEnabled,
-        royalMatchEnabled,
-        legacyIncomeEnabled,
-        evClubFundEnabled,
-        voucherUtilizationEnabled,
-        shoppingWalletUtilizationEnabled,
-        withdrawalRequestsEnabled,
-        payoutExecutionEnabled,
+      const payload: any = {
+        crownBonusEnabled: Boolean(crownBonusEnabled),
+        royalMatchEnabled: Boolean(royalMatchEnabled),
+        legacyIncomeEnabled: Boolean(legacyIncomeEnabled),
+        evClubFundEnabled: Boolean(evClubFundEnabled),
+        voucherUtilizationEnabled: Boolean(voucherUtilizationEnabled),
+        shoppingWalletUtilizationEnabled: Boolean(shoppingWalletUtilizationEnabled),
+        withdrawalRequestsEnabled: Boolean(withdrawalRequestsEnabled),
+        payoutExecutionEnabled: Boolean(payoutExecutionEnabled),
         minWithdrawalINR: Number(minWithdrawalINR),
         maxWithdrawalINR: maxWithdrawalINR.trim() ? Number(maxWithdrawalINR) : null,
         adminChargePercent: Number(adminChargePercent),
-        tdsEnabled,
+        tdsEnabled: Boolean(tdsEnabled),
         tdsRatePercent: Number(tdsPercent),
         tdsPercent: Number(tdsPercent),
         withdrawalDisabledReason: withdrawalDisabledReason.trim() || null,
@@ -134,8 +148,8 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
       };
 
       const res = await updateAdminFinancialSettingsApi(payload);
-      const newVersion = res?.persistedSettings?.version || res?.settings?.version || (s.version ? s.version + 1 : '');
-      setSuccess(`Financial settings saved successfully to Database (Version ${newVersion}). Note: Features governed by compliance gates remain protected by environment authorization.`);
+      const newVersion = res?.persistedSettings?.version || res?.settings?.version || (s?.version ? s.version + 1 : 1);
+      setSuccess(`Financial settings saved successfully to Database (Configuration Version ${newVersion}). Database toggles have been stored.`);
       setChangeReason('');
       applySettingsToForm(res);
     } catch (err: any) {
@@ -155,17 +169,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
     );
   }
 
-  const s = data?.persistedSettings || data?.settings || {};
-  const op = data?.effectiveOperational || {};
-  const overrides = data?.emergencyOverrides || {};
-  const env = data?.effectiveEnvironment || {
-    COMPLIANCE_MODE: overrides.complianceMode || 'SIMULATION_ONLY',
-    ENABLE_LEGACY_SETTLEMENT: overrides.isLegacySettlementEnvEnabled,
-    ENABLE_LIVE_PAYOUTS: overrides.isLivePayoutsEnvEnabled,
-    ENABLE_MANUAL_WITHDRAWALS: overrides.isManualWithdrawalsEnvEnabled,
-  };
 
-  const auditHistory = Array.isArray(s.auditHistory) ? s.auditHistory : [];
 
   return (
     <div className="space-y-6">
@@ -331,7 +335,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
               </div>
               <div className="pt-2 border-t border-slate-200/60 space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400 font-mono">DB: {legacyIncomeEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                  <span className="text-slate-600 font-semibold font-mono">DB Config: {legacyIncomeEnabled ? 'ENABLED' : 'DISABLED'}</span>
                   {legacyIncomeEnabled ? (
                     op.legacyIncomeLive ? (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -339,7 +343,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
-                        OPERATIONAL: PAUSED
+                        SIMULATION HELD
                       </span>
                     )
                   ) : (
@@ -349,8 +353,8 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                   )}
                 </div>
                 {legacyIncomeEnabled && !op.legacyIncomeLive && (
-                  <p className="text-[9px] text-amber-600 leading-tight">
-                    Requires ENABLE_LEGACY_SETTLEMENT=true in env
+                  <p className="text-[9px] text-amber-700 font-medium leading-tight">
+                    Saved in DB. Live settlement is held closed by environment gate (ENABLE_LEGACY_SETTLEMENT=false).
                   </p>
                 )}
               </div>
@@ -379,7 +383,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
               </div>
               <div className="pt-2 border-t border-slate-200/60 space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400 font-mono">DB: {evClubFundEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                  <span className="text-slate-600 font-semibold font-mono">DB Config: {evClubFundEnabled ? 'ENABLED' : 'DISABLED'}</span>
                   {evClubFundEnabled ? (
                     op.evClubFundLive ? (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -387,7 +391,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
-                        OPERATIONAL: PAUSED
+                        SIMULATION HELD
                       </span>
                     )
                   ) : (
@@ -397,8 +401,8 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                   )}
                 </div>
                 {evClubFundEnabled && !op.evClubFundLive && (
-                  <p className="text-[9px] text-amber-600 leading-tight">
-                    Requires ENABLE_LEGACY_SETTLEMENT=true in env
+                  <p className="text-[9px] text-amber-700 font-medium leading-tight">
+                    Saved in DB. Live settlement is held closed by environment gate (ENABLE_LEGACY_SETTLEMENT=false).
                   </p>
                 )}
               </div>
@@ -485,7 +489,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
               </div>
               <div className="pt-2 border-t border-slate-200/60 space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400 font-mono">DB: {withdrawalRequestsEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                  <span className="text-slate-600 font-semibold font-mono">DB Config: {withdrawalRequestsEnabled ? 'ENABLED' : 'DISABLED'}</span>
                   {withdrawalRequestsEnabled ? (
                     op.withdrawalRequestsLive ? (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -493,7 +497,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
-                        OPERATIONAL: RESTRICTED
+                        GATE HELD
                       </span>
                     )
                   ) : (
@@ -503,8 +507,8 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                   )}
                 </div>
                 {withdrawalRequestsEnabled && !op.withdrawalRequestsLive && (
-                  <p className="text-[9px] text-amber-600 leading-tight">
-                    Requires ENABLE_MANUAL_WITHDRAWALS=true in env
+                  <p className="text-[9px] text-amber-700 font-medium leading-tight">
+                    Saved in DB. Submissions held closed by environment gate (ENABLE_MANUAL_WITHDRAWALS=false).
                   </p>
                 )}
               </div>
@@ -533,7 +537,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
               </div>
               <div className="pt-2 border-t border-slate-200/60 space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400 font-mono">DB: {payoutExecutionEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                  <span className="text-slate-600 font-semibold font-mono">DB Config: {payoutExecutionEnabled ? 'ENABLED' : 'DISABLED'}</span>
                   {payoutExecutionEnabled ? (
                     op.payoutExecutionLive ? (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -541,7 +545,7 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
-                        OPERATIONAL: SIMULATION
+                        GATE HELD
                       </span>
                     )
                   ) : (
@@ -551,8 +555,8 @@ export function AdminFinancialSettings({ currentUser }: AdminFinancialSettingsPr
                   )}
                 </div>
                 {payoutExecutionEnabled && !op.payoutExecutionLive && (
-                  <p className="text-[9px] text-amber-600 leading-tight">
-                    Requires ENABLE_LIVE_PAYOUTS=true & LIVE_PRODUCTION
+                  <p className="text-[9px] text-amber-700 font-medium leading-tight">
+                    Saved in DB. Live bank dispatches held closed by environment gate (ENABLE_LIVE_PAYOUTS=false).
                   </p>
                 )}
               </div>

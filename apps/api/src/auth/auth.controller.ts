@@ -1,5 +1,5 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param, UseGuards, Req, Res, HttpCode, HttpStatus, ServiceUnavailableException, UseInterceptors, UploadedFile, ForbiddenException } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Controller, Post, Body, Get, Patch, Delete, Param, UseGuards, Req, Res, HttpCode, HttpStatus, ServiceUnavailableException, UseInterceptors, UploadedFile, UploadedFiles, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { UserRole } from '@askrev/shared';
@@ -414,14 +414,26 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('profile/photo')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'file', maxCount: 1 },
+        { name: 'photo', maxCount: 1 },
+      ],
+      { limits: { fileSize: 5 * 1024 * 1024 } }
+    )
+  )
   async uploadProfilePhoto(
     @CurrentUser() user: any,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: { file?: Express.Multer.File[]; photo?: Express.Multer.File[] },
     @Req() req: Request
   ) {
     if ((user as any)?.isSupportSession || (req as any)?.isSupportSession) {
       throw new ForbiddenException('Profile photo modifications are strictly prohibited during Admin View Mode.');
+    }
+    const file = files?.file?.[0] || files?.photo?.[0];
+    if (!file) {
+      throw new BadRequestException('No photograph file provided in upload request.');
     }
     return this.authService.uploadProfilePhoto(user.id, file);
   }

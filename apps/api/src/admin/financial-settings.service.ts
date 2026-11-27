@@ -1,35 +1,9 @@
 import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole, paiseToRupees } from '@askrev/shared';
+import { UpdateFinancialSettingsDto } from './dto/financial-settings.dto';
 
-export interface UpdateFinancialSettingsDto {
-  crownBonusEnabled?: boolean;
-  royalMatchEnabled?: boolean;
-  legacyIncomeEnabled?: boolean;
-  evClubFundEnabled?: boolean;
-  voucherUtilizationEnabled?: boolean;
-  shoppingWalletUtilizationEnabled?: boolean;
-  withdrawalRequestsEnabled?: boolean;
-  payoutExecutionEnabled?: boolean;
-
-  minWithdrawalINR?: number;
-  maxWithdrawalINR?: number | null;
-  dailyMemberLimitINR?: number | null;
-  monthlyMemberLimitINR?: number | null;
-  platformDailyPayoutLimitINR?: number | null;
-  adminChargePercent?: number;
-
-  tdsEnabled?: boolean;
-  tdsRatePercent?: number;
-  tdsPercent?: number;
-  tdsCalculationBasis?: string;
-  panVerificationRequired?: boolean;
-  bankVerificationRequired?: boolean;
-  paymentProcessingWindowHours?: number;
-  withdrawalDisabledReason?: string | null;
-
-  changeReason: string;
-}
+export { UpdateFinancialSettingsDto };
 
 @Injectable()
 export class FinancialSettingsService {
