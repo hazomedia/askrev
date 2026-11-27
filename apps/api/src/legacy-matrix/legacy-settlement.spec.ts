@@ -469,4 +469,95 @@ describe('EV Legacy Income & EV Club Fund Settlement Suite', () => {
     expect(mockPrisma.walletAccount.update).not.toHaveBeenCalled();
     expect(mockPrisma.journalEntry.create).not.toHaveBeenCalled();
   });
+
+  // Task 1: executeProspectiveSettlement simulation blocked when ENABLE_LEGACY_SETTLEMENT is not set
+  it('Task 1: executeProspectiveSettlement blocks live crediting when ENABLE_LEGACY_SETTLEMENT is false', async () => {
+    process.env.ENABLE_LEGACY_SETTLEMENT = 'false';
+
+    const result = await matrixService.executeProspectiveSettlement('admin-1');
+
+    expect(result.success).toBe(false);
+    expect(result.settlementExecuted).toBe(false);
+    expect(result.mode).toBe('STRICT_SIMULATION_PROTECTION');
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'PROSPECTIVE_SETTLEMENT_SIMULATION_BLOCKED',
+        }),
+      })
+    );
+  });
+
+  // Task 1: executeProspectiveSettlement executes settlement for qualified members and holds pending for unqualified
+  it('Task 1: executeProspectiveSettlement executes live settlement for qualified and holds pending for unqualified', async () => {
+    process.env.ENABLE_LEGACY_SETTLEMENT = 'true';
+
+    mockPrisma.legacyMatrixPlacement.findMany.mockImplementation(async (params) => {
+      if (params?.orderBy?.matrixSequence) {
+        return [
+          {
+            id: 'p1',
+            matrixSequence: 1,
+            userId: 'u1',
+            user: {
+              id: 'u1',
+              memberId: 'EV10001',
+              fullName: 'Qualified Beneficiary',
+              currentPackage: 'FULL',
+              role: 'SUPER_ADMIN',
+              directReferrals: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
+            },
+          },
+          {
+            id: 'p2',
+            matrixSequence: 2,
+            userId: 'u2',
+            user: {
+              id: 'u2',
+              memberId: 'EV10002',
+              fullName: 'Unqualified Member',
+              currentPackage: 'BASIC',
+              role: 'MEMBER',
+              directReferrals: [],
+            },
+          },
+        ];
+      }
+      return [];
+    });
+
+    mockPrisma.journalEntry.findMany.mockResolvedValue([]);
+
+    // Mock evaluateAndReleaseAccumulatedIncome for u1
+    vi.spyOn(matrixService, 'evaluateAndReleaseAccumulatedIncome').mockResolvedValue({
+      memberId: 'EV10001',
+      isQualified: true,
+      activeDirectsCount: 3,
+      released: true,
+      settledCount: 2,
+      releasedEarningsPaise: '20000',
+      releasedEarningsINR: 200,
+      releasedShoppingPaise: '20000',
+      releasedShoppingINR: 200,
+    } as any);
+
+    const result = await matrixService.executeProspectiveSettlement('admin-1');
+
+    expect(result.success).toBe(true);
+    expect(result.settlementExecuted).toBe(true);
+    expect(result.mode).toBe('LIVE_SETTLEMENT_EXECUTED');
+    expect(result.totalBeneficiariesEvaluated).toBe(2);
+    expect(result.totalQualifiedBeneficiaries).toBe(1);
+    expect(result.totalUnqualifiedBeneficiaries).toBe(1);
+    expect(result.releasedEarningsWalletINR).toBe(200);
+    expect(result.releasedShoppingWalletINR).toBe(200);
+    expect(result.totalReleasedINR).toBe(400);
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'LEGACY_MATRIX_SETTLEMENT_EXECUTED',
+        }),
+      })
+    );
+  });
 });

@@ -951,13 +951,15 @@ export class LegacyMatrixService {
   }
 
   /**
-   * Admin: Controlled Prospective Settlement Execution (Task 4)
+   * Admin: Controlled Prospective Settlement Execution (Task 1 & Task 4)
    * Strictly guarded by ENABLE_LEGACY_SETTLEMENT === 'true'.
-   * Never mutates historical records or credits pre-effective-date placements.
+   * Never mutates historical records without authorization.
+   * Traverses eligible active members (EV PRO, EV ULTRA, Super Admin), excluding FREE members.
+   * Releases qualified earnings to Earnings Wallet (even levels) and EV Club Fund to Shopping Wallet (odd levels).
+   * Uncredited accumulated amounts for unqualified members remain pending.
    */
   async executeProspectiveSettlement(adminUserId: string, effectiveDateStr?: string) {
     const isSettlementEnabled = process.env.ENABLE_LEGACY_SETTLEMENT === 'true';
-    const effectiveDate = effectiveDateStr || process.env.LEGACY_SETTLEMENT_EFFECTIVE_DATE || '2026-12-01T00:00:00.000Z';
 
     if (!isSettlementEnabled) {
       this.logger.warn(`Settlement requested by admin ${adminUserId} but ENABLE_LEGACY_SETTLEMENT is false.`);
@@ -970,7 +972,6 @@ export class LegacyMatrixService {
           entityId: 'SYSTEM',
           metadata: {
             isSettlementEnabled: false,
-            effectiveDate,
             complianceMode: process.env.COMPLIANCE_MODE || 'SIMULATION_ONLY',
           },
         },
@@ -980,44 +981,181 @@ export class LegacyMatrixService {
         success: false,
         settlementExecuted: false,
         reason: 'ENABLE_LEGACY_SETTLEMENT environment variable is false. Live crediting is strictly disabled in Production.',
-        effectiveDate,
         mode: 'STRICT_SIMULATION_PROTECTION',
         message: 'No wallet balances or financial ledger entries were modified.',
       };
     }
 
-    // When explicitly enabled in controlled UAT:
-    const effectiveDateTime = new Date(effectiveDate);
-
-    // Find placements created strictly AFTER the effective date
-    const prospectivePlacements = await this.prisma.legacyMatrixPlacement.findMany({
+    // Query all eligible placed members (EV PRO, EV ULTRA, or SUPER_ADMIN)
+    const placements = await this.prisma.legacyMatrixPlacement.findMany({
       where: {
-        createdAt: { gte: effectiveDateTime },
+        user: {
+          OR: [
+            { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+            { role: 'SUPER_ADMIN' },
+          ],
+        },
       },
+      orderBy: { matrixSequence: 'asc' },
       include: {
-        user: { select: { id: true, memberId: true, fullName: true } },
+        user: {
+          select: {
+            id: true,
+            memberId: true,
+            fullName: true,
+            currentPackage: true,
+            role: true,
+            directReferrals: {
+              where: { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+              select: { id: true, memberId: true },
+            },
+          },
+        },
       },
     });
 
-    if (prospectivePlacements.length === 0) {
-      return {
-        success: true,
-        settlementExecuted: true,
-        prospectivePlacementsFound: 0,
-        settledMembersCount: 0,
-        totalCreditedPaise: '0',
-        message: `No new matrix placements recorded after effective date ${effectiveDate}. Zero credits needed.`,
-      };
+    const existingSettlementEntries = await this.prisma.journalEntry.findMany({
+      where: { eventType: 'LEGACY_MATRIX_SETTLEMENT' },
+      select: { referenceId: true },
+    });
+    const settledRefs = new Set(existingSettlementEntries.map((e) => e.referenceId));
+
+    const memberSettlements: any[] = [];
+    let totalQualifiedBeneficiaries = 0;
+    let totalUnqualifiedBeneficiaries = 0;
+    let systemReleasedEarningsPaise = 0n;
+    let systemReleasedShoppingPaise = 0n;
+    let systemPendingEarningsPaise = 0n;
+    let systemPendingShoppingPaise = 0n;
+
+    for (const placement of placements) {
+      const u = placement.user;
+      const activeDirectsCount = u.directReferrals.length;
+      const isQualified = activeDirectsCount >= LEGACY_MATRIX_CONFIG.MANDATORY_ACTIVE_DIRECTS;
+
+      if (isQualified) {
+        totalQualifiedBeneficiaries++;
+        // Execute the settlement release using the engine
+        const releaseResult = await this.evaluateAndReleaseAccumulatedIncome(u.id);
+
+        const releasedEarningsPaise = BigInt(releaseResult.releasedEarningsPaise || '0');
+        const releasedShoppingPaise = BigInt(releaseResult.releasedShoppingPaise || '0');
+
+        systemReleasedEarningsPaise += releasedEarningsPaise;
+        systemReleasedShoppingPaise += releasedShoppingPaise;
+
+        memberSettlements.push({
+          memberId: u.memberId,
+          fullName: u.fullName,
+          package: u.currentPackage,
+          matrixSequence: placement.matrixSequence,
+          activeDirectsCount,
+          isQualified: true,
+          settlementStatus: releasedEarningsPaise + releasedShoppingPaise > 0n ? 'SETTLED' : 'ALREADY_SETTLED',
+          settledCount: releaseResult.settledCount || 0,
+          releasedEarningsINR: releaseResult.releasedEarningsINR || 0,
+          releasedShoppingINR: releaseResult.releasedShoppingINR || 0,
+          totalReleasedINR: (releaseResult.releasedEarningsINR || 0) + (releaseResult.releasedShoppingINR || 0),
+          pendingEarningsINR: 0,
+          pendingShoppingINR: 0,
+          totalPendingINR: 0,
+        });
+      } else {
+        totalUnqualifiedBeneficiaries++;
+        // Calculate pending accumulated uncredited amounts across 8 levels
+        let currentLayerIds = [placement.id];
+        let memberPendingEarningsPaise = 0n;
+        let memberPendingShoppingPaise = 0n;
+        let uncreditedCount = 0;
+
+        for (let level = 1; level <= LEGACY_MATRIX_CONFIG.MAX_EARNING_LEVELS; level++) {
+          if (currentLayerIds.length === 0) break;
+
+          const children = await this.prisma.legacyMatrixPlacement.findMany({
+            where: {
+              parentId: { in: currentLayerIds },
+              user: {
+                OR: [
+                  { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+                  { role: 'SUPER_ADMIN' },
+                ],
+              },
+            },
+            select: { id: true, userId: true },
+          });
+
+          const rate = LEGACY_MATRIX_RATES[level - 1];
+
+          for (const child of children) {
+            if (child.userId === u.id) continue;
+            const ref = `LEGACY-SETTLE-${u.id}-${child.id}-L${level}`;
+            if (!settledRefs.has(ref)) {
+              uncreditedCount++;
+              if (rate.destination === 'EARNINGS_WALLET') {
+                memberPendingEarningsPaise += rate.amountPaise;
+              } else {
+                memberPendingShoppingPaise += rate.amountPaise;
+              }
+            }
+          }
+
+          currentLayerIds = children.map((c) => c.id);
+        }
+
+        systemPendingEarningsPaise += memberPendingEarningsPaise;
+        systemPendingShoppingPaise += memberPendingShoppingPaise;
+
+        memberSettlements.push({
+          memberId: u.memberId,
+          fullName: u.fullName,
+          package: u.currentPackage,
+          matrixSequence: placement.matrixSequence,
+          activeDirectsCount,
+          isQualified: false,
+          settlementStatus: 'UNQUALIFIED_ACCUMULATED_HELD',
+          settledCount: 0,
+          releasedEarningsINR: 0,
+          releasedShoppingINR: 0,
+          totalReleasedINR: 0,
+          pendingEarningsINR: Number(memberPendingEarningsPaise / 100n),
+          pendingShoppingINR: Number(memberPendingShoppingPaise / 100n),
+          totalPendingINR: Number((memberPendingEarningsPaise + memberPendingShoppingPaise) / 100n),
+        });
+      }
     }
 
-    this.logger.log(`Found ${prospectivePlacements.length} prospective placements to evaluate for settlement.`);
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminUserId,
+        action: 'LEGACY_MATRIX_SETTLEMENT_EXECUTED',
+        entityType: 'LegacyMatrix',
+        entityId: 'SYSTEM',
+        metadata: {
+          totalBeneficiariesEvaluated: placements.length,
+          totalQualifiedBeneficiaries,
+          totalUnqualifiedBeneficiaries,
+          releasedEarningsINR: Number(systemReleasedEarningsPaise / 100n),
+          releasedShoppingINR: Number(systemReleasedShoppingPaise / 100n),
+          totalReleasedINR: Number((systemReleasedEarningsPaise + systemReleasedShoppingPaise) / 100n),
+          pendingUnqualifiedINR: Number((systemPendingEarningsPaise + systemPendingShoppingPaise) / 100n),
+        },
+      },
+    });
 
     return {
       success: true,
       settlementExecuted: true,
-      prospectivePlacementsFound: prospectivePlacements.length,
-      effectiveDate,
-      message: `Prospective settlement evaluated for ${prospectivePlacements.length} eligible post-launch placements.`,
+      mode: 'LIVE_SETTLEMENT_EXECUTED',
+      totalBeneficiariesEvaluated: placements.length,
+      totalQualifiedBeneficiaries,
+      totalUnqualifiedBeneficiaries,
+      releasedEarningsWalletINR: Number(systemReleasedEarningsPaise / 100n),
+      releasedShoppingWalletINR: Number(systemReleasedShoppingPaise / 100n),
+      totalReleasedINR: Number((systemReleasedEarningsPaise + systemReleasedShoppingPaise) / 100n),
+      pendingUnqualifiedEarningsWalletINR: Number(systemPendingEarningsPaise / 100n),
+      pendingUnqualifiedShoppingWalletINR: Number(systemPendingShoppingPaise / 100n),
+      totalPendingUnqualifiedINR: Number((systemPendingEarningsPaise + systemPendingShoppingPaise) / 100n),
+      memberSettlements,
     };
   }
 
@@ -1327,7 +1465,15 @@ export class LegacyMatrixService {
         if (currentLayerIds.length === 0) break;
 
         const children = await tx.legacyMatrixPlacement.findMany({
-          where: { parentId: { in: currentLayerIds } },
+          where: {
+            parentId: { in: currentLayerIds },
+            user: {
+              OR: [
+                { currentPackage: { in: [MembershipPackage.BASIC, MembershipPackage.FULL] } },
+                { role: 'SUPER_ADMIN' },
+              ],
+            },
+          },
           include: {
             user: { select: { id: true, memberId: true, currentPackage: true } },
           },
@@ -1336,6 +1482,7 @@ export class LegacyMatrixService {
         const rate = LEGACY_MATRIX_RATES.find((r) => r.level === level)!;
 
         for (const child of children) {
+          if (child.user.id === user.id) continue;
           const settlementRef = `LEGACY-SETTLE-${user.id}-${child.id}-L${level}`;
           const existingEntry = await tx.journalEntry.findUnique({
             where: { referenceId: settlementRef },
