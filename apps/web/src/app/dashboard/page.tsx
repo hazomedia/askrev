@@ -1960,13 +1960,26 @@ function DashboardContent() {
                     }
                   }
 
-                  const legacyIncomeDisplay =
-                    matrixOverview?.metrics?.earningsWalletQualifiedINR ??
-                    (matrixOverview?.isQualified ? (matrixOverview?.metrics?.earningsWalletProjectedINR ?? rawWalletProjected) : rawWalletQualified);
+                  // Task 2: Dynamic Authoritative Matrix Calculations for Projected Income
+                  const legacyProjectedDisplay =
+                    matrixOverview?.metrics?.earningsWalletProjectedINR ??
+                    matrixOverview?.accumulatedLegacyIncomeINR ??
+                    walletOverview?.legacyPending?.projectedLegacyIncomeINR ??
+                    rawWalletProjected;
 
-                  const evClubFundDisplay =
-                    matrixOverview?.metrics?.evClubQualifiedINR ??
-                    (matrixOverview?.isQualified ? (matrixOverview?.metrics?.evClubProjectedINR ?? rawEvClubProjected) : rawEvClubQualified);
+                  const evClubFundProjectedDisplay =
+                    matrixOverview?.metrics?.evClubProjectedINR ??
+                    matrixOverview?.accumulatedEvClubFundINR ??
+                    shoppingWalletData?.projectedEvClubFundINR ??
+                    rawEvClubProjected;
+
+                  const isMatrixQualified = Boolean(
+                    matrixOverview?.isQualified ??
+                    matrixOverview?.qualification?.isQualified ??
+                    matrixOverview?.metrics?.isQualified ??
+                    walletOverview?.legacyPending?.isQualified ??
+                    (activeDirectsCount >= 3)
+                  );
 
                   return (
                     <div className="space-y-6">
@@ -2047,16 +2060,20 @@ function DashboardContent() {
                           </div>
                           <div className="my-2">
                             <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                              ₹{legacyIncomeDisplay.toLocaleString('en-IN')}
+                              ₹{legacyProjectedDisplay.toLocaleString('en-IN')}
                             </div>
                             <div className="text-[11px] text-purple-200/90 font-medium mt-0.5">
-                              Level Income (Even Levels)
+                              Projected Level Income (Even Levels)
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="text-purple-200/80">{Math.min(activeDirectsCount, 3)}/3 Active Directs</span>
-                            <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
-                              {activeDirectsCount >= 3 ? 'Qualified' : 'Pending Directs'}
+                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                              isMatrixQualified
+                                ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/30'
+                                : 'bg-amber-500/30 text-amber-100 border border-amber-400/30'
+                            }`}>
+                              {isMatrixQualified ? 'Qualified' : 'Pending Qualification'}
                             </span>
                           </div>
                         </div>
@@ -2074,16 +2091,20 @@ function DashboardContent() {
                           </div>
                           <div className="my-2">
                             <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                              ₹{evClubFundDisplay.toLocaleString('en-IN')}
+                              ₹{evClubFundProjectedDisplay.toLocaleString('en-IN')}
                             </div>
                             <div className="text-[11px] text-teal-200/90 font-medium mt-0.5">
-                              Leadership Pool (Odd Levels)
+                              Projected Leadership Pool (Odd Levels)
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-teal-200/80">Odd Levels (1,3,5,7)</span>
-                            <span className="px-1.5 py-0.5 rounded bg-white/15 text-white font-bold text-[9px] uppercase">
-                              Leadership Pool
+                            <span className="text-teal-200/80">{Math.min(activeDirectsCount, 3)}/3 Active Directs</span>
+                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                              isMatrixQualified
+                                ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/30'
+                                : 'bg-amber-500/30 text-amber-100 border border-amber-400/30'
+                            }`}>
+                              {isMatrixQualified ? 'Qualified' : 'Pending Qualification'}
                             </span>
                           </div>
                         </div>
@@ -4228,19 +4249,68 @@ function DashboardContent() {
                       </div>
                     </div>
 
-                    {/* Secondary Balances: Held & Recovery */}
-                    <div className="flex items-center justify-between text-xs text-slate-600 px-1 pt-1 border-t border-slate-100">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Pending / On Hold:</span>
-                        <strong className="text-amber-700">₹{(walletOverview?.heldCommissionsINR ?? user?.wallet?.heldCommissionsINR ?? 0).toLocaleString('en-IN')}</strong>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 text-red-600" />
-                        <span>Recovery:</span>
-                        <strong className="text-red-700">₹{(walletOverview?.pendingRecoveryINR ?? user?.wallet?.pendingRecoveryINR ?? 0).toLocaleString('en-IN')}</strong>
-                      </div>
-                    </div>
+                    {/* Secondary Balances: Held & Recovery (Task 3) */}
+                    {(() => {
+                      const activeDirectsCount = Number(directTeam?.metrics?.totalActivatedDirects ?? matrixOverview?.directsCount ?? 0);
+                      const sponsorHoldsINR = Number(
+                        walletOverview?.legacyPending?.sponsorCommissionHoldsINR ??
+                        walletOverview?.heldCommissionsINR ??
+                        user?.wallet?.heldCommissionsINR ??
+                        0
+                      );
+                      const legacyProjectedINR = Number(
+                        walletOverview?.legacyPending?.projectedLegacyIncomeINR ??
+                        matrixOverview?.accumulatedLegacyIncomeINR ??
+                        matrixOverview?.metrics?.earningsWalletProjectedINR ??
+                        0
+                      );
+                      const legacyCreditedINR = Number(
+                        walletOverview?.legacyPending?.creditedLegacyIncomeINR ??
+                        matrixOverview?.actuallyCreditedLegacyIncomeINR ??
+                        0
+                      );
+                      const legacyUncreditedINR = Number(
+                        walletOverview?.legacyPending?.uncreditedLegacyIncomeINR ??
+                        Math.max(0, legacyProjectedINR - legacyCreditedINR)
+                      );
+                      const totalPendingAndHeldINR = sponsorHoldsINR + legacyUncreditedINR;
+                      const isQual = Boolean(
+                        walletOverview?.legacyPending?.isQualified ??
+                        matrixOverview?.isQualified ??
+                        (activeDirectsCount >= 3)
+                      );
+
+                      return (
+                        <div className="space-y-2 pt-1 border-t border-slate-100">
+                          <div className="flex items-center justify-between text-xs text-slate-600 px-1">
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Pending / On Hold:</span>
+                              <strong className="text-amber-700">₹{totalPendingAndHeldINR.toLocaleString('en-IN')}</strong>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                              <span>Recovery:</span>
+                              <strong className="text-red-700">₹{(walletOverview?.pendingRecoveryINR ?? user?.wallet?.pendingRecoveryINR ?? 0).toLocaleString('en-IN')}</strong>
+                            </div>
+                          </div>
+
+                          {/* Clearly Separate Sponsor Commission Holds vs. EV Legacy Income Pending */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-100">
+                              <span className="text-slate-500 font-medium">Sponsor Commission Holds</span>
+                              <strong className="text-amber-700">₹{sponsorHoldsINR.toLocaleString('en-IN')}</strong>
+                            </div>
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-100">
+                              <span className="text-slate-500 font-medium">
+                                {isQual ? 'Legacy Income (Awaiting Settle)' : 'Legacy Income (Pending Qual)'}
+                              </span>
+                              <strong className="text-purple-700">₹{legacyUncreditedINR.toLocaleString('en-IN')}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Withdraw Action Button */}
@@ -4325,6 +4395,77 @@ function DashboardContent() {
                     </div>
                   )}
                 </div>
+
+                {/* TASK 3: EV LEGACY INCOME PENDING & SETTLEMENT STATUS CARD */}
+                {(() => {
+                  const activeDirectsCount = Number(directTeam?.metrics?.totalActivatedDirects ?? matrixOverview?.directsCount ?? 0);
+                  const legacyProjectedINR = Number(
+                    walletOverview?.legacyPending?.projectedLegacyIncomeINR ??
+                    matrixOverview?.accumulatedLegacyIncomeINR ??
+                    matrixOverview?.metrics?.earningsWalletProjectedINR ??
+                    0
+                  );
+                  const legacyCreditedINR = Number(
+                    walletOverview?.legacyPending?.creditedLegacyIncomeINR ??
+                    matrixOverview?.actuallyCreditedLegacyIncomeINR ??
+                    0
+                  );
+                  const legacyUncreditedINR = Number(
+                    walletOverview?.legacyPending?.uncreditedLegacyIncomeINR ??
+                    Math.max(0, legacyProjectedINR - legacyCreditedINR)
+                  );
+                  const isQual = Boolean(
+                    walletOverview?.legacyPending?.isQualified ??
+                    matrixOverview?.isQualified ??
+                    (activeDirectsCount >= 3)
+                  );
+
+                  return (
+                    <div className="bg-white rounded-xl border border-purple-200/80 p-5 shadow-sm space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-purple-600" />
+                          <h3 className="text-sm font-bold text-[#253247]">EV Legacy Income — Pending & Settlement Status</h3>
+                        </div>
+                        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border self-start ${
+                          isQual
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                          {isQual ? 'Qualified — Awaiting Settlement' : `Pending Qualification (${activeDirectsCount}/3 Directs)`}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                          <span className="text-[10px] text-slate-500 font-medium block">Projected Legacy Income</span>
+                          <span className="text-xl font-black text-purple-700 mt-1 block">₹{legacyProjectedINR.toLocaleString('en-IN')}</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">Even levels (2, 4, 6, 8) Matrix positions</span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                          <span className="text-[10px] text-slate-500 font-medium block">Actually Credited Earnings</span>
+                          <span className="text-xl font-black text-emerald-700 mt-1 block">₹{legacyCreditedINR.toLocaleString('en-IN')}</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">Settled to Earnings Wallet Available</span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200/80">
+                          <span className="text-[10px] text-purple-800 font-bold block">
+                            {isQual ? 'Qualified Awaiting Settlement' : 'Pending Qualification Amount'}
+                          </span>
+                          <span className="text-xl font-black text-purple-800 mt-1 block">₹{legacyUncreditedINR.toLocaleString('en-IN')}</span>
+                          <span className="text-[10px] text-purple-700 mt-0.5 block">
+                            {isQual ? 'Credited to Available upon authorized settlement' : 'Requires 3 active directs to qualify'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-[#F7F9FC] border border-slate-200/60 text-[11px] text-slate-500 leading-relaxed">
+                        Uncredited EV Legacy Income is calculated from eligible activated Matrix descendants and held in pending status until qualification and authorized settlement. It is not recorded as a financial ledger liability or added to Available Balance until supervisory settlement clearance.
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* EARNINGS WALLET TRANSACTIONS TABLE */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -4504,49 +4645,116 @@ function DashboardContent() {
                       </div>
                     </div>
 
-                    {/* Main Balances */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80">
-                        <span className="text-[11px] font-bold uppercase text-blue-800">
-                          Available Shopping Balance
-                        </span>
-                        <div className="text-2xl sm:text-3xl font-black text-[#165DAD] mt-1">
-                          ₹{(shoppingWalletData?.availableShoppingWalletINR ?? walletOverview?.shoppingWalletINR ?? 0).toLocaleString('en-IN')}
-                        </div>
-                        <p className="text-[10px] text-blue-700 mt-1">
-                          Applicable for vehicle bookings & merchandise
-                        </p>
-                      </div>
+                    {/* Main Balances - 4-Metric Grid (Task 4) */}
+                    {(() => {
+                      const activeDirectsCount = Number(directTeam?.metrics?.totalActivatedDirects ?? matrixOverview?.directsCount ?? 0);
+                      const availableShoppingBalance = Number(
+                        shoppingWalletData?.availableShoppingWalletINR ??
+                        walletOverview?.shoppingWalletINR ??
+                        0
+                      );
+                      const totalCreditedINR = Number(shoppingWalletData?.totalCreditedINR ?? 0);
+                      const totalDebitedINR = Number(shoppingWalletData?.totalDebitedINR ?? 0);
+                      const evClubProjectedINR = Number(
+                        shoppingWalletData?.projectedEvClubFundINR ??
+                        matrixOverview?.accumulatedEvClubFundINR ??
+                        matrixOverview?.metrics?.evClubProjectedINR ??
+                        0
+                      );
+                      const pendingEvClubFundINR = Number(
+                        shoppingWalletData?.pendingEvClubFundINR ??
+                        Math.max(0, evClubProjectedINR - totalCreditedINR)
+                      );
+                      const isQual = Boolean(
+                        shoppingWalletData?.isQualified ??
+                        matrixOverview?.isQualified ??
+                        (activeDirectsCount >= 3)
+                      );
 
-                      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="text-[11px] font-bold uppercase text-slate-500">
-                          Total EV Club Fund Credits
-                        </span>
-                        <div className="text-2xl sm:text-3xl font-black text-teal-700 mt-1">
-                          ₹{(shoppingWalletData?.totalCreditedINR ?? 0).toLocaleString('en-IN')}
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          Odd matrix levels (1, 3, 5, 7)
-                        </p>
-                      </div>
-                    </div>
+                      return (
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                            <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80">
+                              <span className="text-[11px] font-bold uppercase text-blue-800">
+                                Available Shopping Balance
+                              </span>
+                              <div className="text-2xl font-black text-[#165DAD] mt-1">
+                                ₹{availableShoppingBalance.toLocaleString('en-IN')}
+                              </div>
+                              <p className="text-[10px] text-blue-700 mt-1">
+                                Applicable for vehicle bookings & merchandise
+                              </p>
+                            </div>
 
-                    {/* Shopping Utilization & Eligibility Details */}
-                    <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2">
-                      <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                        Fund Utilization Summary
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div className="bg-white p-2 rounded-lg border border-slate-100">
-                          <span className="text-[10px] text-slate-400 block font-medium">Total Shopping Utilization</span>
-                          <span className="font-bold text-slate-800">₹{(shoppingWalletData?.totalDebitedINR ?? 0).toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-lg border border-slate-100">
-                          <span className="text-[10px] text-slate-400 block font-medium">Combined Checkout Eligibility</span>
-                          <span className="font-bold text-emerald-700">100% Eligible</span>
-                        </div>
-                      </div>
-                    </div>
+                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                              <span className="text-[11px] font-bold uppercase text-slate-500">
+                                Total EV Club Fund Credits
+                              </span>
+                              <div className="text-2xl font-black text-teal-700 mt-1">
+                                ₹{totalCreditedINR.toLocaleString('en-IN')}
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-1">
+                                Settled lifetime credits
+                              </p>
+                            </div>
+
+                            <div className="p-4 rounded-xl bg-purple-50/70 border border-purple-200/80">
+                              <span className="text-[11px] font-bold uppercase text-purple-800">
+                                Pending EV Club Fund
+                              </span>
+                              <div className="text-2xl font-black text-purple-700 mt-1">
+                                ₹{pendingEvClubFundINR.toLocaleString('en-IN')}
+                              </div>
+                              <p className={`text-[10px] font-semibold mt-1 ${isQual ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                {isQual ? 'Qualified • Awaiting Settlement' : `Pending Qualification (${activeDirectsCount}/3 Directs)`}
+                              </p>
+                            </div>
+
+                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                              <span className="text-[11px] font-bold uppercase text-slate-500">
+                                Total Shopping Utilization
+                              </span>
+                              <div className="text-2xl font-black text-slate-800 mt-1">
+                                ₹{totalDebitedINR.toLocaleString('en-IN')}
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-1">
+                                Redeemed on vehicle reservations
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Shopping Utilization & Accurate Checkout Availability Status */}
+                          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2">
+                            <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                              Fund Utilization Summary & Booking Availability
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <div className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between">
+                                <div>
+                                  <span className="text-[10px] text-slate-400 block font-medium">Odd Level Matrix Allocation</span>
+                                  <span className="font-bold text-slate-800">Levels 1, 3, 5, 7 Eligible</span>
+                                </div>
+                                <span className="font-mono text-xs font-bold text-teal-700">₹{evClubProjectedINR.toLocaleString('en-IN')} Projected</span>
+                              </div>
+
+                              <div className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between">
+                                <div>
+                                  <span className="text-[10px] text-slate-400 block font-medium">Checkout Availability Status</span>
+                                  <span className={`font-bold text-xs ${availableShoppingBalance > 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                    {availableShoppingBalance > 0
+                                      ? `₹${availableShoppingBalance.toLocaleString('en-IN')} Available for Checkout`
+                                      : (pendingEvClubFundINR > 0
+                                          ? (isQual ? 'Qualified • Awaiting Settlement' : `Pending Direct Qualification (${activeDirectsCount}/3)`)
+                                          : 'No Active Balance')}
+                                  </span>
+                                </div>
+                                <span className={`w-2.5 h-2.5 rounded-full ${availableShoppingBalance > 0 ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
 
                     {/* Concise Mandatory Policy Note */}
                     <div className="p-3 rounded-xl bg-slate-100 text-slate-700 text-center border border-slate-200/60 font-semibold text-xs tracking-wide">
@@ -4558,7 +4766,7 @@ function DashboardContent() {
                   <div className="relative z-10 pt-2 border-t border-slate-100">
                     <button
                       type="button"
-                      onClick={() => router.push('/vehicles')}
+                      onClick={() => router.push('/book')}
                       className="w-full sm:w-auto py-3 px-6 bg-[#165DAD] hover:bg-[#12498a] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors min-h-[44px]"
                     >
                       <ShoppingBag className="w-4 h-4" />

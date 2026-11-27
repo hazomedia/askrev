@@ -19,13 +19,15 @@ import {
   WithdrawalQueryDto,
 } from './dto/withdrawal.dto';
 import { randomUUID } from 'crypto';
+import { LegacyMatrixService } from '../legacy-matrix/legacy-matrix.service';
 
 @Injectable()
 export class WalletService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly encryptionService?: EncryptionService,
-    @Optional() private readonly emailService?: EmailService
+    @Optional() private readonly emailService?: EmailService,
+    @Optional() private readonly legacyMatrixService?: LegacyMatrixService
   ) { }
 
   /**
@@ -157,21 +159,58 @@ export class WalletService {
     const historicalBinaryPaise = binaryEventsPaise > placementPaise ? binaryEventsPaise : placementPaise;
     const royalMatchPaise = ledgerRoyalMatchPaise > historicalBinaryPaise ? ledgerRoyalMatchPaise : historicalBinaryPaise;
 
-    const shoppingWallet = await this.getShoppingWalletBalance(userId);
+    // Authoritative Matrix Calculation for EV Legacy Income (Even levels) & EV Club Fund (Odd levels)
+    let matrixOverview: any = null;
+    if (this.legacyMatrixService) {
+      try {
+        matrixOverview = await this.legacyMatrixService.getMyMatrixOverview(userId);
+      } catch (e) {
+        // Fallback gracefully
+      }
+    }
+
+    const shoppingWallet = await this.getShoppingWalletBalance(userId, matrixOverview);
 
     const walletTotalEarned = BigInt(wallet.totalEarnedPaise ? String(wallet.totalEarnedPaise) : '0');
     const computedTotalEarned = crownBonusPaise + royalMatchPaise + ledgerLegacyIncomePaise;
     const totalEarnedPaise = walletTotalEarned > computedTotalEarned ? walletTotalEarned : computedTotalEarned;
 
+    const legacyProjectedINR = Number(
+      matrixOverview?.metrics?.earningsWalletProjectedINR ??
+      matrixOverview?.accumulatedLegacyIncomeINR ??
+      0
+    );
+    const legacyCreditedINR = Number(
+      matrixOverview?.actuallyCreditedLegacyIncomeINR ??
+      (ledgerLegacyIncomePaise > 0n ? Number(ledgerLegacyIncomePaise / 100n) : 0)
+    );
+    const legacyUncreditedINR = Math.max(0, legacyProjectedINR - legacyCreditedINR);
+    const isMatrixQualified = Boolean(matrixOverview?.isQualified);
+    const legacyPendingQualificationINR = isMatrixQualified ? 0 : legacyUncreditedINR;
+    const legacyQualifiedAwaitingSettlementINR = isMatrixQualified ? legacyUncreditedINR : 0;
+    const sponsorCommissionHoldsINR = paiseToRupees(wallet.heldCommissionsPaise);
+    const totalPendingINR = sponsorCommissionHoldsINR + legacyUncreditedINR;
+
     return {
       availableEarningsINR: paiseToRupees(wallet.availableEarningsPaise),
-      heldCommissionsINR: paiseToRupees(wallet.heldCommissionsPaise),
+      heldCommissionsINR: sponsorCommissionHoldsINR,
       pendingRecoveryINR: paiseToRupees(wallet.pendingRecoveryPaise),
       totalEarnedINR: paiseToRupees(totalEarnedPaise),
       shoppingVoucherINR: paiseToRupees(wallet.shoppingVoucherBalancePaise),
       shoppingWalletINR: shoppingWallet.availableShoppingWalletINR,
       shoppingWallet,
       isEmailVerified: !!user?.isEmailVerified,
+      legacyPending: {
+        projectedLegacyIncomeINR: legacyProjectedINR,
+        creditedLegacyIncomeINR: legacyCreditedINR,
+        uncreditedLegacyIncomeINR: legacyUncreditedINR,
+        pendingQualificationINR: legacyPendingQualificationINR,
+        qualifiedAwaitingSettlementINR: legacyQualifiedAwaitingSettlementINR,
+        isQualified: isMatrixQualified,
+        activeDirectsCount: matrixOverview?.activeDirectsCount ?? 0,
+        sponsorCommissionHoldsINR,
+        totalPendingINR,
+      },
       breakdown: {
         totalEarningsINR: paiseToRupees(totalEarnedPaise),
         crownBonusINR: paiseToRupees(crownBonusPaise),
@@ -190,7 +229,7 @@ export class WalletService {
    * Authoritative Shopping Wallet (EV Club Fund) Balance & Ledger History
    * Calculates net balance from 2150_EV_CLUB_FUND_LIABILITY ledger lines (Credits - Debits).
    */
-  async getShoppingWalletBalance(userId: string) {
+  async getShoppingWalletBalance(userId: string, preloadedMatrix?: any) {
     const lines = await this.prisma.journalLine.findMany({
       where: {
         userId,
@@ -218,8 +257,15 @@ export class WalletService {
     let totalDebitsPaise = 0n;
 
     for (const line of lines) {
-      totalCreditsPaise += line.creditPaise;
-      totalDebitsPaise += line.debitPaise;
+      if (
+        line.account === '2000_MEMBER_EARNINGS_PAYABLE' ||
+        line.account === JournalAccount.MEMBER_EARNINGS_PAYABLE ||
+        (line as any).accountNumber === '2000_MEMBER_EARNINGS_PAYABLE'
+      ) {
+        continue;
+      }
+      totalCreditsPaise += line.creditPaise || 0n;
+      totalDebitsPaise += line.debitPaise || 0n;
     }
 
     const availableBalancePaise =
@@ -227,14 +273,59 @@ export class WalletService {
         ? totalCreditsPaise - totalDebitsPaise
         : 0n;
 
+    let matrixOverview = preloadedMatrix;
+    if (!matrixOverview && this.legacyMatrixService) {
+      try {
+        matrixOverview = await this.legacyMatrixService.getMyMatrixOverview(userId);
+      } catch (e) {
+        // Fallback gracefully
+      }
+    }
+
+    const evClubProjectedINR = Number(
+      matrixOverview?.metrics?.evClubProjectedINR ??
+      matrixOverview?.accumulatedEvClubFundINR ??
+      0
+    );
+    const totalCreditedINR = Number(totalCreditsPaise / 100n);
+    const pendingEvClubFundINR = Math.max(0, evClubProjectedINR - totalCreditedINR);
+    const isMatrixQualified = Boolean(matrixOverview?.isQualified);
+    const activeDirectsCount = matrixOverview?.activeDirectsCount ?? 0;
+    const pendingQualificationINR = isMatrixQualified ? 0 : pendingEvClubFundINR;
+    const qualifiedAwaitingSettlementINR = isMatrixQualified ? pendingEvClubFundINR : 0;
+    const availableShoppingINR = Number(availableBalancePaise / 100n);
+
+    let checkoutAvailabilityStatus = 'NO_ACTIVE_BALANCE';
+    let checkoutAvailabilityLabel = 'No Active Balance';
+    if (availableShoppingINR > 0) {
+      checkoutAvailabilityStatus = 'AVAILABLE';
+      checkoutAvailabilityLabel = `₹${availableShoppingINR.toLocaleString('en-IN')} Available for Checkout`;
+    } else if (pendingEvClubFundINR > 0) {
+      if (isMatrixQualified) {
+        checkoutAvailabilityStatus = 'AWAITING_SETTLEMENT';
+        checkoutAvailabilityLabel = 'Qualified • Awaiting Settlement';
+      } else {
+        checkoutAvailabilityStatus = 'PENDING_QUALIFICATION';
+        checkoutAvailabilityLabel = `Pending Direct Qualification (${activeDirectsCount}/3)`;
+      }
+    }
+
     return {
       userId,
       availableShoppingWalletPaise: availableBalancePaise.toString(),
-      availableShoppingWalletINR: Number(availableBalancePaise / 100n),
+      availableShoppingWalletINR: availableShoppingINR,
       totalCreditedPaise: totalCreditsPaise.toString(),
-      totalCreditedINR: Number(totalCreditsPaise / 100n),
+      totalCreditedINR,
       totalDebitedPaise: totalDebitsPaise.toString(),
       totalDebitedINR: Number(totalDebitsPaise / 100n),
+      projectedEvClubFundINR: evClubProjectedINR,
+      pendingEvClubFundINR,
+      pendingQualificationINR,
+      qualifiedAwaitingSettlementINR,
+      isQualified: isMatrixQualified,
+      activeDirectsCount,
+      checkoutAvailabilityStatus,
+      checkoutAvailabilityLabel,
       isWithdrawable: false,
       isTransferable: false,
       rulesNotice:
