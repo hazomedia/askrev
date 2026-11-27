@@ -1484,7 +1484,7 @@ export async function settleAdminWithdrawalApi(
 // ============================================================================
 export async function uploadProfilePhotoApi(file: File): Promise<any> {
   const formData = new FormData();
-  formData.append('photo', file);
+  formData.append('file', file);
   return fetchApi<any>('/auth/profile/photo', {
     method: 'POST',
     body: formData,

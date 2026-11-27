@@ -298,9 +298,10 @@ function DashboardContent() {
     setPhotoActionError(null);
     try {
       const res = await uploadProfilePhotoApi(photoFile);
-      if (res?.profilePhoto) {
+      const photoUrl = res?.profilePhoto || res?.user?.profilePhoto || res?.photoUrl;
+      if (photoUrl) {
         setUser((prev: any) => {
-          const updated = { ...prev, profilePhoto: res.profilePhoto };
+          const updated = { ...prev, profilePhoto: photoUrl };
           if (typeof window !== 'undefined') {
             try {
               localStorage.setItem('askrev_user', JSON.stringify(updated));
@@ -312,6 +313,8 @@ function DashboardContent() {
         setIsPhotoModalOpen(false);
         setPhotoFile(null);
         setPhotoPreviewUrl(null);
+      } else {
+        setPhotoActionError(res?.message || 'Failed to upload profile photo.');
       }
     } catch (err: any) {
       setPhotoActionError(err.message || 'Failed to upload profile photo.');

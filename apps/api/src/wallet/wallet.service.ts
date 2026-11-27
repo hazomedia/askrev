@@ -681,11 +681,13 @@ export class WalletService {
       : null;
 
     const availablePaise = user.wallet?.availableEarningsPaise || 0n;
-    const minWithdrawalINR = finSettings?.minWithdrawalINR ?? 1000;
-    const maxWithdrawalINR = finSettings?.maxWithdrawalINR ?? null;
-    const adminChargePercent = finSettings?.adminChargePercent ?? 10;
+    const minWithdrawalINR = finSettings?.minWithdrawalPaise ? Number(finSettings.minWithdrawalPaise) / 100 : (finSettings?.minWithdrawalINR ?? 1000);
+    const maxWithdrawalINR = finSettings?.maxWithdrawalPaise ? Number(finSettings.maxWithdrawalPaise) / 100 : (finSettings?.maxWithdrawalINR ?? null);
+    const adminChargePercent = finSettings?.adminChargePercent ? Number(finSettings.adminChargePercent) : 10;
     const tdsEnabled = finSettings?.tdsEnabled ?? false;
-    const tdsPercent = (tdsEnabled && finSettings?.tdsPercent) ? finSettings.tdsPercent : 0;
+    const tdsPercent = (tdsEnabled && (finSettings?.tdsRatePercent !== undefined || finSettings?.tdsPercent !== undefined))
+      ? Number(finSettings.tdsRatePercent ?? finSettings.tdsPercent)
+      : 0;
     const withdrawalRequestsEnabled = finSettings?.withdrawalRequestsEnabled ?? true;
     const disabledReason = finSettings?.withdrawalDisabledReason || null;
 
@@ -917,11 +919,13 @@ export class WalletService {
     }
 
     // Manual / UAT Settlement Workflow execution:
-    const minINR = finSettings?.minWithdrawalINR ?? 1000;
-    const maxINR = finSettings?.maxWithdrawalINR ?? null;
-    const adminChargePct = finSettings?.adminChargePercent ?? 10;
+    const minINR = finSettings?.minWithdrawalPaise ? Number(finSettings.minWithdrawalPaise) / 100 : (finSettings?.minWithdrawalINR ?? 1000);
+    const maxINR = finSettings?.maxWithdrawalPaise ? Number(finSettings.maxWithdrawalPaise) / 100 : (finSettings?.maxWithdrawalINR ?? null);
+    const adminChargePct = finSettings?.adminChargePercent ? Number(finSettings.adminChargePercent) : 10;
     const tdsEnabled = finSettings?.tdsEnabled ?? false;
-    const tdsPct = (tdsEnabled && finSettings?.tdsPercent) ? finSettings.tdsPercent : 0;
+    const tdsPct = (tdsEnabled && (finSettings?.tdsRatePercent !== undefined || finSettings?.tdsPercent !== undefined))
+      ? Number(finSettings.tdsRatePercent ?? finSettings.tdsPercent)
+      : 0;
 
     const amountINR = dto?.amountINR ? Number(dto.amountINR) : 0;
     if (amountINR < minINR) {

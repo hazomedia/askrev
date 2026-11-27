@@ -21,6 +21,7 @@ export interface UpdateFinancialSettingsDto {
 
   tdsEnabled?: boolean;
   tdsRatePercent?: number;
+  tdsPercent?: number;
   tdsCalculationBasis?: string;
   panVerificationRequired?: boolean;
   bankVerificationRequired?: boolean;
@@ -126,6 +127,43 @@ export class FinancialSettingsService {
 
         tdsEnabled: settings.tdsEnabled,
         tdsRatePercent: Number(settings.tdsRatePercent),
+        tdsPercent: Number(settings.tdsRatePercent),
+        tdsCalculationBasis: settings.tdsCalculationBasis,
+        panVerificationRequired: settings.panVerificationRequired,
+        bankVerificationRequired: settings.bankVerificationRequired,
+        paymentProcessingWindowHours: settings.paymentProcessingWindowHours,
+        withdrawalDisabledReason: settings.withdrawalDisabledReason,
+
+        effectiveDate: settings.effectiveDate,
+        updatedBy: settings.updatedBy,
+        changeReason: settings.changeReason,
+        auditHistory: settings.auditHistory || [],
+        updatedAt: settings.updatedAt,
+      },
+      settings: {
+        id: settings.id,
+        version: settings.version,
+        crownBonusEnabled: settings.crownBonusEnabled,
+        royalMatchEnabled: settings.royalMatchEnabled,
+        legacyIncomeEnabled: settings.legacyIncomeEnabled,
+        evClubFundEnabled: settings.evClubFundEnabled,
+        voucherUtilizationEnabled: settings.voucherUtilizationEnabled,
+        shoppingWalletUtilizationEnabled: settings.shoppingWalletUtilizationEnabled,
+        withdrawalRequestsEnabled: settings.withdrawalRequestsEnabled,
+        payoutExecutionEnabled: settings.payoutExecutionEnabled,
+
+        minWithdrawalINR: paiseToRupees(settings.minWithdrawalPaise),
+        maxWithdrawalINR: settings.maxWithdrawalPaise ? paiseToRupees(settings.maxWithdrawalPaise) : null,
+        dailyMemberLimitINR: settings.dailyMemberLimitPaise ? paiseToRupees(settings.dailyMemberLimitPaise) : null,
+        monthlyMemberLimitINR: settings.monthlyMemberLimitPaise ? paiseToRupees(settings.monthlyMemberLimitPaise) : null,
+        platformDailyPayoutLimitINR: settings.platformDailyPayoutLimitPaise ? paiseToRupees(settings.platformDailyPayoutLimitPaise) : null,
+        adminChargePercent: Number(settings.adminChargePercent),
+        withdrawalSource: settings.withdrawalSource,
+        payoutMode: settings.payoutMode,
+
+        tdsEnabled: settings.tdsEnabled,
+        tdsRatePercent: Number(settings.tdsRatePercent),
+        tdsPercent: Number(settings.tdsRatePercent),
         tdsCalculationBasis: settings.tdsCalculationBasis,
         panVerificationRequired: settings.panVerificationRequired,
         bankVerificationRequired: settings.bankVerificationRequired,
@@ -140,6 +178,12 @@ export class FinancialSettingsService {
       },
       effectiveOperational,
       emergencyOverrides,
+      effectiveEnvironment: {
+        COMPLIANCE_MODE: emergencyOverrides.complianceMode,
+        ENABLE_LEGACY_SETTLEMENT: emergencyOverrides.isLegacySettlementEnvEnabled,
+        ENABLE_LIVE_PAYOUTS: emergencyOverrides.isLivePayoutsEnvEnabled,
+        ENABLE_MANUAL_WITHDRAWALS: emergencyOverrides.isManualWithdrawalsEnvEnabled,
+      },
     };
   }
 
@@ -175,7 +219,8 @@ export class FinancialSettingsService {
     if (dto.minWithdrawalINR !== undefined && dto.minWithdrawalINR < 100) {
       throw new BadRequestException('Minimum withdrawal amount must be at least ₹100.');
     }
-    if (dto.tdsRatePercent !== undefined && (dto.tdsRatePercent < 0 || dto.tdsRatePercent > 30)) {
+    const effectiveTdsRate = dto.tdsRatePercent !== undefined ? dto.tdsRatePercent : dto.tdsPercent;
+    if (effectiveTdsRate !== undefined && (effectiveTdsRate < 0 || effectiveTdsRate > 30)) {
       throw new BadRequestException('TDS rate percentage must be between 0% and 30%.');
     }
 
@@ -238,7 +283,7 @@ export class FinancialSettingsService {
     if (dto.adminChargePercent !== undefined) updateData.adminChargePercent = dto.adminChargePercent;
 
     if (dto.tdsEnabled !== undefined) updateData.tdsEnabled = dto.tdsEnabled;
-    if (dto.tdsRatePercent !== undefined) updateData.tdsRatePercent = dto.tdsRatePercent;
+    if (effectiveTdsRate !== undefined) updateData.tdsRatePercent = effectiveTdsRate;
     if (dto.tdsCalculationBasis !== undefined) updateData.tdsCalculationBasis = dto.tdsCalculationBasis;
     if (dto.panVerificationRequired !== undefined) updateData.panVerificationRequired = dto.panVerificationRequired;
     if (dto.bankVerificationRequired !== undefined) updateData.bankVerificationRequired = dto.bankVerificationRequired;
